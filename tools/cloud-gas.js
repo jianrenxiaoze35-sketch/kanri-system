@@ -50,6 +50,11 @@ async function cloudApi(action, body, passOverride){
       res = await fetch(CLOUD_API_URL, {method: "POST", headers: {"Content-Type": "text/plain;charset=utf-8"}, body: JSON.stringify(payload)});
       if(!res.ok) throw {code: "unavailable", message: "HTTP " + res.status};
       const json = await res.json();
+      // POSTが途中の転送でGETに化けると、GASは別の入口（doGet）の応答を返す。頼んだ action が
+      // 返ってこない応答は「届いていない」とみなして再送する（成功扱いにすると合言葉の確認まで素通りする）。
+      if(json.action !== action || json.error === "not_post"){
+        throw {code: "unavailable", message: "リクエストがクラウドに正しく届きませんでした（" + (json.error || "応答の形式違い") + "）"};
+      }
       if(!json.ok){
         const code = json.error || "server_error";
         if(code === "server_error" && i < 2){ await cloudSleep(1500 * (i + 1)); continue; }

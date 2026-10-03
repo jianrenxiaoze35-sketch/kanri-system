@@ -22,15 +22,19 @@ function diag() {
 const KV_SHEET = 'kv';
 const KV_HEADER = ['key', 'ver', 'enc', 'at', 'tab', 'idx', 'n', 'data'];
 const CELL_CHARS = 45000;
+let currentAction_ = '';  // 応答に action を付けて、画面側でPOSTが届いたことを確かめられるようにする
 
+// データAPIはPOST専用。POSTが途中の転送でGETに化けて届くことがあるため、ここは ok:false を返して
+// 画面側に「届いていない」と分からせる（ok:true を返すと合言葉の確認まで通ったように見えてしまう）。
 function doGet() {
-  return json_({ ok: true, app: 'kanri-system', time: new Date().toISOString() });
+  return json_({ ok: false, error: 'not_post', app: 'kanri-system', time: new Date().toISOString() });
 }
 
 function doPost(e) {
   let req;
   try { req = JSON.parse(e.postData.contents); }
   catch (err) { return json_({ ok: false, error: 'bad_request' }); }
+  currentAction_ = String(req.action || '');
   try {
     if (req.action === 'setup') return json_(setup_(req));
     if (!checkPass_(req.pass)) return json_({ ok: false, error: 'bad_pass' });
@@ -193,5 +197,6 @@ function put_(req) {
 }
 
 function json_(obj) {
+  if (obj && typeof obj === 'object' && obj.ok !== undefined && !obj.action && currentAction_) obj.action = currentAction_;
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
