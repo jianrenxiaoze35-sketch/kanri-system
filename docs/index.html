@@ -2859,8 +2859,7 @@ function cloudSettingsInit(){
   cloudRenderSnapshotInfo();
 }
 
-let _regiDailyStoreReady = initRegiDailyStore().then(seedEmbeddedBackup).then(()=>cloudInit().catch(err=>{ console.error("cloudInit failed", err); const d = (err && (err.code || err.name)) ? `${err.code || err.name}: ${err.message || ""}` : String(err); const at = (err && err.stack) ? String(err.stack).split("
-").slice(1, 2).join("").trim() : ""; cloudGoLocal(`クラウド接続中にエラーが発生しました（${d}${at ? " / " + at : ""}）`); }));
+let _regiDailyStoreReady = initRegiDailyStore().then(seedEmbeddedBackup).then(()=>cloudInit().catch(err=>{ console.error("cloudInit failed", err); const d = (err && (err.code || err.name)) ? `${err.code || err.name}: ${err.message || ""}` : String(err); const at = (err && err.stack) ? String(err.stack).split(String.fromCharCode(10)).slice(1, 2).join("").trim() : ""; cloudGoLocal(`クラウド接続中にエラーが発生しました（${d}${at ? " / " + at : ""}）`); }));
 /* ==========================================================
    アプリ起動シーケンス
    商品マスタ・原料マスタ・レシピ・仕入れ・売上管理・人件費管理・レジ締めなど、以前はスクリプト読み込み
