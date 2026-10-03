@@ -145,13 +145,11 @@ function cloudFlush(){
       _cloudLastError = err;
       failed = true;
       keys.forEach(k=>_cloudPending.add(k));
-      if(err && err.code === "bad_pass"){
-        alert("合言葉が変更されたため保存できませんでした。ページを開き直して、新しい合言葉を入力してください。\n（この端末での変更はこのブラウザ内には残っています）");
-      }
+      if(err && err.code === "bad_pass") cloudAuthLost();
     }
   })().finally(()=>{
     _cloudFlushing = null;
-    if(_cloudPending.size && !_cloudReloading){
+    if(_cloudPending.size && !_cloudReloading && _cloudMode === "cloud"){
       clearTimeout(_cloudTimer);
       _cloudTimer = setTimeout(cloudFlush, failed ? 20000 : 1500);
     }
@@ -260,6 +258,17 @@ function cloudBootMessage(text){
   const el = document.getElementById("appBootLoadingMsg");
   if(el) el.textContent = text;
 }
+// 開いている途中で合言葉が変わった：再試行しても通らないので止める（再試行し続けない）。
+// 未保存の変更はこのブラウザ内に残り、次にクラウドから読み込むときに控えへ退避される。
+let _cloudAuthLostAlerted = false;
+function cloudAuthLost(){
+  try{ localStorage.removeItem(CLOUD_PASS_KEY); localStorage.setItem(CLOUD_LOCAL_DIRTY_KEY, "1"); }catch(e){}
+  cloudGoLocal("合言葉が変更されたため、クラウドとの接続を止めました（ページを開き直して新しい合言葉を入力してください）");
+  if(!_cloudAuthLostAlerted){
+    _cloudAuthLostAlerted = true;
+    alert("合言葉が変更されたため、クラウドに保存できなくなりました。ページを開き直して、新しい合言葉を入力してください。\n（この端末で保存しきれなかった変更は、設定の「このブラウザ内の控え」に残ります）");
+  }
+}
 function cloudGoLocal(reason){
   _cloudMode = "local";
   _cloudLocalReason = reason;
@@ -348,7 +357,9 @@ async function cloudInit(){
           el.style.display = "flex";
         }
       }
-    }catch(e){}
+    }catch(e){
+      if(e && e.code === "bad_pass") cloudAuthLost();
+    }
   };
   setInterval(check, 60000);
   document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) check(); });

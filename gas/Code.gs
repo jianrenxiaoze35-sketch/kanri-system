@@ -52,13 +52,11 @@ function hash_(s) {
   const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'kanri-system:' + String(s), Utilities.Charset.UTF_8);
   return bytes.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
+// 失敗回数での締め出しはしない（開いたままの画面の自動再試行で締め出しが延長され続け、
+// 正しい合言葉でも入れなくなったため）。合言葉は十分長いので、失敗時の1秒待ちだけで足りる。
 function checkPass_(pass) {
-  const cache = CacheService.getScriptCache();
-  const fails = Number(cache.get('fails') || 0);
-  if (fails >= 30) { Utilities.sleep(2000); return false; }
   const stored = PropertiesService.getScriptProperties().getProperty('PASS_HASH');
   if (stored && pass && hash_(pass) === stored) return true;
-  cache.put('fails', String(fails + 1), 600);
   Utilities.sleep(1000);
   return false;
 }
@@ -72,6 +70,15 @@ function setup_(req) {
     props.setProperty('PASS_HASH', hash_(req.pass));
     return { ok: true };
   } finally { lock.releaseLock(); }
+}
+/**
+ * 合言葉を忘れたときの復旧用。持ち主がエディタから実行する（Webからは呼べない）。
+ * 実行すると合言葉が未設定に戻り、次の setup 呼び出しで新しい合言葉を設定できる。
+ * 実行したら、すぐに setup で新しい合言葉を設定すること（未設定のあいだは誰でも設定できてしまう）。
+ */
+function resetPassForSetup() {
+  PropertiesService.getScriptProperties().deleteProperty('PASS_HASH');
+  Logger.log('PASS_HASH を消しました。すぐに setup で新しい合言葉を設定してください。');
 }
 function changePass_(req) {
   if (!req.newPass || String(req.newPass).length < 8) return { ok: false, error: 'pass_too_short' };
