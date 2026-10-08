@@ -14696,6 +14696,15 @@ function deleteOtherPayArchive(source, id){
   syncOtherPayFeesToSalesManagement();
   renderOtherPayActiveView();
 }
+// 取込済みファイルの振込日表示用。funfo=CSVの「振込日」列、PAYGATE=精算明細の「支払日」。
+// SquareのCSVには振込日が無い（payDateは取引日の代用）ため対象外。既に取込済みのファイルも rows から算出する。
+function otherPayArchivePayDateLabel(src, a){
+  if(src === "square") return "";
+  const ds = Array.from(new Set((a.rows || []).map(r => r.payDate).filter(Boolean))).sort();
+  if(!ds.length) return "";
+  if(ds.length === 1) return ds[0];
+  return `${ds[0]}〜${ds[ds.length - 1]}（${ds.length}日分）`;
+}
 function renderOtherPayArchives(){
   ["funfo", "square", "paygate", "paygateEmoney", "paygateBarcode", "paygateCredit"].forEach(src => {
     const box = document.getElementById("otherPayArchive_" + src);
@@ -14705,6 +14714,7 @@ function renderOtherPayArchives(){
     box.innerHTML = list.map(a => `<div style="display:flex;gap:6px;align-items:center;padding:3px 0;font-size:11.5px;border-bottom:1px dotted var(--border);flex-wrap:wrap;">
       <span style="flex:1;min-width:100px;word-break:break-all;">${escAttr(a.name)}</span>
       <span class="hint">${a.count}件${a.dateFrom ? `（${a.dateFrom}〜${a.dateTo}）` : ""}</span>
+      ${otherPayArchivePayDateLabel(src, a) ? `<span style="font-size:11px;color:var(--main);font-weight:600;">振込日 ${otherPayArchivePayDateLabel(src, a)}</span>` : ""}
       <button class="danger" style="padding:1px 6px;" onclick="deleteOtherPayArchive('${src}','${a.id}')">削除</button>
     </div>`).join("");
   });
@@ -15156,6 +15166,7 @@ function renderOtherPaySubmitView(){
       <th style="padding:4px 8px;border:1px solid var(--border);">取込日</th>
       <th style="padding:4px 8px;border:1px solid var(--border);">件数</th>
       <th style="padding:4px 8px;border:1px solid var(--border);">対象期間</th>
+      <th style="padding:4px 8px;border:1px solid var(--border);">振込日</th>
       <th style="padding:4px 8px;border:1px solid var(--border);">管理部への提出</th>
     </tr></thead>
     <tbody>
@@ -15165,6 +15176,7 @@ function renderOtherPaySubmitView(){
       <td style="padding:4px 8px;border:1px solid var(--border);">${escAttr(a.uploadedAt || "")}</td>
       <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${a.count}件</td>
       <td style="padding:4px 8px;border:1px solid var(--border);">${a.dateFrom ? `${a.dateFrom}〜${a.dateTo}` : "—"}</td>
+      <td style="padding:4px 8px;border:1px solid var(--border);">${otherPayArchivePayDateLabel(a.src, a) || "—"}</td>
       <td style="padding:4px 8px;border:1px solid var(--border);">
         ${a.submitted
           ? `<span style="color:#2c7a3d;font-weight:600;">✅ 提出済</span> <button class="secondary" style="padding:2px 8px;" onclick="toggleOtherPaySubmitted('${a.src}','${a.id}',false)">取消</button>`
