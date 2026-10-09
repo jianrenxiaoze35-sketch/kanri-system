@@ -10931,19 +10931,33 @@ function importAttendanceCSV(event){
       event.target.value = "";
       return;
     }
-    let added = 0, updated = 0;
+    // 従業員情報（給与情報）に登録されていない従業員の勤怠は取り込まない（従業員番号で照合）。
+    const registered = new Set(laborEmployees.map(e=>String(e.employeeNumber||"").trim()).filter(Boolean));
+    let added = 0, updated = 0, skipped = 0;
+    const skippedPeople = new Map(); // 従業員番号 → 表示名
     rows.forEach(row=>{
-      if(!(row["従業員番号"]||"").toString().trim() || !(row["日付"]||"").toString().trim()) return;
+      const empNo = (row["従業員番号"]||"").toString().trim();
+      if(!empNo || !(row["日付"]||"").toString().trim()) return;
+      if(!registered.has(empNo)){
+        skipped++;
+        if(!skippedPeople.has(empNo)) skippedPeople.set(empNo, (row["表示名"]||"").toString().trim());
+        return;
+      }
       const rec = buildAttendanceRecordFromRow(row);
       if(!rec.date) return;
       const idx = attendanceRecords.findIndex(r=>r.id===rec.id);
       if(idx>=0){ attendanceRecords[idx] = rec; updated++; } else { attendanceRecords.push(rec); added++; }
-      ensureLaborEmployee(rec);
     });
     saveAttendanceRecords();
-    saveLaborEmployees();
     renderLaborActiveView();
-    alert(`勤怠データを取込みました（新規${added}件・更新${updated}件）。`);
+    let msg = `勤怠データを取込みました（新規${added}件・更新${updated}件）。`;
+    if(skipped){
+      const list = Array.from(skippedPeople.entries()).map(([no,name])=>`・${no} ${name}`);
+      msg += `\n\n従業員情報に登録されていない従業員の勤怠${skipped}件（${skippedPeople.size}名）は取り込みませんでした。\n` +
+        list.slice(0,10).join("\n") + (list.length>10 ? `\n…ほか${list.length-10}名` : "") +
+        `\n取り込むには、先に「従業員情報」タブで従業員を登録してください。`;
+    }
+    alert(msg);
     event.target.value = "";
   };
   reader.readAsText(file, "UTF-8");
