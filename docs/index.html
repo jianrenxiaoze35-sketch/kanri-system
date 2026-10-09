@@ -841,7 +841,7 @@
           <div class="lb-tile"><div class="lb-label">出勤人数</div><div class="lb-value"><span id="laborHourlyHeadcount">0</span><small>人</small></div></div>
           <div class="lb-tile"><div class="lb-label">総労働時間合計</div><div class="lb-value" id="laborHourlySumHours">0</div></div>
           <div class="lb-tile alt"><div class="lb-label">時給合計(人件費)</div><div class="lb-value"><span id="laborHourlySumWage">0</span><small>円</small></div></div>
-          <div class="lb-tile"><div class="lb-label">人時生産性（粗利益÷総労働時間）</div><div class="lb-value"><span id="laborHourlyProductivity">–</span><small>円/時間</small></div></div>
+          <div class="lb-tile"><div class="lb-label">人時生産性（レストラン粗利益÷総労働時間）</div><div class="lb-value"><span id="laborHourlyProductivity">–</span><small>円/時間</small></div></div>
           <div class="lb-tile alt"><div class="lb-label">1時間あたりの平均人数</div><div class="lb-value"><span id="laborHourlyAvgHeadcount">0.00</span><small>人</small></div></div>
         </div>
         <div class="card">
@@ -11340,7 +11340,7 @@ function renderLaborHourlyView(){
   document.getElementById("laborHourlyProductivity").textContent = prod == null ? "–" : fmtNum(Math.round(prod));
 }
 
-/* 人時生産性（円／時間）＝粗利益（レストラン＋Shopの合計粗利益）÷ 総労働時間。
+/* 人時生産性（円／時間）＝レストランの粗利益 ÷ 総労働時間（売上管理リストの「人時生産性」と同じ定義）。
    売上データと出勤記録の両方がある日だけを分子・分母に含める（片方しか無い日を含めると比率が歪むため）。
    該当する日が1日も無い場合はnull（表示側で「–」）。 */
 function computeLaborProductivityForDates(dates){
@@ -11351,7 +11351,7 @@ function computeLaborProductivityForDates(dates){
     if(!d) return;
     const { totalMin, hasRecords } = getLaborDayTotals(dateStr);
     if(!hasRecords || totalMin <= 0) return;
-    gross += computeSalesListRow(d).totalGross;
+    gross += computeSalesListRow(d).restaurantGross;
     min += totalMin;
     any = true;
   });
