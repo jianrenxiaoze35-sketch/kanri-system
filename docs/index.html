@@ -95,6 +95,38 @@
   .lb-sec-body .lb-biz input[type=time]{width:92px;padding:3px 4px;font-size:12px;}
   .lb-sec-body .lb-biz td.closed{background:#f6f1f1;}
   @media (max-width:700px){.lb-sec{grid-template-columns:1fr;}.lb-sec-title{border-right:none;border-bottom:1px solid var(--border);padding:6px 12px;}}
+  /* ===== 従業員情報（給与情報・月別記録・曜日別記録） ===== */
+  .es-subtabs{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+  .es-subtabs-label{font-size:12px;color:var(--muted);margin-right:2px;}
+  .es-subtabs button.active{background:var(--main);color:#fff;}
+  .es-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;}
+  .es-toolbar label{display:flex;align-items:center;gap:4px;}
+  .es-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow-x:auto;box-shadow:0 1px 3px rgba(35,79,56,.06);}
+  table.es-sheet{min-width:0;width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.es-sheet td{border:1px solid var(--border);padding:3px 6px;text-align:center;white-space:nowrap;}
+  table.es-sheet td.es-lbl,table.es-rec td.es-lbl,table.es-rec th.es-lbl{background:#f3f4f6;font-weight:600;}
+  table.es-sheet td.es-past{background:#f7f3ea;}
+  table.es-sheet td.es-blank,table.es-sheet td.es-gap{border:none;background:none;padding:0;}
+  table.es-sheet td.es-gap{width:12px;}
+  table.es-sheet td.es-nohead{font-size:11px;}
+  table.es-sheet td.es-no{width:64px;background:#eef2f0;}
+  table.es-sheet td.es-no input{width:48px;text-align:center;font-size:20px;font-weight:700;color:var(--main-dark);border:none;background:transparent;}
+  table.es-sheet td.es-big{font-weight:700;font-size:14px;color:var(--main-dark);}
+  table.es-sheet td.es-more{border:none;background:none;vertical-align:middle;}
+  table.es-sheet td.es-sub{font-size:11px;color:var(--muted);}
+  table.es-sheet input[type=number]{width:74px;text-align:center;padding:2px 3px;}
+  table.es-sheet input[type=date]{width:128px;font-size:12px;padding:2px 3px;}
+  table.es-sheet input[type=text],table.es-sheet select{padding:2px 4px;font-size:12.5px;}
+  button.es-mini{padding:1px 8px;font-size:11px;margin-left:4px;}
+  .es-history{border-top:1px solid var(--border);padding:8px 12px;background:#fbfaf6;}
+  table.es-hist-table{min-width:0;width:auto;font-size:12px;}
+  table.es-hist-table th,table.es-hist-table td{padding:3px 10px;text-align:center;}
+  .es-rec-block{display:flex;align-items:stretch;margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;overflow-x:auto;}
+  .es-rec-side{flex:0 0 76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#eef2f0;font-weight:700;color:var(--main-dark);border-right:1px solid var(--border);padding:6px;text-align:center;}
+  .es-rec-person .es-rec-no{font-size:18px;}
+  .es-rec-person .es-rec-name{writing-mode:vertical-rl;letter-spacing:2px;font-size:13px;}
+  table.es-rec{min-width:0;width:100%;font-size:12.5px;}
+  table.es-rec th,table.es-rec td{padding:4px 10px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border);white-space:nowrap;}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
   td.ing-blank{background:#fff3cd !important;}
@@ -937,20 +969,54 @@
 
       <!-- 従業員情報（給与体系＋従業員ごとの設定） -->
       <div id="laborEmployeesView" style="display:none;">
-        <div id="laborWageSchemesList" style="margin-bottom:5px;"></div>
-        <div class="hint" style="margin-bottom:2px;font-size:11px;">個人ごとの設定です。従業員は勤怠CSVの取込内容から自動的に追加されるほか、「＋ 従業員を追加」から手動でも追加できます。年度の出勤日数・労務時間・給与内訳もここで確認できます。</div>
-        <div style="display:flex;gap:4px;margin-bottom:4px;align-items:center;flex-wrap:wrap;">
-          <button type="button" class="secondary" onclick="addLaborEmployee()">＋ 従業員を追加</button>
-          <button type="button" class="secondary" onclick="openLaborEmployeesBulk()">一括編集</button>
-          <span style="width:1px;height:20px;background:var(--border);margin:0 2px;"></span>
-          <label style="display:flex;align-items:center;gap:4px;font-size:12px;">対象部門（部門1）：
-            <input type="text" id="laborEmployeeMasterDept" value="ビール事業部" style="width:130px;">
-          </label>
-          <button type="button" class="secondary" onclick="document.getElementById('laborEmployeeMasterCsvInput').click()" title="freee人事労務の「従業員情報」エクスポートCSVから、指定した部門1の従業員を新規登録します（登録済みの従業員は上書きしません）">従業員情報CSV取込</button>
-          <input type="file" id="laborEmployeeMasterCsvInput" accept=".csv" style="display:none" onchange="importLaborEmployeeMasterCSV(event)">
+        <div class="es-subtabs" id="laborEmpSubTabs">
+          <span class="es-subtabs-label">ビュー選択</span>
+          <button class="secondary" id="laborEmpTabSalary" onclick="switchLaborEmpView('salary')">給与情報</button>
+          <button class="secondary" id="laborEmpTabMonthly" onclick="switchLaborEmpView('monthly')">月別記録</button>
+          <button class="secondary" id="laborEmpTabWeekday" onclick="switchLaborEmpView('weekday')">曜日別記録</button>
         </div>
-        <div id="laborWageList"></div>
-        <div class="empty" id="laborWageEmptyMsg" style="display:none;">従業員データがありません。「＋ 従業員を追加」または勤怠CSVの取込で追加してください。</div>
+
+        <!-- 給与情報 -->
+        <div id="laborEmpSalaryPane">
+          <div class="es-toolbar">
+            <button type="button" onclick="addLaborEmployee()">従業員を追加</button>
+            <button type="button" class="secondary" onclick="openLaborEmployeesBulk()">一括編集</button>
+            <label>対象部門（部門1）：<input type="text" id="laborEmployeeMasterDept" value="ビール事業部" style="width:130px;"></label>
+            <button type="button" class="secondary" onclick="document.getElementById('laborEmployeeMasterCsvInput').click()" title="freee人事労務の「従業員情報」エクスポートCSVから、指定した部門1の従業員だけを新規登録します（既に登録済みの従業員・退職済みはスキップ）">従業員情報取込</button>
+            <input type="file" id="laborEmployeeMasterCsvInput" accept=".csv" style="display:none" onchange="importLaborEmployeeMasterCSV(event)">
+          </div>
+          <div class="es-toolbar">
+            <label>対象期間：<input type="month" id="laborEmpFromS" onchange="setLaborEmpPeriod(this.value, null)"> ～ <input type="month" id="laborEmpToS" onchange="setLaborEmpPeriod(null, this.value)"></label>
+            <span class="hint" style="margin:0;">総勤務日数・総労働時間・給与合計・内訳は、この期間で計算します。</span>
+          </div>
+          <div id="laborWageList"></div>
+          <div class="empty" id="laborWageEmptyMsg" style="display:none;">従業員データがありません。「従業員を追加」または勤怠CSVの取込で追加してください。</div>
+          <div style="margin-top:14px;">
+            <div id="laborWageSchemesList" style="margin-bottom:5px;"></div>
+          </div>
+        </div>
+
+        <!-- 月別記録 -->
+        <div id="laborEmpMonthlyPane" style="display:none;">
+          <div class="es-toolbar">
+            <label>対象年：<select id="laborEmpYearM" onchange="setLaborEmpYear(this.value)"></select></label>
+            <label>対象部門（部門1）：<select id="laborEmpDeptM" onchange="setLaborEmpDept(this.value)"></select></label>
+            <button type="button" class="secondary" onclick="exportLaborEmpRecords('monthly')">Excel出力</button>
+          </div>
+          <div id="laborEmpMonthlyContent"></div>
+        </div>
+
+        <!-- 曜日別記録 -->
+        <div id="laborEmpWeekdayPane" style="display:none;">
+          <div class="es-toolbar">
+            <label>対象部門（部門1）：<select id="laborEmpDeptW" onchange="setLaborEmpDept(this.value)"></select></label>
+            <button type="button" class="secondary" onclick="exportLaborEmpRecords('weekday')">Excel出力</button>
+          </div>
+          <div class="es-toolbar">
+            <label>対象期間：<input type="month" id="laborEmpFromW" onchange="setLaborEmpPeriod(this.value, null)"> ～ <input type="month" id="laborEmpToW" onchange="setLaborEmpPeriod(null, this.value)"></label>
+          </div>
+          <div id="laborEmpWeekdayContent"></div>
+        </div>
       </div>
 
       <!-- 福利厚生 -->
@@ -10667,24 +10733,26 @@ registerBootStep(function(){
 });
 // 役員・業務委託など「月給制(固定)」の従業員は勤怠記録を取らないため、日別の勤怠明細からは
 // 人件費が積み上がらない。その月額合計を返し、月別・年別人件費の合計に上乗せする。
-function sumMonthlyFixedSalaries(){
+function sumMonthlyFixedSalaries(asOfISO){
   return laborEmployees
     .filter(e=>e.calcType==="monthly_fixed")
-    .reduce((s,e)=> s + (e.monthlySalary||0), 0);
+    .reduce((s,e)=> s + ((asOfISO ? getEffectiveEmployee(e, asOfISO) : e).monthlySalary||0), 0);
 }
 // 月給制(固定)の日割り人件費＝月給合計 ÷ その月の「年間出勤日数」（基本設定）。勤怠記録のある日（営業した日）に計上する。
 // その月の出勤日数が未設定の場合は日割りせず0を返す（月別・年別では従来どおり月額をまとめて計上する）。
 function getLaborFixedDailyCost(dateISO){
   const days = getLaborAnnualWorkDays(parseInt(dateISO.slice(0,4),10), parseInt(dateISO.slice(5,7),10));
-  return days > 0 ? sumMonthlyFixedSalaries() / days : 0;
+  return days > 0 ? sumMonthlyFixedSalaries(dateISO) / days : 0;
 }
 // 指定した年月の、月給制(固定)の人件費。出勤日数が設定済みなら「日割り×勤怠記録のある日数」、未設定なら月額をそのまま計上する。
 function getLaborFixedCostForMonth(year, month){
   const days = getLaborAnnualWorkDays(year, month);
-  if(!days) return sumMonthlyFixedSalaries();
   const monthKey = `${year}-${String(month).padStart(2,"0")}`;
+  if(!days) return sumMonthlyFixedSalaries(`${monthKey}-28`);
   const workedDates = new Set(attendanceRecords.filter(r=>r.date && r.date.slice(0,7)===monthKey && r.clockIn && r.clockOut).map(r=>r.date));
-  return sumMonthlyFixedSalaries() / days * workedDates.size;
+  let total = 0;
+  workedDates.forEach(d=>{ total += sumMonthlyFixedSalaries(d) / days; }); // 給与適用日をまたぐ月は日ごとの給与で計算
+  return total;
 }
 
 function parseJPDurationToMinutes(str){
@@ -11055,6 +11123,7 @@ function getEmployeeRateForBucket(employee, weekdayIdx, minuteOfDay, bucket, rec
 }
 
 function computeDayLaborCost(employee, record){
+  employee = getEffectiveEmployee(employee, record.date); // 給与適用日に応じた給与（過去の記録を含む）
   const buckets = buildMinuteBuckets(record);
   const weekdayIdx = record.date ? weekdayIndexFromISODate(record.date) : 0;
   let cost = 0;
@@ -11075,90 +11144,94 @@ function currentFiscalYear(){
   const y = now.getFullYear(), m = now.getMonth()+1;
   return m>=4 ? y : y-1;
 }
-let laborWageSummaryYear = currentFiscalYear();
-function updateLaborWageSummaryYear(value){
-  laborWageSummaryYear = parseInt(value,10) || currentFiscalYear();
-  renderLaborWageView();
+/* ===== 従業員情報：給与の改定履歴（給与適用日）と、期間別・月別・曜日別の集計 ===== */
+// 給与（月給・日給・時給・通勤手当・上限）は「給与適用日」から有効。給与適用日を新しい日付に変更すると、
+// 変更前の内容は wageHistory（過去の記録：適用開始日〜終了日）に残り、勤怠の日付に応じた給与で人件費を計算する。
+const LABOR_WAGE_SNAPSHOT_FIELDS = ["monthlySalary","dailyWage","baseWage","commuteAllowance","commuteAllowanceCap"];
+function isoDayBefore(iso){
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-// 指定した従業員・年度の勤怠記録を抽出する。
-function getEmployeeAttendanceRecordsInFiscalYear(emp, year){
-  const range = fiscalYearRange(year);
-  return attendanceRecords.filter(r=> r.employeeNumber===emp.employeeNumber && r.date>=range.start && r.date<=range.end);
+// 指定日に有効な給与（過去の記録を含む）を反映した従業員オブジェクトを返す（履歴が無ければ従業員そのもの）。
+function getEffectiveEmployee(emp, dateISO){
+  if(!emp || !dateISO || !(emp.wageHistory && emp.wageHistory.length)) return emp;
+  if(!emp.wageFrom || dateISO >= emp.wageFrom) return emp;
+  let hit = emp.wageHistory.find(h=> (!h.from || dateISO >= h.from) && (!h.to || dateISO <= h.to));
+  if(!hit) hit = emp.wageHistory.slice().sort((x,y)=>(x.from||"").localeCompare(y.from||""))[0];
+  const eff = Object.assign({}, emp);
+  LABOR_WAGE_SNAPSHOT_FIELDS.forEach(f=>{ if(hit[f] !== undefined) eff[f] = hit[f]; });
+  return eff;
 }
-// 個人の年間実績（出勤日数・労務時間・給与とその内訳）を集計する。
-// 内訳は「基本時給・時間外・休日・通勤手当・17:00~24:00」の5区分（ユーザー指定の分類）。
-// 17:00~24:00は、基本設定の時間帯別テーブルのうち開始が17:00の時間帯にかかる「通常」バケットの稼働分。
-function computeEmployeeAnnualSummary(emp, year){
-  const records = getEmployeeAttendanceRecordsInFiscalYear(emp, year);
-  let totalMin = 0, baseAmt = 0, overtimeAmt = 0, holidayAmt = 0, eveningAmt = 0;
-  let baseMin = 0, overtimeMin = 0, holidayMin = 0, eveningMin = 0;
-  const monthsSet = new Set();
-  records.forEach(rec=>{
-    const buckets = buildMinuteBuckets(rec);
-    const weekdayIdx = rec.date ? weekdayIndexFromISODate(rec.date) : 0;
-    if(rec.date) monthsSet.add(rec.date.slice(0,7));
-    totalMin += buckets.length;
-    buckets.forEach(b=>{
-      const rate = getEmployeeRateForBucket(emp, weekdayIdx, b.minute, b.bucket, rec);
-      const amt = rate/60;
-      if(b.bucket==="overtime"){ overtimeAmt += amt; overtimeMin += 1; }
-      else if(b.bucket==="holiday"){ holidayAmt += amt; holidayMin += 1; }
-      else {
-        const inEvening = (laborWageBaseSettings.timeSlots||[]).some(sl=> sl.start==="17:00" && ruleMatchesMinute(sl, b.minute));
-        if(inEvening){ eveningAmt += amt; eveningMin += 1; } else { baseAmt += amt; baseMin += 1; }
-      }
-    });
+// 1件の勤怠記録を、通常（17:00以降を除く）・時間外・休日・17:00以降に分けて、時間(分)と金額を返す。
+function classifyRecordMinutes(effEmp, rec){
+  const out = { baseMin:0, baseAmt:0, overtimeMin:0, overtimeAmt:0, holidayMin:0, holidayAmt:0, eveningMin:0, eveningAmt:0, total:0, totalAmt:0 };
+  const weekdayIdx = rec.date ? weekdayIndexFromISODate(rec.date) : 0;
+  const slots = laborWageBaseSettings.timeSlots || [];
+  buildMinuteBuckets(rec).forEach(b=>{
+    const amt = getEmployeeRateForBucket(effEmp, weekdayIdx, b.minute, b.bucket, rec) / 60;
+    out.total += 1; out.totalAmt += amt;
+    if(b.bucket==="overtime"){ out.overtimeAmt += amt; out.overtimeMin += 1; }
+    else if(b.bucket==="holiday"){ out.holidayAmt += amt; out.holidayMin += 1; }
+    else if(slots.some(sl=> sl.start==="17:00" && ruleMatchesMinute(sl, b.minute))){ out.eveningAmt += amt; out.eveningMin += 1; }
+    else { out.baseAmt += amt; out.baseMin += 1; }
   });
-  const commutePerMonth = emp.commuteAllowanceCap ? Math.min(emp.commuteAllowance||0, emp.commuteAllowanceCap) : (emp.commuteAllowance||0);
-  const commuteAmt = commutePerMonth * monthsSet.size;
-  const grandTotal = baseAmt + overtimeAmt + holidayAmt + eveningAmt + commuteAmt;
-  return {
-    totalDays: new Set(records.map(r=>r.date)).size,
-    totalMin,
-    baseAmt, overtimeAmt, holidayAmt, eveningAmt, commuteAmt, grandTotal,
-    baseMin, overtimeMin, holidayMin, eveningMin
-  };
+  return out;
 }
-// 個人の月別（年度内・4月始まり12ヶ月）給与集計を返す。添付Excel(Sheet8)の「月別」欄に対応。
-function computeEmployeeMonthlySummary(emp, year){
-  const records = getEmployeeAttendanceRecordsInFiscalYear(emp, year);
-  const months = [];
-  for(let i=0;i<12;i++){
-    const y = i<9 ? year : year+1;
-    const m = ((3+i)%12)+1;
-    months.push({ key: `${y}-${String(m).padStart(2,"0")}`, label: `${y}年${String(m).padStart(2,"0")}月`, amount: 0 });
-  }
-  const byKey = {};
-  months.forEach(mo=>{ byKey[mo.key] = mo; });
-  const monthsWithAttendance = new Set();
+function employeeCommuteForMonth(emp, monthRecords){
+  const lastDate = monthRecords.reduce((m,r)=> r.date>m ? r.date : m, "");
+  const e = getEffectiveEmployee(emp, lastDate);
+  return e.commuteAllowanceCap ? Math.min(e.commuteAllowance||0, e.commuteAllowanceCap) : (e.commuteAllowance||0);
+}
+function getEmployeeRecordsBetween(emp, fromISO, toISO){
+  return attendanceRecords.filter(r=> r.employeeNumber===emp.employeeNumber && r.date && r.date>=fromISO && r.date<=toISO && r.clockIn && r.clockOut);
+}
+// 期間（fromISO〜toISO）の出勤日数・労働時間・給与とその内訳。通勤手当は勤怠のある月ごとに1か月分を計上する。
+function computeEmployeePeriodSummary(emp, fromISO, toISO){
+  const records = getEmployeeRecordsBetween(emp, fromISO, toISO);
+  const sum = { totalDays:0, totalMin:0, baseMin:0, baseAmt:0, overtimeMin:0, overtimeAmt:0, holidayMin:0, holidayAmt:0, eveningMin:0, eveningAmt:0, commuteAmt:0, grandTotal:0 };
+  const byMonth = {};
   records.forEach(rec=>{
-    if(!rec.date) return;
-    const key = rec.date.slice(0,7);
-    const mo = byKey[key];
-    if(!mo) return;
-    monthsWithAttendance.add(key);
-    const buckets = buildMinuteBuckets(rec);
-    const weekdayIdx = weekdayIndexFromISODate(rec.date);
-    buckets.forEach(b=>{
-      const rate = getEmployeeRateForBucket(emp, weekdayIdx, b.minute, b.bucket, rec);
-      mo.amount += rate/60;
-    });
+    const c = classifyRecordMinutes(getEffectiveEmployee(emp, rec.date), rec);
+    ["baseMin","baseAmt","overtimeMin","overtimeAmt","holidayMin","holidayAmt","eveningMin","eveningAmt"].forEach(k=>{ sum[k] += c[k]; });
+    sum.totalMin += c.total;
+    (byMonth[rec.date.slice(0,7)] = byMonth[rec.date.slice(0,7)] || []).push(rec);
   });
-  const commutePerMonth = emp.commuteAllowanceCap ? Math.min(emp.commuteAllowance||0, emp.commuteAllowanceCap) : (emp.commuteAllowance||0);
-  months.forEach(mo=>{ if(monthsWithAttendance.has(mo.key)) mo.amount += commutePerMonth; });
+  sum.totalDays = new Set(records.map(r=>r.date)).size;
+  Object.values(byMonth).forEach(list=>{ sum.commuteAmt += employeeCommuteForMonth(emp, list); });
+  sum.grandTotal = sum.baseAmt + sum.overtimeAmt + sum.holidayAmt + sum.eveningAmt + sum.commuteAmt;
+  return sum;
+}
+// 月別記録：暦年（1〜12月）の月ごとに、出勤日数・所定労働日数（基本設定の年間出勤日数）・時間外労働(休日労働を含む)・17:00以降・金額を返す。
+function computeEmployeeMonthMetrics(emp, year){
+  const months = Array.from({length:12},(_,i)=>({ days:0, scheduled: getLaborAnnualWorkDays(year, i+1), overtimeMin:0, eveningMin:0, amount:0 }));
+  const byMonth = Array.from({length:12},()=>[]);
+  getEmployeeRecordsBetween(emp, `${year}-01-01`, `${year}-12-31`).forEach(rec=>{
+    const mi = parseInt(rec.date.slice(5,7),10) - 1;
+    const c = classifyRecordMinutes(getEffectiveEmployee(emp, rec.date), rec);
+    months[mi].overtimeMin += c.overtimeMin + c.holidayMin;
+    months[mi].eveningMin += c.eveningMin;
+    months[mi].amount += c.totalAmt;
+    byMonth[mi].push(rec);
+  });
+  months.forEach((mo,mi)=>{
+    mo.days = new Set(byMonth[mi].map(r=>r.date)).size;
+    if(byMonth[mi].length) mo.amount += employeeCommuteForMonth(emp, byMonth[mi]);
+  });
   return months;
 }
-// 個人の曜日ごとの出勤日数・平均労務時間を集計する。
-function computeEmployeeWeekdaySummary(emp, year){
-  const records = getEmployeeAttendanceRecordsInFiscalYear(emp, year);
-  const byWeekday = WEEKDAY_LABELS_JA.map(()=>({ days:0, totalMin:0 }));
-  records.forEach(rec=>{
-    if(!rec.date) return;
-    const idx = weekdayIndexFromISODate(rec.date);
-    byWeekday[idx].days++;
-    byWeekday[idx].totalMin += (rec.totalMin || buildMinuteBuckets(rec).length);
+// 曜日別記録：期間内の曜日（月〜日の順）ごとに、出勤日数・通常勤務・時間外労働(休日労働を含む)・17:00以降・金額を返す。
+const LABOR_WEEKDAY_ORDER = [1,2,3,4,5,6,0];
+function computeEmployeeWeekdayMetrics(emp, fromISO, toISO){
+  const byIdx = {};
+  LABOR_WEEKDAY_ORDER.forEach(w=>{ byIdx[w] = { dates:new Set(), baseMin:0, overtimeMin:0, eveningMin:0, amount:0 }; });
+  getEmployeeRecordsBetween(emp, fromISO, toISO).forEach(rec=>{
+    const w = byIdx[weekdayIndexFromISODate(rec.date)];
+    const c = classifyRecordMinutes(getEffectiveEmployee(emp, rec.date), rec);
+    w.dates.add(rec.date);
+    w.baseMin += c.baseMin; w.overtimeMin += c.overtimeMin + c.holidayMin; w.eveningMin += c.eveningMin; w.amount += c.totalAmt;
   });
-  return byWeekday.map((w,idx)=>({ label: WEEKDAY_LABELS_JA[idx], days: w.days, avgMin: w.days ? Math.round(w.totalMin / w.days) : 0 }));
+  return LABOR_WEEKDAY_ORDER.map(w=>({ label: WEEKDAY_LABELS_JA[w], days: byIdx[w].dates.size, baseMin: byIdx[w].baseMin, overtimeMin: byIdx[w].overtimeMin, eveningMin: byIdx[w].eveningMin, amount: byIdx[w].amount }));
 }
 // 分を「n時間m分」形式の文字列に変換する。
 function fmtMinAsHours(min){
@@ -11313,7 +11386,7 @@ function renderLaborHourlyView(){
   }
 
   const empData = dayRecords.map(r=>{
-    const emp = laborEmployees.find(e=>e.employeeNumber===r.employeeNumber);
+    const emp = getEffectiveEmployee(laborEmployees.find(e=>e.employeeNumber===r.employeeNumber), r.date);
     const weekdayIdx = weekdayIndexFromISODate(r.date);
     const buckets = buildMinuteBuckets(r);
     const minuteRate = {};
@@ -12031,111 +12104,310 @@ function renderLaborWageView(){
   renderLaborAnnualDaysSection();
   renderLaborSpecialSection();
   renderLaborWageSchemesSection();
+  renderLaborEmployeesView();
+}
+
+/* ===================== 従業員情報（給与情報・月別記録・曜日別記録） ===================== */
+let laborEmpSubView = "salary"; // "salary" | "monthly" | "weekday"
+let laborEmpPeriod = { from: "", to: "" }; // 対象期間（YYYY-MM）。給与情報・曜日別記録で共通
+let laborEmpYear = new Date().getFullYear(); // 月別記録の対象年（暦年）
+let laborEmpDept = ""; // 月別記録・曜日別記録の対象部門（空＝すべて）
+let laborEmpHistoryOpen = new Set(); // 過去の給与記録を展開している従業員のインデックス
+
+function switchLaborEmpView(view){
+  laborEmpSubView = view;
+  renderLaborEmployeesView();
+}
+function setLaborEmpPeriod(from, to){
+  if(from !== null) laborEmpPeriod.from = from;
+  if(to !== null) laborEmpPeriod.to = to;
+  renderLaborEmployeesView();
+}
+function setLaborEmpYear(v){ laborEmpYear = parseInt(v,10) || new Date().getFullYear(); renderLaborEmployeesView(); }
+function setLaborEmpDept(v){ laborEmpDept = v; renderLaborEmployeesView(); }
+function ensureLaborEmpPeriod(){
+  if(laborEmpPeriod.from && laborEmpPeriod.to) return;
+  const fy = currentFiscalYear(); // 既定は現在の年度（4月〜翌3月）
+  laborEmpPeriod.from = laborEmpPeriod.from || `${fy}-04`;
+  laborEmpPeriod.to = laborEmpPeriod.to || `${fy+1}-03`;
+}
+function laborEmpPeriodRange(){
+  ensureLaborEmpPeriod();
+  let from = laborEmpPeriod.from, to = laborEmpPeriod.to;
+  if(from > to){ const t = from; from = to; to = t; }
+  return { from: from + "-01", to: to + "-31", fromMonth: from, toMonth: to };
+}
+// No.（表示順）の昇順（未入力・数値でない従業員は末尾、元の順序を保つ）で、従業員のインデックスを返す。
+function laborEmployeeDisplayOrderIndexes(){
+  return laborEmployees.map((_,i)=>i).sort((a,b)=>{
+    const na = parseFloat(laborEmployees[a].displayNo), nb = parseFloat(laborEmployees[b].displayNo);
+    return (isNaN(na) ? Infinity : na) - (isNaN(nb) ? Infinity : nb);
+  });
+}
+function laborEmpFilteredIndexes(){
+  return laborEmployeeDisplayOrderIndexes().filter(i=> !laborEmpDept || (laborEmployees[i].department||"") === laborEmpDept);
+}
+function renderLaborEmployeesView(){
+  if(!document.getElementById("laborEmpSalaryPane")) return;
+  ensureLaborEmpPeriod();
+  const v = laborEmpSubView;
+  [["salary","Salary"],["monthly","Monthly"],["weekday","Weekday"]].forEach(([k,K])=>{
+    document.getElementById("laborEmpTab"+K).classList.toggle("active", k===v);
+    document.getElementById("laborEmp"+K+"Pane").style.display = k===v ? "" : "none";
+  });
+  ["laborEmpFromS","laborEmpFromW"].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = laborEmpPeriod.from; });
+  ["laborEmpToS","laborEmpToW"].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = laborEmpPeriod.to; });
+  // 部門の選択肢（従業員の部門1から作る）
+  const depts = Array.from(new Set(laborEmployees.map(e=>e.department||"").filter(Boolean))).sort();
+  if(laborEmpDept && !depts.includes(laborEmpDept)) laborEmpDept = "";
+  const deptOpts = `<option value="">すべて</option>` + depts.map(d=>`<option value="${escAttr(d)}" ${d===laborEmpDept?"selected":""}>${escAttr(d)}</option>`).join("");
+  ["laborEmpDeptM","laborEmpDeptW"].forEach(id=>{ const el = document.getElementById(id); if(el) el.innerHTML = deptOpts; });
+  const yearSel = document.getElementById("laborEmpYearM");
+  if(yearSel){
+    const years = new Set([laborEmpYear, new Date().getFullYear()]);
+    attendanceRecords.forEach(r=>{ if(r.date) years.add(parseInt(r.date.slice(0,4),10)); });
+    yearSel.innerHTML = Array.from(years).sort((a,b)=>a-b).map(y=>`<option value="${y}" ${y===laborEmpYear?"selected":""}>${y}年</option>`).join("");
+  }
+  if(v==="salary") renderLaborEmpSalaryPane();
+  else if(v==="monthly") renderLaborEmpMonthlyPane();
+  else renderLaborEmpWeekdayPane();
+}
+
+/* ---- 給与情報 ---- */
+function deriveEmployeeWageView(e){
+  const b = laborWageBaseSettings, ct = e.calcType;
+  const r = { monthly:null, daily:null, hourly:null, overtime:null, holiday:null, timeband:false };
+  if(ct==="monthly"){
+    r.monthly = e.monthlySalary||0;
+    r.daily = b.standardMonthlyDays>0 ? r.monthly / b.standardMonthlyDays : null;
+    r.hourly = computeBaseHourlyRate(e);
+  } else if(ct==="monthly_fixed"){
+    r.monthly = e.monthlySalary||0;
+  } else if(ct==="daily"){
+    r.daily = e.dailyWage||0;
+    r.hourly = computeBaseHourlyRate(e);
+  } else if(ct==="hourly_timeband"){
+    r.timeband = true;
+  } else {
+    r.hourly = e.baseWage||0;
+  }
+  if(r.hourly !== null){ r.overtime = r.hourly * (1 + (b.overtimeRate||0)); r.holiday = r.hourly * (1 + (b.holidayRate||0)); }
+  return r;
+}
+function esYen(v){ return v===null || v===undefined ? "–" : `${fmtNum(Math.round(v))}円`; }
+function esHours(min){ return min ? `${fmtNum(Math.round(min/60*10)/10)}時間` : "–"; }
+function esDays(n){ return n ? `${fmtNum(n)}日` : "–"; }
+
+// 給与適用日を新しい日付に変更したとき、変更前の給与を過去の記録に残す（それ以前の日付への変更は修正として扱う）。
+function updateLaborEmployeeWageFrom(i, value){
+  const emp = laborEmployees[i];
+  const old = emp.wageFrom || "";
+  if(!value){ emp.wageFrom = ""; saveLaborEmployees(); renderLaborWageView(); return; }
+  if(value > old){
+    const had = old ? `${old.replace(/-/g,"/")}～` : "これまで";
+    const w = deriveEmployeeWageView(emp);
+    const summary = w.monthly!==null ? `月給${fmtNum(emp.monthlySalary||0)}円` : (w.daily!==null && emp.calcType==="daily" ? `日給${fmtNum(emp.dailyWage||0)}円` : (w.hourly!==null ? `時給${fmtNum(Math.round(w.hourly))}円` : "現在の給与"));
+    if(!confirm(`給与適用日を ${value.replace(/-/g,"/")} に変更します。\n変更前の給与（${summary}・${had}${isoDayBefore(value).replace(/-/g,"/")}）は「過去の記録」に残り、以降の金額の入力は ${value.replace(/-/g,"/")} からの給与になります。\nよろしいですか？`)){
+      renderLaborWageView(); return;
+    }
+    const snap = { from: old, to: isoDayBefore(value) };
+    LABOR_WAGE_SNAPSHOT_FIELDS.forEach(f=>{ if(emp[f] !== undefined) snap[f] = emp[f]; });
+    emp.wageHistory = emp.wageHistory || [];
+    emp.wageHistory.push(snap);
+  }
+  emp.wageFrom = value;
+  saveLaborEmployees();
+  renderLaborWageView();
+}
+function removeLaborEmployeeWageHistory(i, hi){
+  if(!confirm("この過去の給与記録を削除しますか？（その期間の人件費は現在の給与で計算されます）")) return;
+  laborEmployees[i].wageHistory.splice(hi, 1);
+  saveLaborEmployees();
+  renderLaborWageView();
+}
+function toggleLaborEmpHistory(i){
+  if(laborEmpHistoryOpen.has(i)) laborEmpHistoryOpen.delete(i); else laborEmpHistoryOpen.add(i);
+  renderLaborWageView();
+}
+
+function renderEmpSalaryCard(i, emp, sum){
+  const hist = (emp.wageHistory || []).slice().sort((a,b)=>(b.from||"").localeCompare(a.from||"")); // 新しい順
+  const past = hist[0] || null;
+  const cur = deriveEmployeeWageView(emp);
+  const pv = past ? deriveEmployeeWageView(Object.assign({}, emp, past)) : null;
+  const ct = emp.calcType;
+  const inp = (field)=> `<input type="number" value="${escAttr(String(emp[field] ?? 0))}" onchange="updateLaborEmployeeField(${i},'${field}',this.value)">円`;
+  // 現在の給与：計算方法に応じた基本項目だけ入力欄、それ以外は自動計算
+  const fMonthly = (ct==="monthly"||ct==="monthly_fixed") ? inp("monthlySalary") : "–";
+  const fDaily = ct==="daily" ? inp("dailyWage") : esYen(cur.daily);
+  const fHourly = (ct==="hourly"||ct==="hourly_overtime_only") ? inp("baseWage") : (cur.timeband ? "時間帯別" : esYen(cur.hourly));
+  const pastCell = (key, field)=> {
+    if(!past) return "";
+    if(field) return esYen(past[field]);
+    return esYen(pv[key]);
+  };
+  const grand = sum.grandTotal;
+  const pct = (amt)=> grand>0 ? `${(Math.round(amt/grand*1000)/10).toFixed(1)}%` : "–";
+  const breakdown = [
+    ["通常時給", sum.baseMin, sum.baseAmt],
+    ["時間外労働", sum.overtimeMin, sum.overtimeAmt],
+    ["休日労働", sum.holidayMin, sum.holidayAmt],
+    ["17:00以降", sum.eveningMin, sum.eveningAmt],
+    ["通勤手当", null, sum.commuteAmt]
+  ];
+  const bd = (k)=> { const r = breakdown[k]; return `<td class="es-lbl">${r[0]}</td><td>${r[1]===null ? "–" : esHours(r[1])}</td><td>${esYen(r[2])}</td><td>${pct(r[2])}</td>`; };
+  const pastFrom = past && past.from ? `${past.from.replace(/-/g,"/")}～${past.to ? past.to.replace(/-/g,"/") : ""}` : (past ? `～${(past.to||"").replace(/-/g,"/")}` : "");
+  const histRows = hist.map((h,hi)=>{
+    const realIdx = (emp.wageHistory||[]).indexOf(h);
+    const hv = deriveEmployeeWageView(Object.assign({}, emp, h));
+    return `<tr><td>${h.from ? h.from.replace(/-/g,"/") : "～"}～${h.to ? h.to.replace(/-/g,"/") : ""}</td><td>${esYen(hv.monthly)}</td><td>${esYen(hv.daily)}</td><td>${hv.timeband ? "時間帯別" : esYen(hv.hourly)}</td><td>${esYen(h.commuteAllowance)}</td><td>${esYen(h.commuteAllowanceCap)}</td><td><button type="button" class="danger row-remove" onclick="removeLaborEmployeeWageHistory(${i},${realIdx})">×</button></td></tr>`;
+  }).join("");
+  return `
+  <div class="es-card">
+    <table class="es-sheet">
+      <tr>
+        <td class="es-lbl es-nohead">表示No.</td>
+        <td class="es-lbl">従業員番号</td><td>${escAttr(emp.employeeNumber||"")}</td>
+        <td class="es-lbl">氏名</td><td><input type="text" value="${escAttr(emp.name)}" onchange="updateLaborEmployeeTextField(${i},'name',this.value)" style="width:110px;text-align:center;"></td>
+        <td colspan="10" class="es-blank"></td>
+      </tr>
+      <tr>
+        <td rowspan="6" class="es-no"><input type="text" value="${escAttr(emp.displayNo ?? '')}" onchange="updateLaborEmployeeTextField(${i},'displayNo',this.value)"></td>
+        <td class="es-lbl">所属</td><td colspan="3"><input type="text" value="${escAttr(emp.department)}" onchange="updateLaborEmployeeTextField(${i},'department',this.value)" style="width:100%;box-sizing:border-box;text-align:center;"></td>
+        <td class="es-lbl">総勤務日数</td><td class="es-lbl">総労働時間</td><td class="es-lbl">給与合計</td>
+        <td colspan="7" class="es-blank"></td>
+      </tr>
+      <tr>
+        <td class="es-lbl">給与体系</td><td colspan="3">
+          <select onchange="updateLaborEmployeeScheme(${i}, this.value)" style="max-width:100%;">
+            ${laborWageSchemes.map(sc=>`<option value="${sc.id}" ${sc.id===emp.schemeId?"selected":""}>${escAttr(sc.name)}</option>`).join("")}
+          </select>
+          <button type="button" class="secondary es-mini" onclick="applyWageSchemeToEmployee(${i})" title="この従業員に割り当てられている給与体系の設定を適用します（現在の入力値は上書きされます）">体系を適用</button>
+        </td>
+        <td class="es-big">${fmtNum(sum.totalDays)}日</td><td class="es-big">${fmtMinAsHours(sum.totalMin)}</td><td class="es-big">${fmtNum(Math.round(grand))}円</td>
+        <td colspan="3" class="es-blank"></td>
+        <td class="es-lbl">内訳</td><td class="es-lbl">時間集計</td><td class="es-lbl">金額</td><td class="es-lbl">割合</td>
+      </tr>
+      <tr>
+        <td class="es-lbl">月給</td><td>${fMonthly}</td><td class="es-lbl">日給</td><td>${fDaily}</td>
+        <td class="es-lbl es-past">過去月給</td><td>${past ? esYen(pv.monthly) : ""}</td><td class="es-lbl es-past">過去日給</td><td>${past ? esYen(pv.daily) : ""}</td>
+        <td rowspan="4" class="es-more">${hist.length>0 ? `<button type="button" class="secondary es-mini" onclick="toggleLaborEmpHistory(${i})" title="過去の給与の記録をすべて表示">…</button>` : ""}</td>
+        <td class="es-gap"></td>${bd(0)}
+      </tr>
+      <tr>
+        <td class="es-lbl">時給</td><td>${fHourly}</td><td class="es-lbl">通勤手当</td><td>${inp("commuteAllowance")}</td>
+        <td class="es-lbl es-past">過去時給</td><td>${past ? (pv.timeband ? "時間帯別" : esYen(pv.hourly)) : ""}</td><td class="es-lbl es-past">過去通勤手当</td><td>${past ? esYen(past.commuteAllowance) : ""}</td>
+        <td class="es-gap"></td>${bd(1)}
+      </tr>
+      <tr>
+        <td class="es-lbl">時間外労働</td><td>${esYen(cur.overtime)}</td><td class="es-lbl">通勤手当上限</td><td>${inp("commuteAllowanceCap")}</td>
+        <td class="es-lbl es-past">過去時間外労働</td><td>${past ? esYen(pv.overtime) : ""}</td><td class="es-lbl es-past">過去通勤手当上限</td><td>${past ? esYen(past.commuteAllowanceCap) : ""}</td>
+        <td class="es-gap"></td>${bd(2)}
+      </tr>
+      <tr>
+        <td class="es-lbl">休日労働</td><td>${esYen(cur.holiday)}</td><td class="es-lbl">給与適用日</td>
+        <td><input type="date" value="${escAttr(emp.wageFrom||'')}" onchange="updateLaborEmployeeWageFrom(${i}, this.value)" title="この日付以降の給与として扱います。新しい日付に変更すると、変更前の給与は過去の記録に残ります"><span class="es-sub">～</span></td>
+        <td class="es-lbl es-past">過去休日労働</td><td>${past ? esYen(pv.holiday) : ""}</td><td class="es-lbl es-past">過去給与適用日</td><td class="es-sub">${pastFrom}</td>
+        <td class="es-gap"></td>${bd(3)}
+      </tr>
+      <tr>
+        <td colspan="10" class="es-blank"></td><td class="es-gap"></td>${bd(4)}
+      </tr>
+    </table>
+    ${laborEmpHistoryOpen.has(i) && hist.length ? `<div class="es-history"><div class="hint" style="margin:0 0 4px;">過去の給与の記録（新しい順）</div>
+      <table class="es-hist-table"><thead><tr><th>適用期間</th><th>月給</th><th>日給</th><th>時給</th><th>通勤手当</th><th>通勤手当上限</th><th></th></tr></thead><tbody>${histRows}</tbody></table></div>` : ""}
+  </div>`;
+}
+
+function renderLaborEmpSalaryPane(){
   const list = document.getElementById("laborWageList");
   document.getElementById("laborWageEmptyMsg").style.display = laborEmployees.length ? "none" : "block";
   if(!laborEmployees.length){ list.innerHTML = ""; return; }
-  const year = laborWageSummaryYear;
-  const yearOptions = [];
-  for(let y=year-2; y<=year+1; y++) yearOptions.push(y);
-  // No.（表示順）に入力した番号の昇順でカードを並べる。No.が未入力／数値でない従業員は末尾に回し、
-  // その中では元の並び順を保つ（安定ソート）。各カードのボタン等はlaborEmployees配列の実インデックス（i）を
-  // そのまま使い続けるため、並び替えても既存の更新処理（updateLaborEmployeeField等）には影響しない。
-  const laborEmployeeDisplayOrder = laborEmployees.map((_,i)=>i).sort((a,b)=>{
-    const na = parseFloat(laborEmployees[a].displayNo);
-    const nb = parseFloat(laborEmployees[b].displayNo);
-    const va = isNaN(na) ? Infinity : na;
-    const vb = isNaN(nb) ? Infinity : nb;
-    return va - vb;
-  });
-  const cardsHtml = laborEmployeeDisplayOrder.map(i=>{
+  const rng = laborEmpPeriodRange();
+  list.innerHTML = laborEmployeeDisplayOrderIndexes().map(i=>{
     const emp = laborEmployees[i];
-    const rows = getSchemeFieldRows(emp, emp.calcType, `updateLaborEmployeeField(${i},`);
-    const payRows = rows.concat([
-      ["通勤手当", `<input type="number" value="${emp.commuteAllowance ?? 0}" onchange="updateLaborEmployeeField(${i},'commuteAllowance',this.value)">円/月`],
-      ["通勤手当上限", `<input type="number" value="${emp.commuteAllowanceCap ?? 0}" onchange="updateLaborEmployeeField(${i},'commuteAllowanceCap',this.value)">円/月`]
-    ]);
-    const pairedRowsHtml = pairRowsForGrid(payRows).map(pair=>{
-      const [a,b] = pair;
-      const left = `<td class="xg-label">${a[0]}</td><td class="xg-value">${a[1]}</td>`;
-      const right = b ? `<td class="xg-label">${b[0]}</td><td class="xg-value">${b[1]}</td>` : `<td class="xg-label"></td><td class="xg-value"></td>`;
-      return `<tr>${left}${right}</tr>`;
-    }).join("");
-    const summary = computeEmployeeAnnualSummary(emp, year);
-    const weekday = computeEmployeeWeekdaySummary(emp, year);
-    const monthly = computeEmployeeMonthlySummary(emp, year);
-    return `
-      <div class="xg-card">
-        <table class="excel-grid xg-identity-table">
-          <thead>
-            <tr><th colspan="4" class="xg-schemehead">
-              <div style="display:flex;align-items:center;justify-content:center;gap:3px;">
-                <span>No.</span>
-                <input type="text" value="${escAttr(emp.displayNo ?? '')}" onchange="updateLaborEmployeeTextField(${i},'displayNo',this.value)" style="width:32px;text-align:center;">
-                <input type="text" value="${escAttr(emp.name)}" onchange="updateLaborEmployeeTextField(${i},'name',this.value)" style="width:96px;text-align:center;">
-                <span>（№${escAttr(emp.employeeNumber)}）</span>
-              </div>
-            </th></tr>
-            <tr><td class="xg-label">部門</td><td class="xg-value xg-text" colspan="3">
-              <input type="text" value="${escAttr(emp.department)}" onchange="updateLaborEmployeeTextField(${i},'department',this.value)" style="width:100%;box-sizing:border-box;">
-            </td></tr>
-            <tr><td class="xg-label">給与体系</td><td class="xg-value xg-text" colspan="3">
-              <select onchange="updateLaborEmployeeScheme(${i}, this.value)">
-                ${laborWageSchemes.map(sc=>`<option value="${sc.id}" ${sc.id===emp.schemeId?"selected":""}>${escAttr(sc.name)}</option>`).join("")}
-              </select>
-            </td></tr>
-          </thead>
-          <tbody>${pairedRowsHtml}</tbody>
-          <tfoot><tr><td colspan="4" class="xg-value" style="text-align:right;">
-            <button type="button" class="secondary" onclick="applyWageSchemeToEmployee(${i})" title="この従業員に割り当てられている給与体系の設定を適用します（現在の入力値は上書きされます）">給与体系を適用</button>
-          </td></tr></tfoot>
-        </table>
-        <div class="xg-block-col">
-          <table class="excel-grid">
-            <tbody>
-              <tr><td class="xg-label">勤務日数</td><td class="xg-value">${fmtNum(summary.totalDays)}日</td><td class="xg-label">労務時間</td><td class="xg-value">${fmtMinAsHours(summary.totalMin)}</td></tr>
-              <tr><td class="xg-label">給与合計</td><td class="xg-value" colspan="3" style="font-weight:700;">${fmtNum(Math.round(summary.grandTotal))}円</td></tr>
-            </tbody>
-          </table>
-          <table class="excel-grid xg-breakdown-table">
-            <thead><tr><th>内訳</th><th>時間集計</th><th>金額</th></tr></thead>
-            <tbody>
-              <tr><td class="xg-label">通常時給</td><td class="xg-value">${fmtMinAsHours(summary.baseMin)}</td><td class="xg-value">${fmtNum(Math.round(summary.baseAmt))}円</td></tr>
-              <tr><td class="xg-label">時間外労働</td><td class="xg-value">${fmtMinAsHours(summary.overtimeMin)}</td><td class="xg-value">${fmtNum(Math.round(summary.overtimeAmt))}円</td></tr>
-              <tr><td class="xg-label">休日労働</td><td class="xg-value">${fmtMinAsHours(summary.holidayMin)}</td><td class="xg-value">${fmtNum(Math.round(summary.holidayAmt))}円</td></tr>
-              <tr><td class="xg-label">17:00~24:00</td><td class="xg-value">${fmtMinAsHours(summary.eveningMin)}</td><td class="xg-value">${fmtNum(Math.round(summary.eveningAmt))}円</td></tr>
-              <tr><td class="xg-label">通勤手当</td><td class="xg-value">-</td><td class="xg-value">${fmtNum(Math.round(summary.commuteAmt))}円</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="xg-block-col">
-          <table class="excel-grid xg-monthly-table">
-            <thead><tr><th>月別</th>${monthly.slice(0,6).map(mo=>`<th>${mo.label}</th>`).join("")}</tr></thead>
-            <tbody><tr><td class="xg-label">金額</td>${monthly.slice(0,6).map(mo=>`<td>${fmtNum(Math.round(mo.amount))}円</td>`).join("")}</tr></tbody>
-          </table>
-          <table class="excel-grid xg-monthly-table">
-            <thead><tr><th>月別</th>${monthly.slice(6,12).map(mo=>`<th>${mo.label}</th>`).join("")}</tr></thead>
-            <tbody><tr><td class="xg-label">金額</td>${monthly.slice(6,12).map(mo=>`<td>${fmtNum(Math.round(mo.amount))}円</td>`).join("")}</tr></tbody>
-          </table>
-          <table class="excel-grid xg-weekday-table">
-            <thead><tr><th>曜日別</th>${weekday.map(w=>`<th>${w.label}</th>`).join("")}</tr></thead>
-            <tbody>
-              <tr><td class="xg-label">日数</td>${weekday.map(w=>`<td>${w.days}日</td>`).join("")}</tr>
-              <tr><td class="xg-label">平均</td>${weekday.map(w=>`<td>${w.days ? fmtMinAsHours(w.avgMin) : "-"}</td>`).join("")}</tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
+    return renderEmpSalaryCard(i, emp, computeEmployeePeriodSummary(emp, rng.from, rng.to));
   }).join("");
-  list.innerHTML = `
-    <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;font-size:11px;">
-      <label class="hint" style="margin:0;">対象年度</label>
-      <select onchange="updateLaborWageSummaryYear(this.value)">
-        ${yearOptions.map(y=>`<option value="${y}" ${y===year?"selected":""}>${y}年度</option>`).join("")}
-      </select>
-    </div>
-    <div class="xg-flex-wrap">${cardsHtml}</div>
-  `;
+}
+
+/* ---- 月別記録 / 曜日別記録 ---- */
+// 月別記録の表データ：{ title, header, groups:[{no, name, rows:[[label, ...values]]}] }。画面表示とExcel出力で共通に使う。
+function buildLaborEmpMonthlyData(){
+  const year = laborEmpYear;
+  const idxs = laborEmpFilteredIndexes();
+  const per = idxs.map(i=>({ emp: laborEmployees[i], m: computeEmployeeMonthMetrics(laborEmployees[i], year) }));
+  const toRows = (months, n)=>[
+    ["出勤日数", ...months.map(mo=>esDays(mo.days))],
+    ["所定労働日数", ...months.map(mo=>esDays(mo.scheduled ? mo.scheduled * n : 0))],
+    ["時間外労働", ...months.map(mo=>esHours(mo.overtimeMin))],
+    ["17:00以降", ...months.map(mo=>esHours(mo.eveningMin))],
+    ["金額", ...months.map(mo=>esYen(mo.amount || null))]
+  ];
+  const total = Array.from({length:12},(_,mi)=>({
+    days: per.reduce((t,p)=>t+p.m[mi].days,0), scheduled: getLaborAnnualWorkDays(year, mi+1),
+    overtimeMin: per.reduce((t,p)=>t+p.m[mi].overtimeMin,0), eveningMin: per.reduce((t,p)=>t+p.m[mi].eveningMin,0),
+    amount: per.reduce((t,p)=>t+p.m[mi].amount,0)
+  }));
+  return {
+    header: ["月別", ...Array.from({length:12},(_,i)=>`${i+1}月`)],
+    total: toRows(total, per.length),
+    groups: per.map(p=>({ no: p.emp.displayNo ?? "", name: p.emp.name, rows: toRows(p.m, 1) }))
+  };
+}
+function buildLaborEmpWeekdayData(){
+  const rng = laborEmpPeriodRange();
+  const idxs = laborEmpFilteredIndexes();
+  const per = idxs.map(i=>({ emp: laborEmployees[i], w: computeEmployeeWeekdayMetrics(laborEmployees[i], rng.from, rng.to) }));
+  const toRows = (w)=>[
+    ["出勤日数", ...w.map(x=>esDays(x.days))],
+    ["通常勤務", ...w.map(x=>esHours(x.baseMin))],
+    ["時間外労働", ...w.map(x=>esHours(x.overtimeMin))],
+    ["17:00以降", ...w.map(x=>esHours(x.eveningMin))],
+    ["金額", ...w.map(x=>esYen(x.amount || null))]
+  ];
+  const total = LABOR_WEEKDAY_ORDER.map((_,k)=>({
+    days: per.reduce((t,p)=>t+p.w[k].days,0), baseMin: per.reduce((t,p)=>t+p.w[k].baseMin,0),
+    overtimeMin: per.reduce((t,p)=>t+p.w[k].overtimeMin,0), eveningMin: per.reduce((t,p)=>t+p.w[k].eveningMin,0),
+    amount: per.reduce((t,p)=>t+p.w[k].amount,0)
+  }));
+  return {
+    header: ["曜日別", ...LABOR_WEEKDAY_ORDER.map(w=>WEEKDAY_LABELS_JA[w])],
+    total: toRows(total),
+    groups: per.map(p=>({ no: p.emp.displayNo ?? "", name: p.emp.name, rows: toRows(p.w) }))
+  };
+}
+function renderEmpRecordTables(data, noteHtml){
+  const thead = `<thead><tr><th class="es-lbl">${data.header[0]}</th>${data.header.slice(1).map(h=>`<th>${h}</th>`).join("")}</tr></thead>`;
+  const body = (rows)=> rows.map(r=>`<tr><td class="es-lbl">${r[0]}</td>${r.slice(1).map(v=>`<td>${v}</td>`).join("")}</tr>`).join("");
+  const totalBlock = `<div class="es-rec-block"><div class="es-rec-side">全体合計</div><table class="es-rec">${thead}<tbody>${body(data.total)}</tbody></table></div>`;
+  const groups = data.groups.length ? data.groups.map(g=>`
+    <div class="es-rec-block"><div class="es-rec-side es-rec-person"><span class="es-rec-no">${escAttr(String(g.no))}</span><span class="es-rec-name">${escAttr(g.name)}</span></div>
+      <table class="es-rec">${thead}<tbody>${body(g.rows)}</tbody></table></div>`).join("")
+    : `<div class="empty">対象の従業員がいません。</div>`;
+  return totalBlock + groups + (noteHtml ? `<div class="hint" style="margin-top:6px;">${noteHtml}</div>` : "");
+}
+function renderLaborEmpMonthlyPane(){
+  document.getElementById("laborEmpMonthlyContent").innerHTML = renderEmpRecordTables(buildLaborEmpMonthlyData(),
+    "出勤日数は勤怠記録のある日数、所定労働日数は「基本設定」の年間出勤日数です（全体合計は従業員数分の合計）。時間外労働には休日労働を含みます。金額は通勤手当を含みます。");
+}
+function renderLaborEmpWeekdayPane(){
+  document.getElementById("laborEmpWeekdayContent").innerHTML = renderEmpRecordTables(buildLaborEmpWeekdayData(),
+    "通常勤務は17:00以降を除く通常時間、時間外労働には休日労働を含みます。金額は通勤手当を含みません。");
+}
+// Excel出力（画面と同じ表を、全体合計→従業員ごとの順に出力する）
+function exportLaborEmpRecords(kind){
+  if(typeof XLSX === "undefined"){ alert("Excel出力のライブラリを読み込めませんでした。"); return; }
+  const data = kind==="monthly" ? buildLaborEmpMonthlyData() : buildLaborEmpWeekdayData();
+  const aoa = [["表示No.", "氏名", ...data.header]];
+  data.total.forEach((r,k)=> aoa.push(["", k===0 ? "全体合計" : "", ...r]));
+  data.groups.forEach(g=> g.rows.forEach((r,k)=> aoa.push([k===0 ? g.no : "", k===0 ? g.name : "", ...r])));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  const rng = laborEmpPeriodRange();
+  const sheetName = kind==="monthly" ? "月別記録" : "曜日別記録";
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  const suffix = kind==="monthly" ? `${laborEmpYear}年` : `${rng.fromMonth}〜${rng.toMonth}`;
+  XLSX.writeFile(wb, `従業員情報_${sheetName}_${suffix}.xlsx`);
 }
 
 function updateLaborEmployeeField(i, field, value){
