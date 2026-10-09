@@ -81,8 +81,8 @@
   #laborDailyView tr.lb-sat td:nth-child(2){color:#2c6fb0;font-weight:700;}
   #laborDailyView tr.lb-sun td:nth-child(2){color:#c0392b;font-weight:700;}
   #laborDailyView tr.lb-none td{color:#b5bcb8;}
-  #laborDailyView tr.lb-click{cursor:pointer;}
-  #laborDailyView tr.lb-click:hover td{background:#e3efe8;}
+  #laborDailyView tr.lb-click,#laborMonthlyView tr.lb-click{cursor:pointer;}
+  #laborDailyView tr.lb-click:hover td,#laborMonthlyView tr.lb-click:hover td{background:#e3efe8;}
   #page-labor tfoot.lb-total td{font-weight:700;background:#eaf3ec;border-top:2px solid var(--main);color:var(--main-dark);}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
@@ -862,7 +862,8 @@
 
       <!-- 日別人件費 -->
       <div id="laborDailyView" style="display:none;">
-        <div class="toolbar" style="margin-bottom:10px;">
+        <div class="toolbar" style="margin-bottom:10px;align-items:center;">
+          <button class="secondary" id="laborDailyBackBtn" style="display:none;" onclick="backToLaborMonthly()">← 月別人件費に戻る</button>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象月：
             <input type="month" id="laborDailyMonth" onchange="renderLaborDailyView()">
           </label>
@@ -11169,6 +11170,8 @@ function saveBusinessHoursSettings(){
 function switchLaborView(view){
   laborView = view;
   const backBtn = document.getElementById("laborHourlyBackBtn");
+  const dailyBackBtn = document.getElementById("laborDailyBackBtn");
+  if(dailyBackBtn) dailyBackBtn.style.display = "none";
   if(backBtn) backBtn.style.display = "none"; // タブ切替のたびに隠す（日別からの移動時だけ openLaborHourlyForDate が再表示する）
   ["hourly","daily","monthly","yearly","wage","welfare"].forEach(v=>{
     document.getElementById("laborView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
@@ -11502,6 +11505,20 @@ function openLaborHourlyForDate(dateISO){
   document.getElementById("laborHourlyBackBtn").style.display = ""; // 日別から来たときだけ「戻る」ボタンを出す
   window.scrollTo(0, 0);
 }
+// 月別人件費の行クリック：その月の日別人件費ビューへ移動する。
+function openLaborDailyForMonth(monthKey){
+  document.getElementById("laborDailyMonth").value = monthKey;
+  switchLaborView("daily");
+  document.getElementById("laborDailyBackBtn").style.display = ""; // 月別から来たときだけ「戻る」ボタンを出す
+  window.scrollTo(0, 0);
+}
+// 日別人件費から月別人件費へ戻る。表示していた月の年を月別ビューの対象年にする。
+function backToLaborMonthly(){
+  const monthKey = document.getElementById("laborDailyMonth").value;
+  if(monthKey) document.getElementById("laborMonthlyYear").value = monthKey.slice(0, 4);
+  switchLaborView("monthly");
+  window.scrollTo(0, 0);
+}
 // 時間別人件費から日別人件費へ戻る。表示していた日の月を日別ビューの対象月にする。
 function backToLaborDaily(){
   const dateISO = document.getElementById("laborHourlyDate").value;
@@ -11563,7 +11580,7 @@ function renderLaborMonthlyView(){
     });
     totalWage += fixedMonthly;
     sumCnt += monthRecords.length; sumMinAll += totalMin; sumWageAll += totalWage;
-    rows.push(`<tr><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(new Date(Number(year), m, 0).getDate()).padStart(2,"0"))))}</td></tr>`);
+    rows.push(`<tr class="lb-click" onclick="openLaborDailyForMonth('${monthKey}')" title="クリックでこの月の日別人件費を表示"><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(new Date(Number(year), m, 0).getDate()).padStart(2,"0"))))}</td></tr>`);
   }
   body.innerHTML = rows.join("");
   const mfoot = document.getElementById("laborMonthlyTableFoot");
