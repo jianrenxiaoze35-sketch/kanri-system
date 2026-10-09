@@ -841,6 +841,7 @@
           <div class="lb-tile"><div class="lb-label">出勤人数</div><div class="lb-value"><span id="laborHourlyHeadcount">0</span><small>人</small></div></div>
           <div class="lb-tile"><div class="lb-label">総労働時間合計</div><div class="lb-value" id="laborHourlySumHours">0</div></div>
           <div class="lb-tile alt"><div class="lb-label">時給合計(人件費)</div><div class="lb-value"><span id="laborHourlySumWage">0</span><small>円</small></div></div>
+          <div class="lb-tile"><div class="lb-label">人時生産性（粗利益÷総労働時間）</div><div class="lb-value"><span id="laborHourlyProductivity">–</span><small>円/時間</small></div></div>
           <div class="lb-tile alt"><div class="lb-label">1時間あたりの平均人数</div><div class="lb-value"><span id="laborHourlyAvgHeadcount">0.00</span><small>人</small></div></div>
         </div>
         <div class="card">
@@ -865,7 +866,7 @@
         <div class="card">
           <table>
             <thead>
-              <tr><th>日付</th><th>曜日</th><th>出勤人数</th><th>総労働時間</th><th>人件費合計</th></tr>
+              <tr><th>日付</th><th>曜日</th><th>出勤人数</th><th>総労働時間</th><th>人件費合計</th><th>人時生産性</th></tr>
             </thead>
             <tbody id="laborDailyTableBody"></tbody>
             <tfoot class="lb-total" id="laborDailyTableFoot"></tfoot>
@@ -885,7 +886,7 @@
         <div class="card">
           <table>
             <thead>
-              <tr><th>月</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th></tr>
+              <tr><th>月</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th><th>人時生産性</th></tr>
             </thead>
             <tbody id="laborMonthlyTableBody"></tbody>
             <tfoot class="lb-total" id="laborMonthlyTableFoot"></tfoot>
@@ -900,7 +901,7 @@
         <div class="card">
           <table>
             <thead>
-              <tr><th>年</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th></tr>
+              <tr><th>年</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th><th>人時生産性</th></tr>
             </thead>
             <tbody id="laborYearlyTableBody"></tbody>
           </table>
@@ -11283,6 +11284,7 @@ function renderLaborHourlyView(){
     document.getElementById("laborHourlySumHours").textContent = "0時間0分";
     document.getElementById("laborHourlySumWage").textContent = "0";
     document.getElementById("laborHourlyAvgHeadcount").textContent = "0.00";
+    document.getElementById("laborHourlyProductivity").textContent = "–";
     return;
   }
 
@@ -11334,7 +11336,28 @@ function renderLaborHourlyView(){
   const businessHoursSpan = (endMin-startMin)/60;
   const avgHeadcount = businessHoursSpan>0 ? (totalMinAll/60)/businessHoursSpan : 0;
   document.getElementById("laborHourlyAvgHeadcount").textContent = avgHeadcount.toFixed(2);
+  const prod = computeLaborProductivityForDates([dateISO]);
+  document.getElementById("laborHourlyProductivity").textContent = prod == null ? "–" : fmtNum(Math.round(prod));
 }
+
+/* 人時生産性（円／時間）＝粗利益（レストラン＋Shopの合計粗利益）÷ 総労働時間。
+   売上データと出勤記録の両方がある日だけを分子・分母に含める（片方しか無い日を含めると比率が歪むため）。
+   該当する日が1日も無い場合はnull（表示側で「–」）。 */
+function computeLaborProductivityForDates(dates){
+  const dayMap = buildSalesDaysDateMap();
+  let gross = 0, min = 0, any = false;
+  dates.forEach(dateStr=>{
+    const d = dayMap[dateStr];
+    if(!d) return;
+    const { totalMin, hasRecords } = getLaborDayTotals(dateStr);
+    if(!hasRecords || totalMin <= 0) return;
+    gross += computeSalesListRow(d).totalGross;
+    min += totalMin;
+    any = true;
+  });
+  return any ? gross / (min/60) : null;
+}
+function fmtLaborProductivity(v){ return v == null ? "–" : fmtNum(Math.round(v)) + "円/時間"; }
 
 /* 指定日の出勤記録から総労働時間(分)・人件費合計を計算する。人件費管理の日別ビューと、
    売上管理リストビューの「14.人件費」「人時生産性」の両方から共通で使う。
@@ -11486,11 +11509,11 @@ function renderLaborDailyView(){
     const wdIdx = weekdayIndexFromISODate(dateISO);
     const rowCls = (wdIdx===6?"lb-sat ":"") + (wdIdx===0?"lb-sun ":"") + (hasRecords?"":"lb-none");
     sumHead += headcount; sumMin += totalMin; sumWage += totalWage;
-    rows.push(`<tr class="${rowCls.trim()}"><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${hasRecords?headcount:"–"}</td><td>${hasRecords?fmtNum(Math.round(totalMin/60*100)/100)+"時間":"–"}</td><td>${hasRecords?fmtNum(Math.round(totalWage))+"円":"–"}</td></tr>`);
+    rows.push(`<tr class="${rowCls.trim()}"><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${hasRecords?headcount:"–"}</td><td>${hasRecords?fmtNum(Math.round(totalMin/60*100)/100)+"時間":"–"}</td><td>${hasRecords?fmtNum(Math.round(totalWage))+"円":"–"}</td><td>${fmtLaborProductivity(computeLaborProductivityForDates([dateISO]))}</td></tr>`);
   }
   body.innerHTML = rows.join("");
   const dfoot = document.getElementById("laborDailyTableFoot");
-  if(dfoot) dfoot.innerHTML = any ? `<tr><td>月合計</td><td></td><td>${sumHead}</td><td>${fmtNum(Math.round(sumMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWage))}円</td></tr>` : "";
+  if(dfoot) dfoot.innerHTML = any ? `<tr><td>月合計</td><td></td><td>${sumHead}</td><td>${fmtNum(Math.round(sumMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(Array.from({length:daysInMonth},(_,i)=>`${monthKey}-${String(i+1).padStart(2,"0")}`)))}</td></tr>` : "";
   document.getElementById("laborDailyEmptyMsg").style.display = any ? "none" : "block";
 }
 
@@ -11520,11 +11543,11 @@ function renderLaborMonthlyView(){
     });
     totalWage += fixedMonthly;
     sumCnt += monthRecords.length; sumMinAll += totalMin; sumWageAll += totalWage;
-    rows.push(`<tr><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td></tr>`);
+    rows.push(`<tr><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(new Date(Number(year), m, 0).getDate()).padStart(2,"0"))))}</td></tr>`);
   }
   body.innerHTML = rows.join("");
   const mfoot = document.getElementById("laborMonthlyTableFoot");
-  if(mfoot) mfoot.innerHTML = any ? `<tr><td>${escAttr(String(year))}年 合計</td><td>${sumCnt}</td><td>${fmtNum(Math.round(sumMinAll/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWageAll))}円</td></tr>` : "";
+  if(mfoot) mfoot.innerHTML = any ? `<tr><td>${escAttr(String(year))}年 合計</td><td>${sumCnt}</td><td>${fmtNum(Math.round(sumMinAll/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWageAll))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(year+"-01-01", year+"-12-31")))}</td></tr>` : "";
   document.getElementById("laborMonthlyEmptyMsg").style.display = any ? "none" : "block";
 }
 
@@ -11543,7 +11566,7 @@ function renderLaborYearlyView(){
       totalMin += tm; totalWage += cost;
     });
     totalWage += fixedYearly;
-    return `<tr><td>${year}年</td><td>${yearRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td></tr>`;
+    return `<tr><td>${year}年</td><td>${yearRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(year+"-01-01", year+"-12-31")))}</td></tr>`;
   }).join("");
 }
 
