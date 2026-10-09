@@ -39,6 +39,9 @@
   td.text{text-align:left;}
   tr:hover{background:#f7faf8;}
   td.calc{color:var(--accent);}
+  #laborHourlyTable td.lh-drag{cursor:grab;background:#e8f1fa;}
+  #laborHourlyTable td.lh-drag.lh-dragging{opacity:.4;}
+  #laborHourlyTable td.lh-over{outline:2px solid var(--main);outline-offset:-2px;background:#dff0e6;}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
   td.ing-blank{background:#fff3cd !important;}
@@ -804,6 +807,8 @@
           </div>
         </div>
         <div class="card">
+          <div class="hint" style="margin-bottom:6px;">色付きのマス（15分）をドラッグして、同じ従業員の別の時間帯へ移動できます。出勤・退勤・休憩の時刻が書き換わり、人件費の集計にも反映されます。</div>
+          <div id="laborHourlyMoveNote" class="hint" style="min-height:18px;margin-bottom:6px;"></div>
           <table id="laborHourlyTable" style="min-width:900px;">
             <thead id="laborHourlyTableHead"></thead>
             <tbody id="laborHourlyTableBody"></tbody>
@@ -11136,6 +11141,87 @@ function renderLaborActiveView(){
   document.getElementById("laborCountBadge").textContent = `従業員${laborEmployees.length}名・勤怠${attendanceRecords.length}件`;
 }
 
+/* ---- 時間別人件費マトリックス：15分マスのドラッグ移動 ----
+   マス（従業員×15分）の勤務分を、同じ従業員の別の時間帯へ移す。勤怠記録の出勤・退勤・休憩の時刻を書き換える。
+   移動後の勤務時間帯が「連続」または「休憩1回をはさんだ2区間」で表せない場合は移動しない（勤怠記録は休憩1回までのため）。 */
+let laborHourlyMoveUndo = null; // 直前の移動を戻すための元レコード { id, before }
+function moveLaborHourlySlot(recordId, fromSlot, toSlot){
+  const rec = attendanceRecords.find(r=>r.id===recordId);
+  if(!rec || fromSlot===toSlot) return;
+  if(fromSlot<0 || toSlot<0 || fromSlot+15>24*60 || toSlot+15>24*60){ alert("日をまたぐ時間帯への移動はできません。"); return; }
+  const work = new Set(buildMinuteBuckets(rec).map(b=>b.minute));
+  const moved = [];
+  for(let m=fromSlot; m<fromSlot+15; m++){ if(work.has(m)){ moved.push(m); work.delete(m); } }
+  if(!moved.length) return;
+  const delta = toSlot - fromSlot;
+  for(const m of moved){
+    if(work.has(m+delta)){ alert("移動先の時間帯には、すでに勤務が入っています。空いているマスへ移動してください。"); return; }
+    work.add(m+delta);
+  }
+  const sorted = Array.from(work).sort((a,b)=>a-b);
+  const runs = [];
+  sorted.forEach(m=>{
+    const last = runs[runs.length-1];
+    if(last && last.end===m) last.end = m+1; else runs.push({ start: m, end: m+1 });
+  });
+  if(runs.length>2){ alert("移動すると勤務が3つ以上に分かれてしまうため、移動できません（休憩は1回まで）。"); return; }
+  const before = JSON.parse(JSON.stringify(rec));
+  rec.clockIn = minToHHMM(runs[0].start);
+  rec.clockOut = minToHHMM(runs[runs.length-1].end);
+  rec.breakStart = runs.length===2 ? minToHHMM(runs[0].end) : "";
+  rec.breakEnd = runs.length===2 ? minToHHMM(runs[1].start) : "";
+  laborHourlyMoveUndo = { id: rec.id, before };
+  saveAttendanceRecords();
+  renderLaborActiveView();
+  const note = document.getElementById("laborHourlyMoveNote");
+  if(note){
+    note.innerHTML = `${escAttr(rec.employeeName)}さん：${minToHHMM(fromSlot)}の枠を${minToHHMM(toSlot)}へ移動しました（出勤 ${escAttr(before.clockIn)}→${escAttr(rec.clockIn)}／退勤 ${escAttr(before.clockOut)}→${escAttr(rec.clockOut)}${rec.breakStart ? `／休憩 ${escAttr(rec.breakStart)}〜${escAttr(rec.breakEnd)}` : ""}） <button class="secondary" style="padding:1px 8px;" onclick="undoLaborHourlyMove()">↩ 元に戻す</button>`;
+  }
+}
+function undoLaborHourlyMove(){
+  if(!laborHourlyMoveUndo) return;
+  const idx = attendanceRecords.findIndex(r=>r.id===laborHourlyMoveUndo.id);
+  if(idx>=0) attendanceRecords[idx] = laborHourlyMoveUndo.before;
+  laborHourlyMoveUndo = null;
+  saveAttendanceRecords();
+  renderLaborActiveView();
+  const note = document.getElementById("laborHourlyMoveNote");
+  if(note) note.textContent = "直前の移動を元に戻しました。";
+}
+registerBootStep(function(){
+  const tbody = document.getElementById("laborHourlyTableBody");
+  if(!tbody) return;
+  let drag = null; // { rid, slot }
+  const cellOf = e => e.target.closest && e.target.closest("td[data-rid]");
+  const clearOver = () => tbody.querySelectorAll("td.lh-over").forEach(td=>td.classList.remove("lh-over"));
+  tbody.addEventListener("dragstart", e=>{
+    const td = cellOf(e);
+    if(!td || !td.classList.contains("lh-drag")){ e.preventDefault(); return; }
+    drag = { rid: td.dataset.rid, slot: parseInt(td.dataset.slot,10) };
+    td.classList.add("lh-dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", "lh");
+  });
+  tbody.addEventListener("dragover", e=>{
+    const td = cellOf(e);
+    if(!drag || !td || td.dataset.rid!==drag.rid) return;
+    e.preventDefault();
+    clearOver(); td.classList.add("lh-over");
+  });
+  tbody.addEventListener("drop", e=>{
+    const td = cellOf(e);
+    clearOver();
+    if(!drag || !td || td.dataset.rid!==drag.rid) return;
+    e.preventDefault();
+    const d = drag; drag = null;
+    moveLaborHourlySlot(d.rid, d.slot, parseInt(td.dataset.slot,10));
+  });
+  tbody.addEventListener("dragend", ()=>{
+    drag = null; clearOver();
+    tbody.querySelectorAll("td.lh-dragging").forEach(td=>td.classList.remove("lh-dragging"));
+  });
+});
+
 function renderLaborHourlyView(){
   const dateInput = document.getElementById("laborHourlyDate");
   if(!dateInput.value){
@@ -11193,7 +11279,7 @@ function renderLaborHourlyView(){
         if(d.minuteRate[mm]!==undefined){ slotCost += d.minuteRate[mm]; worked = true; }
       }
       if(worked){ rowCount++; rowWage += slotCost; }
-      return `<td class="${worked?'calc':''}">${worked ? fmtNum(Math.round(slotCost)) : ""}</td>`;
+      return `<td class="${worked?'calc lh-drag':'lh-drop'}" data-rid="${escAttr(d.record.id)}" data-slot="${slotStartRaw}"${worked?' draggable="true"':''}>${worked ? fmtNum(Math.round(slotCost)) : ""}</td>`;
     }).join("");
     return `<tr><td class="text">${minToHHMM(slotStart)}</td>${cells}<td>${rowCount||""}</td><td>${rowCount?fmtNum(Math.round(rowWage)):""}</td></tr>`;
   }).join("");
