@@ -81,6 +81,8 @@
   #laborDailyView tr.lb-sat td:nth-child(2){color:#2c6fb0;font-weight:700;}
   #laborDailyView tr.lb-sun td:nth-child(2){color:#c0392b;font-weight:700;}
   #laborDailyView tr.lb-none td{color:#b5bcb8;}
+  #laborDailyView tr.lb-click{cursor:pointer;}
+  #laborDailyView tr.lb-click:hover td{background:#e3efe8;}
   #page-labor tfoot.lb-total td{font-weight:700;background:#eaf3ec;border-top:2px solid var(--main);color:var(--main-dark);}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
@@ -11490,6 +11492,12 @@ function getLaborWelfareBreakdownForPeriod(startDateISO, endDateISO){
   return result;
 }
 
+// 日別人件費の行クリック：その日付の時間別人件費ビューへ移動する。
+function openLaborHourlyForDate(dateISO){
+  document.getElementById("laborHourlyDate").value = dateISO;
+  switchLaborView("hourly");
+  window.scrollTo(0, 0);
+}
 function renderLaborDailyView(){
   const monthInput = document.getElementById("laborDailyMonth");
   if(!monthInput.value){
@@ -11510,7 +11518,7 @@ function renderLaborDailyView(){
     const wdIdx = weekdayIndexFromISODate(dateISO);
     const rowCls = (wdIdx===6?"lb-sat ":"") + (wdIdx===0?"lb-sun ":"") + (hasRecords?"":"lb-none");
     sumHead += headcount; sumMin += totalMin; sumWage += totalWage;
-    rows.push(`<tr class="${rowCls.trim()}"><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${hasRecords?headcount:"–"}</td><td>${hasRecords?fmtNum(Math.round(totalMin/60*100)/100)+"時間":"–"}</td><td>${hasRecords?fmtNum(Math.round(totalWage))+"円":"–"}</td><td>${fmtLaborProductivity(computeLaborProductivityForDates([dateISO]))}</td></tr>`);
+    rows.push(`<tr class="${(rowCls+" lb-click").trim()}" onclick="openLaborHourlyForDate('${dateISO}')" title="クリックでこの日の時間別人件費を表示"><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${hasRecords?headcount:"–"}</td><td>${hasRecords?fmtNum(Math.round(totalMin/60*100)/100)+"時間":"–"}</td><td>${hasRecords?fmtNum(Math.round(totalWage))+"円":"–"}</td><td>${fmtLaborProductivity(computeLaborProductivityForDates([dateISO]))}</td></tr>`);
   }
   body.innerHTML = rows.join("");
   const dfoot = document.getElementById("laborDailyTableFoot");
