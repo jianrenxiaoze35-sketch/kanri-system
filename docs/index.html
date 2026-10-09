@@ -84,6 +84,17 @@
   #laborDailyView tr.lb-click,#laborMonthlyView tr.lb-click{cursor:pointer;}
   #laborDailyView tr.lb-click:hover td,#laborMonthlyView tr.lb-click:hover td{background:#e3efe8;}
   #page-labor tfoot.lb-total td{font-weight:700;background:#eaf3ec;border-top:2px solid var(--main);color:var(--main-dark);}
+  .lb-sec{display:grid;grid-template-columns:120px 1fr;border:1px solid var(--border);border-radius:8px;background:var(--card);margin-bottom:10px;overflow:hidden;box-shadow:0 1px 3px rgba(35,79,56,.06);}
+  .lb-sec-title{background:#eef2f0;font-weight:700;color:var(--main-dark);padding:10px 12px;border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-align:center;}
+  .lb-sec-body{padding:10px 14px;overflow-x:auto;min-width:0;}
+  .lb-sec-body table{min-width:0;width:auto;}
+  .lb-sec-body table th,.lb-sec-body table td{padding:4px 8px;text-align:center;}
+  .lb-sec-body table td input[type=number]{width:60px;text-align:center;}
+  .lb-sec-body .lb-annual td input[type=number]{width:46px;padding:3px 2px;}
+  .lb-sec-body .lb-biz td{vertical-align:middle;}
+  .lb-sec-body .lb-biz input[type=time]{width:92px;padding:3px 4px;font-size:12px;}
+  .lb-sec-body .lb-biz td.closed{background:#f6f1f1;}
+  @media (max-width:700px){.lb-sec{grid-template-columns:1fr;}.lb-sec-title{border-right:none;border-bottom:1px solid var(--border);padding:6px 12px;}}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
   td.ing-blank{background:#fff3cd !important;}
@@ -820,7 +831,6 @@
         <div class="toolbar">
           <button class="secondary" onclick="document.getElementById('attendanceCsvInput').click()" title="1行=1レコードの通常形式・「アプリ用出力（日別）」形式（従業員×日付が列になった横型）のどちらのCSVも自動判別して取り込みます">勤怠CSV取込</button>
           <input type="file" id="attendanceCsvInput" accept=".csv" style="display:none" onchange="importAttendanceCSV(event)">
-          <button class="secondary" onclick="openBusinessHoursSettings()">営業時間設定</button>
         </div>
       </div>
       <div id="laborTabs">
@@ -828,7 +838,8 @@
         <button class="secondary" id="laborViewDailyBtn" onclick="switchLaborView('daily')">日別人件費</button>
         <button class="secondary" id="laborViewMonthlyBtn" onclick="switchLaborView('monthly')">月別人件費</button>
         <button class="secondary" id="laborViewYearlyBtn" onclick="switchLaborView('yearly')">年別人件費</button>
-        <button class="secondary" id="laborViewWageBtn" onclick="switchLaborView('wage')">時給設定</button>
+        <button class="secondary" id="laborViewWageBtn" onclick="switchLaborView('wage')">基本設定</button>
+        <button class="secondary" id="laborViewEmployeesBtn" onclick="switchLaborView('employees')">従業員情報</button>
         <button class="secondary" id="laborViewWelfareBtn" onclick="switchLaborView('welfare')">福利厚生</button>
       </div>
 
@@ -848,6 +859,7 @@
           <div class="lb-tile"><div class="lb-label">人時生産性（レストラン粗利益÷総労働時間）</div><div class="lb-value"><span id="laborHourlyProductivity">–</span><small>円/時間</small></div></div>
           <div class="lb-tile alt"><div class="lb-label">1時間あたりの平均人数</div><div class="lb-value"><span id="laborHourlyAvgHeadcount">0.00</span><small>人</small></div></div>
         </div>
+        <div class="hint" id="laborHourlyFixedNote" style="display:none;margin-bottom:8px;"></div>
         <div class="card">
           <div class="hint" style="margin-bottom:6px;">色付きのマス（15分）をドラッグして、同じ従業員の別の時間帯へ移動できます。出勤・退勤・休憩の時刻が書き換わり、人件費の集計にも反映されます。</div>
           <div id="laborHourlyMoveNote" class="hint" style="min-height:18px;margin-bottom:6px;"></div>
@@ -914,10 +926,17 @@
         </div>
       </div>
 
-      <!-- 時給設定 -->
+      <!-- 基本設定（旧・時給設定。従業員情報・給与体系は「従業員情報」ビューへ移動） -->
       <div id="laborWageView" style="display:none;">
-        <div class="hint" style="margin-bottom:2px;font-size:11px;">全社共通の所定労働時間・割増率を設定すると、時間外・休日手当が自動計算されます。給与体系は自由に追加・名前変更でき、従業員ごとに割り当てて利用します。</div>
-        <div class="card" id="laborWageBaseSettingsCard" style="margin-bottom:5px;padding:5px 7px;"></div>
+        <div class="hint" style="margin-bottom:8px;">全社共通の営業時間・所定労働時間・割増率・年間出勤日数などを設定します。給与体系と従業員ごとの設定は「従業員情報」タブで管理します。</div>
+        <div class="lb-sec"><div class="lb-sec-title">営業日／時間</div><div class="lb-sec-body" id="laborBizHoursCard"></div></div>
+        <div class="lb-sec"><div class="lb-sec-title">基本設定</div><div class="lb-sec-body" id="laborWageBaseSettingsCard"></div></div>
+        <div class="lb-sec"><div class="lb-sec-title">年間出勤日数</div><div class="lb-sec-body" id="laborAnnualDaysCard"></div></div>
+        <div class="lb-sec"><div class="lb-sec-title">特殊人件費</div><div class="lb-sec-body" id="laborSpecialCard"></div></div>
+      </div>
+
+      <!-- 従業員情報（給与体系＋従業員ごとの設定） -->
+      <div id="laborEmployeesView" style="display:none;">
         <div id="laborWageSchemesList" style="margin-bottom:5px;"></div>
         <div class="hint" style="margin-bottom:2px;font-size:11px;">個人ごとの設定です。従業員は勤怠CSVの取込内容から自動的に追加されるほか、「＋ 従業員を追加」から手動でも追加できます。年度の出勤日数・労務時間・給与内訳もここで確認できます。</div>
         <div style="display:flex;gap:4px;margin-bottom:4px;align-items:center;flex-wrap:wrap;">
@@ -1778,27 +1797,6 @@
 </div>
 
 <!-- Business Hours Settings Modal -->
-<div class="modal-overlay" id="businessHoursModalOverlay">
-  <div class="modal compact-modal" style="width:560px;">
-    <h3>営業時間設定</h3>
-    <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
-      <div class="form-field"><label>通常の営業開始時刻</label><input type="time" id="f_bh_start"></div>
-      <div class="form-field"><label>通常の営業終了時刻</label><input type="time" id="f_bh_end"></div>
-    </div>
-    <div class="hint" style="margin-bottom:8px;">特定の日だけ営業時間が異なる場合は、下記に個別に追加してください（例：イベント日、短縮営業日など）。</div>
-    <table class="bulk-table compact-table" id="businessHoursOverrideTable">
-      <colgroup><col style="width:34%"><col style="width:24%"><col style="width:24%"><col style="width:18%"></colgroup>
-      <thead><tr><th>日付</th><th>開始時刻</th><th>終了時刻</th><th></th></tr></thead>
-      <tbody id="businessHoursOverrideBody"></tbody>
-    </table>
-    <button class="secondary" style="margin-top:8px;width:100%;" onclick="addBusinessHoursOverride()">＋ 個別日を追加</button>
-    <div class="modal-footer">
-      <button class="secondary" onclick="closeBusinessHoursSettings()">キャンセル</button>
-      <button onclick="saveBusinessHoursSettings()">保存</button>
-    </div>
-  </div>
-</div>
-
 <!-- Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -10461,7 +10459,8 @@ const LABOR_CALC_TYPES = {
   daily:           { label: "日給制（時給換算・時間外/休日手当あり）" },
   hourly:          { label: "時給制（基本時給を指定・時間外/休日手当あり）" },
   hourly_timeband: { label: "時間帯別時給（基本設定の時間帯別テーブルを使用・時間外/休日手当あり）" },
-  monthly_fixed:   { label: "月給制（固定給・時間外/休日手当なし）" }
+  monthly_fixed:   { label: "月給制（固定給・時間外/休日手当なし）" },
+  hourly_overtime_only: { label: "時給制（所定労働時間を超えた残業代のみ支給）" }
 };
 // 給与体系ごとの給与区分（予算管理ページで部門×区分別に人件費を集計するために使う）。
 const LABOR_WAGE_CATEGORIES = ["社員", "アルバイト", "その他(協力隊無償分)"];
@@ -10499,6 +10498,9 @@ registerBootStep(function(){
   attendanceRecords = JSON.parse(appStore.getItem(LABOR_ATTENDANCE_KEY) || "[]");
   laborEmployees = JSON.parse(appStore.getItem(LABOR_EMPLOYEES_KEY) || "[]");
   laborSettings = JSON.parse(appStore.getItem(LABOR_SETTINGS_KEY) || "null") || { defaultStart: "11:00", defaultEnd: "23:00", overrides: {} };
+  ensureLaborWeekdayHours();
+  laborAnnualDays = JSON.parse(appStore.getItem(LABOR_ANNUAL_DAYS_KEY) || "null") || {};
+  ensureLaborAnnualDaysRows();
   laborWageBaseSettings = JSON.parse(appStore.getItem(LABOR_WAGE_BASE_KEY) || "null") || laborWageBaseSettings;
   laborWageSchemes = JSON.parse(appStore.getItem(LABOR_WAGE_SCHEMES_KEY) || "null") || [];
   repairLaborWageBaseSettings();
@@ -10522,7 +10524,6 @@ function repairLaborWageBaseSettings(){
   if(changed) saveLaborWageBaseSettings();
 }
 let laborView = "hourly";
-let businessHoursOverrideDraft = [];
 const WEEKDAY_LABELS_JA = ["日","月","火","水","木","金","土"];
 
 // 保存容量の上限に達した場合でも例外を投げず、直後の画面再描画などの処理が止まらないよう
@@ -10535,6 +10536,32 @@ function saveLaborWageSchemes(){ appStore.setItem(LABOR_WAGE_SCHEMES_KEY, JSON.s
 // （wageRulesが配列のため、単純なObject.assignだと個人ごとの編集が他の従業員や給与体系に影響してしまう）。
 function cloneWageConfig(cfg){ return JSON.parse(JSON.stringify(cfg)); }
 function saveLaborSettings(){ appStore.setItem(LABOR_SETTINGS_KEY, JSON.stringify(laborSettings)); }
+
+// 曜日別の営業時間。キーは曜日番号（0=日〜6=土）と "hol"（祝日）。start/endが空＝定休日。
+// 旧データ（全日共通の開始・終了時刻）しか無い場合は、その時刻を全曜日・祝日の初期値にする。
+function ensureLaborWeekdayHours(){
+  if(laborSettings.weekdayHours) return;
+  const start = laborSettings.defaultStart || "11:00", end = laborSettings.defaultEnd || "23:00";
+  laborSettings.weekdayHours = {};
+  [0,1,2,3,4,5,6,"hol"].forEach(k=>{ laborSettings.weekdayHours[k] = { start, end }; });
+}
+// 年間出勤日数：年→[1月〜12月の出勤（営業）日数]。空欄は未設定。月給÷営業日数の日割り計算に使う。
+const LABOR_ANNUAL_DAYS_KEY = "labor_annual_work_days_v1";
+let laborAnnualDays = {};
+function saveLaborAnnualDays(){ appStore.setItem(LABOR_ANNUAL_DAYS_KEY, JSON.stringify(laborAnnualDays)); }
+function ensureLaborAnnualDaysRows(){
+  if(Object.keys(laborAnnualDays).length) return;
+  const y = new Date().getFullYear();
+  [y, y+1].forEach(yr=>{ laborAnnualDays[yr] = new Array(12).fill(""); });
+}
+function getLaborAnnualWorkDays(year, month){
+  const arr = laborAnnualDays[String(year)];
+  const v = arr ? parseFloat(arr[month-1]) : NaN;
+  return v > 0 ? v : 0;
+}
+function isLaborHoliday(dateISO){
+  return salesDays.some(d=>d.date===dateISO && d.holiday);
+}
 
 function blankWageForCalcType(calcType){
   if(calcType==="monthly" || calcType==="monthly_fixed") return { monthlySalary: 0 };
@@ -10585,6 +10612,12 @@ function ensureExecutiveSchemeExists(){
 }
 // 業務委託（時給の概念が無く、月額固定で支払う契約）向けの給与体系が無ければ追加する。
 // 役員と同じく月給制(固定)＝勤怠に関わらず毎月固定額を人件費に計上する扱いとする。
+// 地域おこし協力隊（所定労働時間を超えた残業代のみ支給）向けの給与体系が無ければ追加する。
+function ensureCooperatorSchemeExists(){
+  if(laborWageSchemes.some(s=>s.name==="地域おこし協力隊")) return;
+  laborWageSchemes.push({ id:"地域おこし協力隊", name:"地域おこし協力隊", calcType:"hourly_overtime_only", baseWage:0, wageCategory:"その他(協力隊無償分)" });
+  saveLaborWageSchemes();
+}
 function ensureContractorSchemeExists(){
   if(laborWageSchemes.some(s=>s.name==="業務委託")) return;
   laborWageSchemes.push({ id:"業務委託", name:"業務委託", calcType:"monthly_fixed", monthlySalary:0, wageCategory:"その他(協力隊無償分)" });
@@ -10609,6 +10642,7 @@ registerBootStep(function(){
   ensureLaborWageSchemesSeeded();
   ensureExecutiveSchemeExists();
   ensureContractorSchemeExists();
+  ensureCooperatorSchemeExists();
   migrateLaborEmployeesToSchemes();
 });
 // 既存の給与体系（wageCategory未設定のもの）に、名前からのキーワード判定で給与区分の初期値を補う移行。
@@ -10637,6 +10671,20 @@ function sumMonthlyFixedSalaries(){
   return laborEmployees
     .filter(e=>e.calcType==="monthly_fixed")
     .reduce((s,e)=> s + (e.monthlySalary||0), 0);
+}
+// 月給制(固定)の日割り人件費＝月給合計 ÷ その月の「年間出勤日数」（基本設定）。勤怠記録のある日（営業した日）に計上する。
+// その月の出勤日数が未設定の場合は日割りせず0を返す（月別・年別では従来どおり月額をまとめて計上する）。
+function getLaborFixedDailyCost(dateISO){
+  const days = getLaborAnnualWorkDays(parseInt(dateISO.slice(0,4),10), parseInt(dateISO.slice(5,7),10));
+  return days > 0 ? sumMonthlyFixedSalaries() / days : 0;
+}
+// 指定した年月の、月給制(固定)の人件費。出勤日数が設定済みなら「日割り×勤怠記録のある日数」、未設定なら月額をそのまま計上する。
+function getLaborFixedCostForMonth(year, month){
+  const days = getLaborAnnualWorkDays(year, month);
+  if(!days) return sumMonthlyFixedSalaries();
+  const monthKey = `${year}-${String(month).padStart(2,"0")}`;
+  const workedDates = new Set(attendanceRecords.filter(r=>r.date && r.date.slice(0,7)===monthKey && r.clockIn && r.clockOut).map(r=>r.date));
+  return sumMonthlyFixedSalaries() / days * workedDates.size;
 }
 
 function parseJPDurationToMinutes(str){
@@ -10998,6 +11046,9 @@ function getEmployeeRateForBucket(employee, weekdayIdx, minuteOfDay, bucket, rec
   const base = computeBaseHourlyRate(employee, weekdayIdx, minuteOfDay);
   // 月給制(固定・管理職など)は時間外・休日の割増を付けない（残業代が発生しない給与体系）。
   if(employee.calcType === "monthly_fixed") return base;
+  // 地域おこし協力隊など：所定労働時間を超えた残業代のみを支給し、通常の労務時間分は計上しない
+  // （通常分の金額は派遣元の企業が支払うため）。
+  if(employee.calcType === "hourly_overtime_only" && bucket!=="overtime") return 0;
   if(bucket==="overtime") return base * (1 + (laborWageBaseSettings.overtimeRate||0));
   if(bucket==="holiday") return base * (1 + (laborWageBaseSettings.holidayRate||0));
   return base;
@@ -11116,55 +11167,12 @@ function fmtMinAsHours(min){
   return rem ? `${h}時間${rem}分` : `${h}時間`;
 }
 
+// 指定日の営業時間（曜日別設定。祝日は「祝」の設定を優先）。定休日（時間が空欄）の場合はnullを返す。
 function getBusinessHoursForDate(dateISO){
-  const ov = laborSettings.overrides && laborSettings.overrides[dateISO];
-  if(ov) return { start: ov.start, end: ov.end };
-  return { start: laborSettings.defaultStart || "11:00", end: laborSettings.defaultEnd || "23:00" };
-}
-
-function openBusinessHoursSettings(){
-  document.getElementById("f_bh_start").value = laborSettings.defaultStart || "11:00";
-  document.getElementById("f_bh_end").value = laborSettings.defaultEnd || "23:00";
-  businessHoursOverrideDraft = Object.keys(laborSettings.overrides||{}).sort().map(date=>({ date, start: laborSettings.overrides[date].start, end: laborSettings.overrides[date].end }));
-  renderBusinessHoursOverrideTable();
-  document.getElementById("businessHoursModalOverlay").classList.add("show");
-}
-function closeBusinessHoursSettings(){
-  document.getElementById("businessHoursModalOverlay").classList.remove("show");
-}
-function addBusinessHoursOverride(){
-  businessHoursOverrideDraft.push({ date:"", start:"11:00", end:"23:00" });
-  renderBusinessHoursOverrideTable();
-}
-function removeBusinessHoursOverride(i){
-  businessHoursOverrideDraft.splice(i,1);
-  renderBusinessHoursOverrideTable();
-}
-function updateBusinessHoursOverride(i, field, value){
-  businessHoursOverrideDraft[i][field] = value;
-}
-function renderBusinessHoursOverrideTable(){
-  const body = document.getElementById("businessHoursOverrideBody");
-  body.innerHTML = businessHoursOverrideDraft.map((o,i)=>`
-    <tr>
-      <td><input type="date" value="${escAttr(o.date)}" oninput="updateBusinessHoursOverride(${i},'date',this.value)"></td>
-      <td><input type="time" value="${escAttr(o.start)}" oninput="updateBusinessHoursOverride(${i},'start',this.value)"></td>
-      <td><input type="time" value="${escAttr(o.end)}" oninput="updateBusinessHoursOverride(${i},'end',this.value)"></td>
-      <td class="actions-col"><button class="danger row-remove" onclick="removeBusinessHoursOverride(${i})">×</button></td>
-    </tr>
-  `).join("");
-}
-function saveBusinessHoursSettings(){
-  laborSettings.defaultStart = document.getElementById("f_bh_start").value || "11:00";
-  laborSettings.defaultEnd = document.getElementById("f_bh_end").value || "23:00";
-  const overrides = {};
-  businessHoursOverrideDraft.forEach(o=>{
-    if(o.date) overrides[o.date] = { start: o.start, end: o.end };
-  });
-  laborSettings.overrides = overrides;
-  saveLaborSettings();
-  closeBusinessHoursSettings();
-  renderLaborActiveView();
+  const wh = laborSettings.weekdayHours || {};
+  const key = isLaborHoliday(dateISO) ? "hol" : weekdayIndexFromISODate(dateISO);
+  const h = wh[key];
+  return (h && h.start && h.end) ? { start: h.start, end: h.end } : null;
 }
 
 function switchLaborView(view){
@@ -11173,7 +11181,7 @@ function switchLaborView(view){
   const dailyBackBtn = document.getElementById("laborDailyBackBtn");
   if(dailyBackBtn) dailyBackBtn.style.display = "none";
   if(backBtn) backBtn.style.display = "none"; // タブ切替のたびに隠す（日別からの移動時だけ openLaborHourlyForDate が再表示する）
-  ["hourly","daily","monthly","yearly","wage","welfare"].forEach(v=>{
+  ["hourly","daily","monthly","yearly","wage","employees","welfare"].forEach(v=>{
     document.getElementById("laborView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
     document.getElementById("labor"+v.charAt(0).toUpperCase()+v.slice(1)+"View").style.display = (v===view) ? "" : "none";
   });
@@ -11185,7 +11193,7 @@ function renderLaborActiveView(){
   else if(laborView==="daily") renderLaborDailyView();
   else if(laborView==="monthly") renderLaborMonthlyView();
   else if(laborView==="yearly") renderLaborYearlyView();
-  else if(laborView==="wage") renderLaborWageView();
+  else if(laborView==="wage" || laborView==="employees") renderLaborWageView();
   else if(laborView==="welfare") renderLaborWelfareView();
   document.getElementById("laborCountBadge").textContent = `従業員${laborEmployees.length}名・勤怠${attendanceRecords.length}件`;
 }
@@ -11278,10 +11286,16 @@ function renderLaborHourlyView(){
     dateInput.value = latest || todayStr();
   }
   const dateISO = dateInput.value;
-  const hours = getBusinessHoursForDate(dateISO);
-  document.getElementById("laborHourlyBusinessHoursNote").textContent = `営業時間：${hours.start}〜${hours.end}`;
-
   const dayRecords = attendanceRecords.filter(r=>r.date===dateISO && r.clockIn && r.clockOut);
+  // 営業時間は曜日別（祝日は「祝」）の基本設定から取得する。定休日（空欄）の日は、勤怠の出退勤時刻の範囲で表示する。
+  const bizHours = getBusinessHoursForDate(dateISO);
+  const hours = bizHours || {
+    start: minToHHMM(Math.min(...dayRecords.map(r=>hhmmToMin(r.clockIn)).filter(v=>v!==null), 24*60)),
+    end: minToHHMM(Math.min(Math.max(...dayRecords.map(r=>hhmmToMin(r.clockOut)).filter(v=>v!==null), 0), 24*60-1))
+  };
+  document.getElementById("laborHourlyBusinessHoursNote").textContent = bizHours
+    ? `営業時間：${hours.start}〜${hours.end}`
+    : (dayRecords.length ? "定休日（営業時間の設定なし）：勤怠の出退勤時刻の範囲で表示しています" : "定休日（営業時間の設定なし）");
   const head = document.getElementById("laborHourlyTableHead");
   const body = document.getElementById("laborHourlyTableBody");
   const foot = document.getElementById("laborHourlyTableFoot");
@@ -11294,6 +11308,7 @@ function renderLaborHourlyView(){
     document.getElementById("laborHourlySumWage").textContent = "0";
     document.getElementById("laborHourlyAvgHeadcount").textContent = "0.00";
     document.getElementById("laborHourlyProductivity").textContent = "–";
+    document.getElementById("laborHourlyFixedNote").style.display = "none";
     return;
   }
 
@@ -11311,9 +11326,14 @@ function renderLaborHourlyView(){
     return { record: r, employee: emp, minuteRate, totalMin: buckets.length, wage: empWage };
   }).sort((a,b)=> (a.record.clockIn||"").localeCompare(b.record.clockIn||""));
 
-  const startMin = hhmmToMin(hours.start) ?? 0;
+  let startMin = hhmmToMin(hours.start) ?? 0;
   let endMin = hhmmToMin(hours.end) ?? 0;
   if(endMin <= startMin) endMin += 24*60;
+  // 営業時間外に出退勤している人がいても、その時間帯の行が欠けないよう表示範囲を勤怠に合わせて広げる。
+  const minIn = Math.min(...dayRecords.map(r=>hhmmToMin(r.clockIn)).filter(v=>v!==null));
+  const maxOut = Math.max(...dayRecords.map(r=>hhmmToMin(r.clockOut)).filter(v=>v!==null));
+  if(isFinite(minIn)) startMin = Math.min(startMin, Math.floor(minIn/15)*15);
+  if(isFinite(maxOut)) endMin = Math.max(endMin, Math.ceil(maxOut/15)*15);
   const slots = [];
   for(let t=startMin; t<endMin; t+=15) slots.push(t);
 
@@ -11347,6 +11367,10 @@ function renderLaborHourlyView(){
   document.getElementById("laborHourlyAvgHeadcount").textContent = avgHeadcount.toFixed(2);
   const prod = computeLaborProductivityForDates([dateISO]);
   document.getElementById("laborHourlyProductivity").textContent = prod == null ? "–" : fmtNum(Math.round(prod));
+  const fixedNote = document.getElementById("laborHourlyFixedNote");
+  const fx = getLaborDayTotals(dateISO).fixedCost;
+  fixedNote.style.display = fx > 0 ? "" : "none";
+  if(fx > 0) fixedNote.textContent = `※ 役員・業務委託の日割り人件費 ${fmtNum(Math.round(fx))}円は、この表（勤怠のある従業員のみ）には含まれていません。日別人件費の合計には含まれます。`;
 }
 
 /* 人時生産性（円／時間）＝レストランの粗利益 ÷ 総労働時間（売上管理リストの「人時生産性」と同じ定義）。
@@ -11379,7 +11403,11 @@ function getLaborDayTotals(dateISO){
     const { totalMin: tm, cost } = computeDayLaborCost(emp, r);
     totalMin += tm; totalWage += cost;
   });
-  return { totalMin, totalWage, headcount: dayRecords.length, hasRecords: dayRecords.length > 0 };
+  const hasRecords = dayRecords.length > 0;
+  // 役員・業務委託など月給制(固定)の日割り人件費（営業日＝勤怠記録のある日に計上）
+  const fixedCost = hasRecords ? getLaborFixedDailyCost(dateISO) : 0;
+  totalWage += fixedCost;
+  return { totalMin, totalWage, headcount: dayRecords.length, hasRecords, fixedCost };
 }
 
 // 指定期間(startDateISO〜endDateISO、両端含む)の給与(賃金)を、従業員のdepartment(部門)×
@@ -11565,8 +11593,7 @@ function renderLaborMonthlyView(){
   let any = false;
   const rows = [];
   // 役員・業務委託など月給制(固定)の従業員は勤怠記録が無いため、毎月固定でこの金額を合計に上乗せする。
-  const fixedMonthly = sumMonthlyFixedSalaries();
-  if(fixedMonthly > 0) any = true;
+  if(sumMonthlyFixedSalaries() > 0) any = true;
   let sumCnt = 0, sumMinAll = 0, sumWageAll = 0;
   for(let m=1;m<=12;m++){
     const monthKey = `${year}-${String(m).padStart(2,"0")}`;
@@ -11578,7 +11605,7 @@ function renderLaborMonthlyView(){
       const { totalMin: tm, cost } = computeDayLaborCost(emp, r);
       totalMin += tm; totalWage += cost;
     });
-    totalWage += fixedMonthly;
+    totalWage += getLaborFixedCostForMonth(Number(year), m);
     sumCnt += monthRecords.length; sumMinAll += totalMin; sumWageAll += totalWage;
     rows.push(`<tr class="lb-click" onclick="openLaborDailyForMonth('${monthKey}')" title="クリックでこの月の日別人件費を表示"><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(new Date(Number(year), m, 0).getDate()).padStart(2,"0"))))}</td></tr>`);
   }
@@ -11593,7 +11620,6 @@ function renderLaborYearlyView(){
   const body = document.getElementById("laborYearlyTableBody");
   document.getElementById("laborYearlyEmptyMsg").style.display = years.length ? "none" : "block";
   // 役員・業務委託など月給制(固定)の従業員の年間合計（月額×12ヶ月分）を各年の人件費合計に上乗せする。
-  const fixedYearly = sumMonthlyFixedSalaries() * 12;
   body.innerHTML = years.map(year=>{
     const yearRecords = attendanceRecords.filter(r=>r.date && r.date.slice(0,4)===year && r.clockIn && r.clockOut);
     let totalMin=0, totalWage=0;
@@ -11602,7 +11628,7 @@ function renderLaborYearlyView(){
       const { totalMin: tm, cost } = computeDayLaborCost(emp, r);
       totalMin += tm; totalWage += cost;
     });
-    totalWage += fixedYearly;
+    for(let m=1;m<=12;m++) totalWage += getLaborFixedCostForMonth(Number(year), m);
     return `<tr><td>${year}年</td><td>${yearRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(year+"-01-01", year+"-12-31")))}</td></tr>`;
   }).join("");
 }
@@ -11625,6 +11651,101 @@ function renderWeekdayCheckboxes(empIdx, ruleIdx, selected){
 
 // 全社共通の基本設定（所定労働時間・割増率・時間帯別テーブル）を、添付Excel(Sheet8)の
 // セル配置（C4:L6）そのままの3列×3行グリッドで描画する。
+/* ---- 基本設定：営業日／時間（曜日別の営業時間。祝日は「祝」欄。時間が空欄＝定休日） ---- */
+const LABOR_BIZ_COLUMNS = [[1,"月"],[2,"火"],[3,"水"],[4,"木"],[5,"金"],[6,"土"],[0,"日"],["hol","祝"]];
+function renderLaborBizHoursSection(){
+  const wrap = document.getElementById("laborBizHoursCard");
+  if(!wrap) return;
+  const wh = laborSettings.weekdayHours || {};
+  const head = LABOR_BIZ_COLUMNS.map(([k,l])=>`<th>${l}</th>`).join("");
+  const cells = LABOR_BIZ_COLUMNS.map(([k,l])=>{
+    const h = wh[k] || { start:"", end:"" };
+    const closed = !(h.start && h.end);
+    return `<td class="${closed?'closed':''}">
+      <input type="time" value="${escAttr(h.start||'')}" onchange="updateLaborWeekdayHours('${k}','start',this.value)"><br>
+      <span style="font-size:11px;color:var(--muted);">〜</span><br>
+      <input type="time" value="${escAttr(h.end||'')}" onchange="updateLaborWeekdayHours('${k}','end',this.value)">
+      ${closed ? '<div style="font-size:11px;color:var(--danger);">定休日</div>' : ''}
+    </td>`;
+  }).join("");
+  wrap.innerHTML = `<table class="lb-biz"><thead><tr>${head}</tr></thead><tbody><tr>${cells}</tr></tbody></table>
+    <div class="hint" style="margin-top:6px;">時間別人件費の表示範囲に使います。開始・終了を空欄にすると定休日として扱います。祝日は、売上管理リストで「祝日」にチェックした日に「祝」の時間を適用します。</div>`;
+}
+function updateLaborWeekdayHours(key, field, value){
+  const k = key==="hol" ? "hol" : parseInt(key,10);
+  laborSettings.weekdayHours = laborSettings.weekdayHours || {};
+  if(!laborSettings.weekdayHours[k]) laborSettings.weekdayHours[k] = { start:"", end:"" };
+  laborSettings.weekdayHours[k][field] = value;
+  saveLaborSettings();
+  renderLaborBizHoursSection();
+}
+
+/* ---- 基本設定：年間出勤日数（年×月。月給÷営業日数の日割り計算に使う） ---- */
+function renderLaborAnnualDaysSection(){
+  const wrap = document.getElementById("laborAnnualDaysCard");
+  if(!wrap) return;
+  const years = Object.keys(laborAnnualDays).sort();
+  const head = `<th>年</th>${Array.from({length:12},(_,i)=>`<th>${i+1}月</th>`).join("")}<th>年間</th><th></th>`;
+  const rows = years.map(y=>{
+    const arr = laborAnnualDays[y] || [];
+    const total = arr.reduce((t,v)=> t + (parseFloat(v)||0), 0);
+    const inputs = Array.from({length:12},(_,i)=>`<td><input type="number" min="0" max="31" step="1" value="${escAttr(String(arr[i] ?? ''))}" onchange="updateLaborAnnualDays('${y}',${i},this.value)"></td>`).join("");
+    return `<tr><td style="font-weight:700;">${y}</td>${inputs}<td style="font-weight:700;">${total || ''}</td><td><button type="button" class="danger row-remove" onclick="removeLaborAnnualYear('${y}')" title="この年の行を削除">×</button></td></tr>`;
+  }).join("");
+  wrap.innerHTML = `<table class="lb-annual"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>
+    <button type="button" class="secondary" style="margin-top:6px;" onclick="addLaborAnnualYear()">＋ 年を追加</button>
+    <div class="hint" style="margin-top:6px;">月ごとの出勤（営業）日数を入力します。役員・業務委託の「月給÷営業日数」の日割り計算に使います。空欄の月は日割りせず、月額をそのまま計上します。</div>`;
+}
+function updateLaborAnnualDays(year, monthIdx, value){
+  const arr = laborAnnualDays[year] = laborAnnualDays[year] || new Array(12).fill("");
+  if(value===""){ arr[monthIdx] = ""; }
+  else {
+    const n = parseFloat(value);
+    if(isNaN(n) || n < 0 || n > 31){ alert("出勤日数には0〜31の数値を入力してください。"); renderLaborAnnualDaysSection(); return; }
+    arr[monthIdx] = n;
+  }
+  saveLaborAnnualDays();
+  renderLaborAnnualDaysSection();
+  renderLaborActiveViewCounts();
+}
+function addLaborAnnualYear(){
+  const years = Object.keys(laborAnnualDays).map(Number);
+  const next = years.length ? Math.max(...years) + 1 : new Date().getFullYear();
+  laborAnnualDays[next] = new Array(12).fill("");
+  saveLaborAnnualDays();
+  renderLaborAnnualDaysSection();
+}
+function removeLaborAnnualYear(year){
+  if(!confirm(`${year}年の出勤日数を削除しますか？`)) return;
+  delete laborAnnualDays[year];
+  saveLaborAnnualDays();
+  renderLaborAnnualDaysSection();
+}
+function renderLaborActiveViewCounts(){
+  const badge = document.getElementById("laborCountBadge");
+  if(badge) badge.textContent = `従業員${laborEmployees.length}名・勤怠${attendanceRecords.length}件`;
+}
+
+/* ---- 基本設定：特殊人件費（役員・業務委託・地域おこし協力隊の計算ルール） ---- */
+function renderLaborSpecialSection(){
+  const wrap = document.getElementById("laborSpecialCard");
+  if(!wrap) return;
+  const cnt = (name)=> laborEmployees.filter(e=>{ const sc = getWageScheme(e.schemeId); return sc && sc.name===name; }).length;
+  wrap.innerHTML = `<table class="excel-grid"><tbody><tr>
+      <td class="xg-label">役員</td><td class="xg-value">月給÷営業日数</td>
+      <td class="xg-label">業務委託</td><td class="xg-value">月給÷営業日数</td>
+      <td class="xg-label">地域おこし協力隊</td><td class="xg-value" style="text-align:left;">労務時間8時間以降残業代のみ支給<br><span style="font-size:11px;color:var(--muted);">(通常労務時間分金額は派遣企業支払い)</span></td>
+    </tr><tr>
+      <td colspan="2" style="font-size:11px;color:var(--muted);">従業員 ${cnt("役員")}名</td>
+      <td colspan="2" style="font-size:11px;color:var(--muted);">従業員 ${cnt("業務委託")}名</td>
+      <td colspan="2" style="font-size:11px;color:var(--muted);">従業員 ${cnt("地域おこし協力隊")}名</td>
+    </tr></tbody></table>
+    <div class="hint" style="margin-top:6px;">
+      ・<b>役員・業務委託</b>（月給制・固定給）：月給 ÷ その月の「年間出勤日数」を、勤怠記録のある日（営業した日）に日割りで計上します（日別・月別・年別人件費、売上管理の人件費に反映）。出勤日数が未入力の月は、従来どおり月額を月別・年別にまとめて計上します。<br>
+      ・<b>地域おこし協力隊</b>：給与体系「地域おこし協力隊」の従業員は、勤怠のうち所定労働時間を超えた分（残業）の金額だけを計上し、通常の労務時間分は計上しません。給与体系と従業員の設定は「従業員情報」タブで行います。
+    </div>`;
+}
+
 function renderLaborWageBaseSettingsSection(){
   const wrap = document.getElementById("laborWageBaseSettingsCard");
   if(!wrap) return;
@@ -11666,7 +11787,6 @@ function renderLaborWageBaseSettingsSection(){
     rowsHtml += `<tr><td class="xg-label">${l[0]}</td><td class="xg-value">${l[1]}</td><td class="xg-label">${m[0]}</td><td class="xg-value">${m[1]}</td>${rightHtml}</tr>`;
   }
   wrap.innerHTML = `
-    <div style="font-weight:700;font-size:12px;margin-bottom:3px;">基本設定</div>
     <table class="excel-grid"><tbody>${rowsHtml}</tbody></table>
     <button type="button" class="secondary" style="margin-top:3px;padding:1px 6px;font-size:10.5px;" onclick="addLaborWageBaseTimeSlot()">＋ 時間帯を追加</button>
     <button type="button" class="secondary" style="margin-top:3px;padding:1px 6px;font-size:10.5px;" onclick="diagnoseLaborWageSettings()">🔍 現在の設定値を診断表示</button>
@@ -11788,7 +11908,7 @@ function getSchemeFieldRows(cfg, calcType, updateFieldCall){
   if(calcType === "hourly_timeband"){
     const rate = laborWageBaseSettings.overtimeRate||0, hrate = laborWageBaseSettings.holidayRate||0;
     const slots = laborWageBaseSettings.timeSlots || [];
-    if(!slots.length) return [["時間帯別時給", "（基本設定に時間帯が未登録です）"]];
+    if(!slots.length) return [["時間帯別時給", "（「基本設定」タブに時間帯が未登録です）"]];
     return slots.map(sl=>[
       `${escAttr(sl.start)}〜${escAttr(sl.end)}`,
       `${fmtNum(sl.wage||0)}円<br><span class="hint" style="font-size:10px;margin:0;">時間外${fmtNum(Math.round((sl.wage||0)*(1+rate)))}円・休日${fmtNum(Math.round((sl.wage||0)*(1+hrate)))}円</span>`
@@ -11854,7 +11974,7 @@ function renderLaborWageSchemesSection(){
       ${cardsHtml}
       <div class="xg-card xg-addcard"><button type="button" class="secondary" onclick="addLaborWageScheme()">＋ 給与体系を追加</button></div>
     </div>
-    ${hasTimeband ? `<div class="hint" style="margin-top:3px;font-size:10.5px;">※「時間帯別時給」の給与体系は、上部の基本設定の時間帯別テーブルと共通です。</div>` : ""}
+    ${hasTimeband ? `<div class="hint" style="margin-top:3px;font-size:10.5px;">※「時間帯別時給」の給与体系は、「基本設定」タブの時間帯別テーブルと共通です。</div>` : ""}
   `;
 }
 function updateLaborWageSchemeField(id, field, value){
@@ -11906,7 +12026,10 @@ function removeLaborWageScheme(id){
 // 通勤手当（常に編集可能）と、年度の勤務実績（出勤日数・労務時間・給与内訳・曜日別）を折りたたみ表示し、
 // 時給設定だけでなく個人の勤務情報の管理としても使えるようにする。
 function renderLaborWageView(){
+  renderLaborBizHoursSection();
   renderLaborWageBaseSettingsSection();
+  renderLaborAnnualDaysSection();
+  renderLaborSpecialSection();
   renderLaborWageSchemesSection();
   const list = document.getElementById("laborWageList");
   document.getElementById("laborWageEmptyMsg").style.display = laborEmployees.length ? "none" : "block";
@@ -12054,7 +12177,7 @@ let laborEmployeesBulkDraft = [];
 function primaryWageFieldForCalcType(calcType){
   if(calcType==="monthly"||calcType==="monthly_fixed") return { field:"monthlySalary", label:"基本給/月給", unit:"円/月" };
   if(calcType==="daily") return { field:"dailyWage", label:"日給", unit:"円/日" };
-  if(calcType==="hourly") return { field:"baseWage", label:"基本時給", unit:"円/時" };
+  if(calcType==="hourly"||calcType==="hourly_overtime_only") return { field:"baseWage", label:"基本時給", unit:"円/時" };
   return null;
 }
 
@@ -12159,7 +12282,7 @@ function saveLaborEmployeesBulk(){
     base.calcType = r.calcType||"hourly";
     if(r.calcType==="monthly"||r.calcType==="monthly_fixed") base.monthlySalary = parseFloat(r.monthlySalary)||0;
     if(r.calcType==="daily") base.dailyWage = parseFloat(r.dailyWage)||0;
-    if(r.calcType==="hourly") base.baseWage = parseFloat(r.baseWage)||0;
+    if(r.calcType==="hourly"||r.calcType==="hourly_overtime_only") base.baseWage = parseFloat(r.baseWage)||0;
     base.commuteAllowance = parseFloat(r.commuteAllowance)||0;
     base.commuteAllowanceCap = parseFloat(r.commuteAllowanceCap)||0;
     return base;
