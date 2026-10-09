@@ -43,7 +43,8 @@
   #laborHourlyTable td.lh-drag.lh-dragging{opacity:.4;}
   #laborHourlyTable td.lh-over{outline:2px solid var(--main);outline-offset:-2px;background:#dff0e6;}
   /* ===== 人件費管理：見やすさ改善 ===== */
-  #page-labor table{min-width:0;font-variant-numeric:tabular-nums;}
+  #page-labor table{min-width:0;font-variant-numeric:tabular-nums;margin-left:auto;margin-right:auto;}
+  #page-labor table th,#page-labor table td{text-align:center;}
   #page-labor .card{box-shadow:0 1px 3px rgba(35,79,56,.06);margin-bottom:10px;}
   #page-labor .hint{line-height:1.6;}
   #laborTabs{display:inline-flex;gap:2px;padding:3px;background:#e9eeeb;border-radius:9px;margin-bottom:12px;flex-wrap:wrap;}
@@ -71,10 +72,10 @@
   #laborHourlyTable tfoot td{font-weight:700;background:#eef2f0;position:sticky;bottom:0;}
   #laborHourlyTable td.lh-drag{color:var(--main-dark);font-weight:600;}
   #laborDailyView table,#laborMonthlyView table,#laborYearlyView table,#laborWelfareView table{max-width:860px;}
+  #page-labor .empty{text-align:center;}
   #laborDailyView th,#laborMonthlyView th,#laborYearlyView th,#laborWelfareView th{padding:4px 10px;}
   #laborDailyView td,#laborMonthlyView td,#laborYearlyView td,#laborWelfareView td{padding:2px 10px;line-height:1.35;}
-  #laborDailyView td:first-child,#laborMonthlyView td:first-child,#laborYearlyView td:first-child{text-align:left;font-weight:600;}
-  #laborDailyView td:nth-child(2){text-align:center;}
+  #laborDailyView td:first-child,#laborMonthlyView td:first-child,#laborYearlyView td:first-child{font-weight:600;}
   #laborDailyView tr.lb-sat td{background:#f1f6fc;}
   #laborDailyView tr.lb-sun td{background:#fcf2f1;}
   #laborDailyView tr.lb-sat td:nth-child(2){color:#2c6fb0;font-weight:700;}
