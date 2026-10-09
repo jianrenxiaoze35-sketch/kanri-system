@@ -42,6 +42,42 @@
   #laborHourlyTable td.lh-drag{cursor:grab;background:#e8f1fa;}
   #laborHourlyTable td.lh-drag.lh-dragging{opacity:.4;}
   #laborHourlyTable td.lh-over{outline:2px solid var(--main);outline-offset:-2px;background:#dff0e6;}
+  /* ===== 人件費管理：見やすさ改善 ===== */
+  #page-labor table{min-width:0;font-variant-numeric:tabular-nums;}
+  #page-labor .card{box-shadow:0 1px 3px rgba(35,79,56,.06);margin-bottom:10px;}
+  #page-labor .hint{line-height:1.6;}
+  #laborTabs{display:inline-flex;gap:2px;padding:3px;background:#e9eeeb;border-radius:9px;margin-bottom:12px;flex-wrap:wrap;}
+  #laborTabs button{background:transparent;color:#4d5a54;border:none;padding:7px 16px;border-radius:7px;font-size:13px;}
+  #laborTabs button:hover{background:rgba(255,255,255,.6);}
+  #laborTabs button.active{background:#fff;color:var(--main-dark);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.14);}
+  .lb-tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .lb-tile{flex:1;min-width:150px;background:var(--card);border:1px solid var(--border);border-top:3px solid var(--main);border-radius:8px;padding:9px 14px;}
+  .lb-tile.alt{border-top-color:var(--accent);}
+  .lb-tile .lb-label{font-size:11.5px;color:var(--muted);}
+  .lb-tile .lb-value{font-size:21px;font-weight:700;color:var(--main-dark);line-height:1.35;}
+  .lb-tile .lb-value small{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px;}
+  #laborHourlyView .card{max-height:72vh;}
+  #laborHourlyTable{min-width:720px;}
+  #laborHourlyTable th,#laborHourlyTable td{padding:5px 10px;}
+  #laborHourlyTable thead th{z-index:3;box-shadow:0 1px 0 var(--border);}
+  #laborHourlyTable tbody td:first-child,#laborHourlyTable thead th:first-child,#laborHourlyTable tfoot td:first-child{position:sticky;left:0;z-index:2;background:#f5f8f6;font-weight:600;text-align:center;}
+  #laborHourlyTable thead th:first-child{z-index:4;background:#eef2f0;}
+  #laborHourlyTable tbody tr:nth-child(even) td:not(.lh-drag){background-color:#fbfcfb;}
+  #laborHourlyTable tbody tr.lh-hour td{border-top:2px solid #c9d3ce;}
+  #laborHourlyTable tbody td:nth-last-child(-n+2){background:#f5f8f6;font-weight:600;}
+  #laborHourlyTable tfoot td{font-weight:700;background:#eef2f0;position:sticky;bottom:0;}
+  #laborHourlyTable td.lh-drag{color:var(--main-dark);font-weight:600;}
+  #laborDailyView table,#laborMonthlyView table,#laborYearlyView table,#laborWelfareView table{max-width:860px;}
+  #laborDailyView th,#laborMonthlyView th,#laborYearlyView th,#laborWelfareView th{padding:8px 14px;}
+  #laborDailyView td,#laborMonthlyView td,#laborYearlyView td,#laborWelfareView td{padding:7px 14px;}
+  #laborDailyView td:first-child,#laborMonthlyView td:first-child,#laborYearlyView td:first-child{text-align:left;font-weight:600;}
+  #laborDailyView td:nth-child(2){text-align:center;}
+  #laborDailyView tr.lb-sat td{background:#f1f6fc;}
+  #laborDailyView tr.lb-sun td{background:#fcf2f1;}
+  #laborDailyView tr.lb-sat td:nth-child(2){color:#2c6fb0;font-weight:700;}
+  #laborDailyView tr.lb-sun td:nth-child(2){color:#c0392b;font-weight:700;}
+  #laborDailyView tr.lb-none td{color:#b5bcb8;}
+  #page-labor tfoot.lb-total td{font-weight:700;background:#eaf3ec;border-top:2px solid var(--main);color:var(--main-dark);}
   /* 原料・資材・半製品マスタ：未記入項目のハイライト */
   tr.ing-row-incomplete td{background:#fffdf5;}
   td.ing-blank{background:#fff3cd !important;}
@@ -781,7 +817,7 @@
           <button class="secondary" onclick="openBusinessHoursSettings()">営業時間設定</button>
         </div>
       </div>
-      <div class="toolbar" style="margin-bottom:10px;">
+      <div id="laborTabs">
         <button class="secondary" id="laborViewHourlyBtn" onclick="switchLaborView('hourly')">時間別人件費</button>
         <button class="secondary" id="laborViewDailyBtn" onclick="switchLaborView('daily')">日別人件費</button>
         <button class="secondary" id="laborViewMonthlyBtn" onclick="switchLaborView('monthly')">月別人件費</button>
@@ -798,13 +834,11 @@
           </label>
           <span class="hint" id="laborHourlyBusinessHoursNote"></span>
         </div>
-        <div class="card" style="padding:12px;margin-bottom:10px;">
-          <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;">
-            <div>出勤人数：<b id="laborHourlyHeadcount">0</b>人</div>
-            <div>総労働時間合計：<b id="laborHourlySumHours">0</b></div>
-            <div>時給合計：<b id="laborHourlySumWage">0</b>円</div>
-            <div>1時間あたりの平均人数：<b id="laborHourlyAvgHeadcount">0.00</b>人</div>
-          </div>
+        <div class="lb-tiles">
+          <div class="lb-tile"><div class="lb-label">出勤人数</div><div class="lb-value"><span id="laborHourlyHeadcount">0</span><small>人</small></div></div>
+          <div class="lb-tile"><div class="lb-label">総労働時間合計</div><div class="lb-value" id="laborHourlySumHours">0</div></div>
+          <div class="lb-tile alt"><div class="lb-label">時給合計(人件費)</div><div class="lb-value"><span id="laborHourlySumWage">0</span><small>円</small></div></div>
+          <div class="lb-tile alt"><div class="lb-label">1時間あたりの平均人数</div><div class="lb-value"><span id="laborHourlyAvgHeadcount">0.00</span><small>人</small></div></div>
         </div>
         <div class="card">
           <div class="hint" style="margin-bottom:6px;">色付きのマス（15分）をドラッグして、同じ従業員の別の時間帯へ移動できます。出勤・退勤・休憩の時刻が書き換わり、人件費の集計にも反映されます。</div>
@@ -831,6 +865,7 @@
               <tr><th>日付</th><th>曜日</th><th>出勤人数</th><th>総労働時間</th><th>人件費合計</th></tr>
             </thead>
             <tbody id="laborDailyTableBody"></tbody>
+            <tfoot class="lb-total" id="laborDailyTableFoot"></tfoot>
           </table>
           <div class="empty" id="laborDailyEmptyMsg" style="display:none;">この月の勤怠データがありません。</div>
         </div>
@@ -850,6 +885,7 @@
               <tr><th>月</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th></tr>
             </thead>
             <tbody id="laborMonthlyTableBody"></tbody>
+            <tfoot class="lb-total" id="laborMonthlyTableFoot"></tfoot>
           </table>
           <div class="empty" id="laborMonthlyEmptyMsg" style="display:none;">この年の勤怠データがありません。</div>
         </div>
@@ -11281,7 +11317,7 @@ function renderLaborHourlyView(){
       if(worked){ rowCount++; rowWage += slotCost; }
       return `<td class="${worked?'calc lh-drag':'lh-drop'}" data-rid="${escAttr(d.record.id)}" data-slot="${slotStartRaw}"${worked?' draggable="true"':''}>${worked ? fmtNum(Math.round(slotCost)) : ""}</td>`;
     }).join("");
-    return `<tr><td class="text">${minToHHMM(slotStart)}</td>${cells}<td>${rowCount||""}</td><td>${rowCount?fmtNum(Math.round(rowWage)):""}</td></tr>`;
+    return `<tr${slotStart%60===0?' class="lh-hour"':''}><td class="text">${minToHHMM(slotStart)}</td>${cells}<td>${rowCount||""}</td><td>${rowCount?fmtNum(Math.round(rowWage)):""}</td></tr>`;
   }).join("");
 
   const totalMinAll = empData.reduce((s,d)=>s+d.totalMin,0);
@@ -11438,15 +11474,20 @@ function renderLaborDailyView(){
   const daysInMonth = new Date(y, m, 0).getDate();
   const body = document.getElementById("laborDailyTableBody");
   const rows = [];
-  let any = false;
+  let any = false, sumHead = 0, sumMin = 0, sumWage = 0;
   for(let d=1; d<=daysInMonth; d++){
     const dateISO = `${monthKey}-${String(d).padStart(2,"0")}`;
     const { totalMin, totalWage, headcount, hasRecords } = getLaborDayTotals(dateISO);
     if(hasRecords) any = true;
     const weekdayLabel = WEEKDAY_LABELS_JA[weekdayIndexFromISODate(dateISO)];
-    rows.push(`<tr><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${headcount}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td></tr>`);
+    const wdIdx = weekdayIndexFromISODate(dateISO);
+    const rowCls = (wdIdx===6?"lb-sat ":"") + (wdIdx===0?"lb-sun ":"") + (hasRecords?"":"lb-none");
+    sumHead += headcount; sumMin += totalMin; sumWage += totalWage;
+    rows.push(`<tr class="${rowCls.trim()}"><td>${formatDateDisplay(dateISO)}</td><td>${weekdayLabel}</td><td>${hasRecords?headcount:"–"}</td><td>${hasRecords?fmtNum(Math.round(totalMin/60*100)/100)+"時間":"–"}</td><td>${hasRecords?fmtNum(Math.round(totalWage))+"円":"–"}</td></tr>`);
   }
   body.innerHTML = rows.join("");
+  const dfoot = document.getElementById("laborDailyTableFoot");
+  if(dfoot) dfoot.innerHTML = any ? `<tr><td>月合計</td><td></td><td>${sumHead}</td><td>${fmtNum(Math.round(sumMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWage))}円</td></tr>` : "";
   document.getElementById("laborDailyEmptyMsg").style.display = any ? "none" : "block";
 }
 
@@ -11463,6 +11504,7 @@ function renderLaborMonthlyView(){
   // 役員・業務委託など月給制(固定)の従業員は勤怠記録が無いため、毎月固定でこの金額を合計に上乗せする。
   const fixedMonthly = sumMonthlyFixedSalaries();
   if(fixedMonthly > 0) any = true;
+  let sumCnt = 0, sumMinAll = 0, sumWageAll = 0;
   for(let m=1;m<=12;m++){
     const monthKey = `${year}-${String(m).padStart(2,"0")}`;
     const monthRecords = attendanceRecords.filter(r=>r.date && r.date.slice(0,7)===monthKey && r.clockIn && r.clockOut);
@@ -11474,9 +11516,12 @@ function renderLaborMonthlyView(){
       totalMin += tm; totalWage += cost;
     });
     totalWage += fixedMonthly;
+    sumCnt += monthRecords.length; sumMinAll += totalMin; sumWageAll += totalWage;
     rows.push(`<tr><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td></tr>`);
   }
   body.innerHTML = rows.join("");
+  const mfoot = document.getElementById("laborMonthlyTableFoot");
+  if(mfoot) mfoot.innerHTML = any ? `<tr><td>${escAttr(String(year))}年 合計</td><td>${sumCnt}</td><td>${fmtNum(Math.round(sumMinAll/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWageAll))}円</td></tr>` : "";
   document.getElementById("laborMonthlyEmptyMsg").style.display = any ? "none" : "block";
 }
 
