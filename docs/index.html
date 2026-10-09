@@ -927,8 +927,8 @@
       <!-- 月別人件費 -->
       <div id="laborMonthlyView" style="display:none;">
         <div class="toolbar" style="margin-bottom:10px;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象年：
-            <input type="number" id="laborMonthlyYear" style="width:100px;" onchange="renderLaborMonthlyView()">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象期間：
+            <input type="month" id="laborMonthlyFrom" onchange="renderLaborMonthlyView()"> ～ <input type="month" id="laborMonthlyTo" onchange="renderLaborMonthlyView()">
           </label>
         </div>
         <div class="hint" style="margin-bottom:8px;">役員・業務委託など「月給制（固定）」の給与体系の従業員は勤怠記録が無いため、のべ出勤人数・総労働時間には含まれませんが、人件費合計には毎月その基本給を上乗せしています。</div>
@@ -946,6 +946,12 @@
 
       <!-- 年別人件費 -->
       <div id="laborYearlyView" style="display:none;">
+        <div class="toolbar" style="margin-bottom:10px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象期間：
+            <input type="number" id="laborYearlyFrom" style="width:90px;" placeholder="開始年" onchange="renderLaborYearlyView()"> 年 ～ <input type="number" id="laborYearlyTo" style="width:90px;" placeholder="終了年" onchange="renderLaborYearlyView()"> 年
+          </label>
+          <span class="hint" style="margin:0;align-self:center;">空欄の場合は、勤怠データのあるすべての年を表示します。</span>
+        </div>
         <div class="hint" style="margin-bottom:8px;">役員・業務委託など「月給制（固定）」の給与体系の従業員は勤怠記録が無いため、のべ出勤人数・総労働時間には含まれませんが、人件費合計には基本給×12ヶ月分を上乗せしています。</div>
         <div class="card">
           <table>
@@ -11630,7 +11636,13 @@ function openLaborDailyForMonth(monthKey){
 // 日別人件費から月別人件費へ戻る。表示していた月の年を月別ビューの対象年にする。
 function backToLaborMonthly(){
   const monthKey = document.getElementById("laborDailyMonth").value;
-  if(monthKey) document.getElementById("laborMonthlyYear").value = monthKey.slice(0, 4);
+  if(monthKey){
+    // 日別で見ていた月が月別の対象期間に含まれていなければ、その年（1〜12月）に切り替える
+    const f = document.getElementById("laborMonthlyFrom"), t = document.getElementById("laborMonthlyTo");
+    if(!f.value || !t.value || monthKey < f.value || monthKey > t.value){
+      f.value = `${monthKey.slice(0,4)}-01`; t.value = `${monthKey.slice(0,4)}-12`;
+    }
+  }
   switchLaborView("monthly");
   window.scrollTo(0, 0);
 }
@@ -11670,20 +11682,27 @@ function renderLaborDailyView(){
 }
 
 function renderLaborMonthlyView(){
-  const yearInput = document.getElementById("laborMonthlyYear");
-  if(!yearInput.value){
+  const fromInput = document.getElementById("laborMonthlyFrom"), toInput = document.getElementById("laborMonthlyTo");
+  if(!fromInput.value || !toInput.value){
+    // 既定は、勤怠データのある最新の年（1〜12月）
     const latest = attendanceRecords.reduce((m,r)=> (r.date && r.date>m) ? r.date : m, "");
-    yearInput.value = latest ? latest.slice(0,4) : new Date().getFullYear();
+    const y = latest ? latest.slice(0,4) : String(new Date().getFullYear());
+    if(!fromInput.value) fromInput.value = `${y}-01`;
+    if(!toInput.value) toInput.value = `${y}-12`;
   }
-  const year = yearInput.value;
+  let fromKey = fromInput.value, toKey = toInput.value;
+  if(fromKey > toKey){ const t = fromKey; fromKey = toKey; toKey = t; }
   const body = document.getElementById("laborMonthlyTableBody");
   let any = false;
   const rows = [];
   // 役員・業務委託など月給制(固定)の従業員は勤怠記録が無いため、毎月固定でこの金額を合計に上乗せする。
   if(sumMonthlyFixedSalaries() > 0) any = true;
   let sumCnt = 0, sumMinAll = 0, sumWageAll = 0;
-  for(let m=1;m<=12;m++){
-    const monthKey = `${year}-${String(m).padStart(2,"0")}`;
+  let [cy, cm] = fromKey.split("-").map(Number);
+  const [ey, em] = toKey.split("-").map(Number);
+  let guard = 0;
+  while((cy < ey || (cy === ey && cm <= em)) && guard++ < 240){
+    const monthKey = `${cy}-${String(cm).padStart(2,"0")}`;
     const monthRecords = attendanceRecords.filter(r=>r.date && r.date.slice(0,7)===monthKey && r.clockIn && r.clockOut);
     if(monthRecords.length) any = true;
     let totalMin=0, totalWage=0;
@@ -11692,18 +11711,24 @@ function renderLaborMonthlyView(){
       const { totalMin: tm, cost } = computeDayLaborCost(emp, r);
       totalMin += tm; totalWage += cost;
     });
-    totalWage += getLaborFixedCostForMonth(Number(year), m);
+    totalWage += getLaborFixedCostForMonth(cy, cm);
     sumCnt += monthRecords.length; sumMinAll += totalMin; sumWageAll += totalWage;
-    rows.push(`<tr class="lb-click" onclick="openLaborDailyForMonth('${monthKey}')" title="クリックでこの月の日別人件費を表示"><td>${m}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(new Date(Number(year), m, 0).getDate()).padStart(2,"0"))))}</td></tr>`);
+    const lastDay = new Date(cy, cm, 0).getDate();
+    const prod = computeLaborProductivityForDates(salesDateRange(monthKey+"-01", monthKey+"-"+String(lastDay).padStart(2,"0")));
+    rows.push(`<tr class="lb-click" onclick="openLaborDailyForMonth('${monthKey}')" title="クリックでこの月の日別人件費を表示"><td>${cy}年${cm}月</td><td>${monthRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(prod)}</td></tr>`);
+    cm++; if(cm > 12){ cm = 1; cy++; }
   }
   body.innerHTML = rows.join("");
   const mfoot = document.getElementById("laborMonthlyTableFoot");
-  if(mfoot) mfoot.innerHTML = any ? `<tr><td>${escAttr(String(year))}年 合計</td><td>${sumCnt}</td><td>${fmtNum(Math.round(sumMinAll/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWageAll))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(year+"-01-01", year+"-12-31")))}</td></tr>` : "";
+  if(mfoot) mfoot.innerHTML = any ? `<tr><td>期間合計</td><td>${sumCnt}</td><td>${fmtNum(Math.round(sumMinAll/60*100)/100)}時間</td><td>${fmtNum(Math.round(sumWageAll))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(fromKey+"-01", toKey+"-"+String(new Date(ey, em, 0).getDate()).padStart(2,"0"))))}</td></tr>` : "";
   document.getElementById("laborMonthlyEmptyMsg").style.display = any ? "none" : "block";
 }
 
 function renderLaborYearlyView(){
-  const years = Array.from(new Set(attendanceRecords.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort();
+  const yFrom = parseInt(document.getElementById("laborYearlyFrom").value, 10);
+  const yTo = parseInt(document.getElementById("laborYearlyTo").value, 10);
+  const years = Array.from(new Set(attendanceRecords.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort()
+    .filter(y=> (isNaN(yFrom) || Number(y) >= Math.min(yFrom, isNaN(yTo) ? yFrom : yTo)) && (isNaN(yTo) || Number(y) <= Math.max(yTo, isNaN(yFrom) ? yTo : yFrom)));
   const body = document.getElementById("laborYearlyTableBody");
   document.getElementById("laborYearlyEmptyMsg").style.display = years.length ? "none" : "block";
   // 役員・業務委託など月給制(固定)の従業員の年間合計（月額×12ヶ月分）を各年の人件費合計に上乗せする。
