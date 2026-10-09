@@ -834,7 +834,8 @@
 
       <!-- 時間別人件費 -->
       <div id="laborHourlyView">
-        <div class="toolbar" style="margin-bottom:10px;">
+        <div class="toolbar" style="margin-bottom:10px;align-items:center;">
+          <button class="secondary" id="laborHourlyBackBtn" style="display:none;" onclick="backToLaborDaily()">← 日別人件費に戻る</button>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象日：
             <input type="date" id="laborHourlyDate" onchange="renderLaborHourlyView()">
           </label>
@@ -11167,6 +11168,8 @@ function saveBusinessHoursSettings(){
 
 function switchLaborView(view){
   laborView = view;
+  const backBtn = document.getElementById("laborHourlyBackBtn");
+  if(backBtn) backBtn.style.display = "none"; // タブ切替のたびに隠す（日別からの移動時だけ openLaborHourlyForDate が再表示する）
   ["hourly","daily","monthly","yearly","wage","welfare"].forEach(v=>{
     document.getElementById("laborView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
     document.getElementById("labor"+v.charAt(0).toUpperCase()+v.slice(1)+"View").style.display = (v===view) ? "" : "none";
@@ -11496,6 +11499,14 @@ function getLaborWelfareBreakdownForPeriod(startDateISO, endDateISO){
 function openLaborHourlyForDate(dateISO){
   document.getElementById("laborHourlyDate").value = dateISO;
   switchLaborView("hourly");
+  document.getElementById("laborHourlyBackBtn").style.display = ""; // 日別から来たときだけ「戻る」ボタンを出す
+  window.scrollTo(0, 0);
+}
+// 時間別人件費から日別人件費へ戻る。表示していた日の月を日別ビューの対象月にする。
+function backToLaborDaily(){
+  const dateISO = document.getElementById("laborHourlyDate").value;
+  if(dateISO) document.getElementById("laborDailyMonth").value = dateISO.slice(0, 7);
+  switchLaborView("daily");
   window.scrollTo(0, 0);
 }
 function renderLaborDailyView(){
