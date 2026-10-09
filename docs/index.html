@@ -57,13 +57,16 @@
   .lb-tile .lb-value{font-size:21px;font-weight:700;color:var(--main-dark);line-height:1.35;}
   .lb-tile .lb-value small{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px;}
   #laborHourlyView .card{max-height:72vh;}
-  #laborHourlyTable{min-width:720px;}
-  #laborHourlyTable th,#laborHourlyTable td{padding:5px 10px;}
+  #laborHourlyTable{min-width:0;width:auto;font-size:11.5px;border-collapse:separate;border-spacing:0;}
+  #laborHourlyTable th,#laborHourlyTable td{padding:2px 8px;line-height:1.35;border-right:1px solid #cfd7d3;border-bottom:1px solid #cfd7d3;}
+  #laborHourlyTable thead th{border-top:1px solid #cfd7d3;font-size:11px;min-width:58px;}
+  #laborHourlyTable th:first-child,#laborHourlyTable td:first-child{border-left:1px solid #cfd7d3;width:48px;min-width:48px;}
+  #laborHourlyTable td{min-width:58px;}
   #laborHourlyTable thead th{z-index:3;box-shadow:0 1px 0 var(--border);}
   #laborHourlyTable tbody td:first-child,#laborHourlyTable thead th:first-child,#laborHourlyTable tfoot td:first-child{position:sticky;left:0;z-index:2;background:#f5f8f6;font-weight:600;text-align:center;}
   #laborHourlyTable thead th:first-child{z-index:4;background:#eef2f0;}
   #laborHourlyTable tbody tr:nth-child(even) td:not(.lh-drag){background-color:#fbfcfb;}
-  #laborHourlyTable tbody tr.lh-hour td{border-top:2px solid #c9d3ce;}
+  #laborHourlyTable tbody tr.lh-hour td{border-top:2px solid #8fa39a;}
   #laborHourlyTable tbody td:nth-last-child(-n+2){background:#f5f8f6;font-weight:600;}
   #laborHourlyTable tfoot td{font-weight:700;background:#eef2f0;position:sticky;bottom:0;}
   #laborHourlyTable td.lh-drag{color:var(--main-dark);font-weight:600;}
@@ -843,7 +846,7 @@
         <div class="card">
           <div class="hint" style="margin-bottom:6px;">色付きのマス（15分）をドラッグして、同じ従業員の別の時間帯へ移動できます。出勤・退勤・休憩の時刻が書き換わり、人件費の集計にも反映されます。</div>
           <div id="laborHourlyMoveNote" class="hint" style="min-height:18px;margin-bottom:6px;"></div>
-          <table id="laborHourlyTable" style="min-width:900px;">
+          <table id="laborHourlyTable">
             <thead id="laborHourlyTableHead"></thead>
             <tbody id="laborHourlyTableBody"></tbody>
             <tfoot id="laborHourlyTableFoot"></tfoot>
