@@ -12,6 +12,10 @@
   /* Sidebar */
   .sidebar{width:220px;background:var(--main-dark);color:#fff;flex-shrink:0;padding:20px 0;}
   .sidebar h1{font-size:16px;padding:0 20px 16px;margin:0;border-bottom:1px solid rgba(255,255,255,.15);}
+  .dept-switch{padding:10px 20px 6px;}
+  .dept-switch label{display:block;font-size:11px;color:#b9cbc1;margin-bottom:3px;}
+  .dept-switch select{width:100%;padding:6px 8px;font-size:13px;font-weight:700;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;}
+  .dept-switch select option{color:#141413;background:#fff;}
   .nav-item{display:flex;align-items:center;gap:8px;padding:12px 20px;cursor:pointer;font-size:14px;color:#dfe9e3;}
   .nav-item.active{background:var(--main);color:#fff;font-weight:bold;}
   .nav-item.disabled{color:#7c8f85;cursor:default;}
@@ -433,6 +437,10 @@
 <div class="layout">
   <div class="sidebar">
     <h1>商品管理システム</h1>
+    <div class="dept-switch">
+      <label for="deptSelect">部門</label>
+      <select id="deptSelect" onchange="switchDepartment(this.value)"></select>
+    </div>
     <div id="cloudStatusSide" style="font-size:11px;padding:8px 20px 4px;color:#dfe9e3;">☁ 接続中…</div>
     <div class="nav-item active" id="nav-products" onclick="switchPage('products')">📦 商品マスタ</div>
     <div class="nav-item" id="nav-ingredients" onclick="switchPage('ingredients')">🥕 原料・資材・半製品マスタ</div>
@@ -2427,10 +2435,49 @@ function regiIdbDelete(key){
     tx.onerror = ()=>reject(tx.error);
   }));
 }
+/* ---------- 部門（クラフトビール事業部・売店・営業・EC） ----------
+   部門ごとにデータを分けて保存する。実際の保存キー（クラウド・IndexedDB上のキー）は、
+   クラフトビール事業部だけ従来のキーのまま（既存データをそのまま使う）、他の部門は「dept:部門ID:」を前に付ける。
+   アプリのコードが使うキー（論理キー）は部門に関係なく同じで、appStoreが部門に応じて実キーへ変換する。
+   部門を切り替えるときは、選択を端末に保存して画面を読み込み直す（全データを選んだ部門のものにそろえるため）。
+   DEPT_SHARED_KEYS に論理キー（末尾 * で前方一致）を入れると、そのデータは全部門で共有（＝従来のキーを共用）になる。
+   menus は、その部門のサイドバーに表示するメニュー（ページID）の配列。null はすべて表示。 */
+const DEPARTMENTS = [
+  { id: "craft", name: "クラフトビール事業部", menus: null },
+  { id: "shop",  name: "売店", menus: null },
+  { id: "eigyo", name: "営業", menus: null },
+  { id: "ec",    name: "EC",   menus: null }
+];
+const DEFAULT_DEPT_ID = "craft";
+const DEPT_STORAGE_KEY = "kanri_dept_v1";
+const DEPT_SHARED_KEYS = [];
+let currentDeptId = (function(){
+  let id = "";
+  try{ id = localStorage.getItem(DEPT_STORAGE_KEY) || ""; }catch(e){}
+  return DEPARTMENTS.some(d=>d.id===id) ? id : DEFAULT_DEPT_ID;
+})();
+function getCurrentDept(){ return DEPARTMENTS.find(d=>d.id===currentDeptId) || DEPARTMENTS[0]; }
+function isDeptSharedKey(k){ return DEPT_SHARED_KEYS.some(p=> p.endsWith("*") ? k.startsWith(p.slice(0,-1)) : k===p); }
+// 論理キー → 実キー
+function deptStoreKey(k){
+  return (currentDeptId === DEFAULT_DEPT_ID || isDeptSharedKey(k)) ? k : `dept:${currentDeptId}:${k}`;
+}
+// 実キー → 現在の部門から見える論理キー（見えない＝他部門のデータならnull）
+function deptLogicalKey(real){
+  const m = /^dept:([^:]+):(.*)$/.exec(real);
+  if(m) return m[1] === currentDeptId ? m[2] : null;
+  return (currentDeptId === DEFAULT_DEPT_ID || isDeptSharedKey(real)) ? real : null;
+}
+function deptVisibleKeys(){
+  const out = [];
+  _regiDailyCache.forEach((v, real)=>{ const k = deptLogicalKey(real); if(k !== null) out.push(k); });
+  return out;
+}
 // アプリのコードからはこのオブジェクトをlocalStorageと同じ感覚で使う（アプリが保存する全データが対象）。
 const regiDailyStore = {
-  getItem(key){ return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null; },
+  getItem(key){ key = deptStoreKey(key); return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null; },
   setItem(key, value){
+    key = deptStoreKey(key);
     const _changed = _regiDailyCache.get(key) !== value;
     _regiDailyCache.set(key, value);
     if(_changed) cloudOnChange(key);
@@ -2446,14 +2493,15 @@ const regiDailyStore = {
     });
   },
   removeItem(key){
+    key = deptStoreKey(key);
     const _had = _regiDailyCache.has(key);
     _regiDailyCache.delete(key);
     if(_had) cloudOnChange(key);
     regiIdbDelete(key).catch(err=>console.error("regiDailyStore: IndexedDBからの削除に失敗しました:", key, err));
   },
-  keys(){ return [..._regiDailyCache.keys()]; },
-  key(i){ return [..._regiDailyCache.keys()][i] ?? null; },
-  get length(){ return _regiDailyCache.size; }
+  keys(){ return deptVisibleKeys(); },
+  key(i){ return deptVisibleKeys()[i] ?? null; },
+  get length(){ return deptVisibleKeys().length; }
 };
 // 新しいコードではこちらの名前（appStore）を使う。実体はregiDailyStoreと同じオブジェクト。
 const appStore = regiDailyStore;
@@ -2558,7 +2606,13 @@ const CLOUD_KEY_LABELS = {
   labor_employees_data_v1: "人件費（従業員）", product_master_options_v1: "設定（選択肢）",
   regi_settings_v1: "レジ締め設定"
 };
-function cloudKeyLabel(k){ return CLOUD_KEY_LABELS[k] ? `${CLOUD_KEY_LABELS[k]}（${k}）` : k; }
+function cloudKeyLabel(k){
+  const m = /^dept:([^:]+):(.*)$/.exec(k);
+  const dept = m ? DEPARTMENTS.find(d=>d.id===m[1]) : null;
+  const base = m ? m[2] : k;
+  const prefix = m ? `${dept ? dept.name : m[1]}・` : "";
+  return CLOUD_KEY_LABELS[base] ? `${prefix}${CLOUD_KEY_LABELS[base]}（${k}）` : k;
+}
 function cloudSleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 function cloudEsc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function cloudGetPass(){ try{ return localStorage.getItem(CLOUD_PASS_KEY) || ""; }catch(e){ return ""; } }
@@ -5033,7 +5087,37 @@ function importPurchasesExcel(event){
   reader.readAsArrayBuffer(file);
 }
 
+// 部門ごとのメニュー表示。DEPARTMENTSのmenusに含まれるページだけをサイドバーに出す（nullはすべて）。
+const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","settings"];
+function allowedPagesForCurrentDept(){
+  const m = getCurrentDept().menus;
+  return m ? APP_PAGE_IDS.filter(p=>m.includes(p)) : APP_PAGE_IDS.slice();
+}
+function applyDeptMenu(){
+  const allowed = allowedPagesForCurrentDept();
+  APP_PAGE_IDS.forEach(p=>{
+    const el = document.getElementById("nav-" + p);
+    if(el) el.style.display = allowed.includes(p) ? "" : "none";
+  });
+  const sel = document.getElementById("deptSelect");
+  if(sel){
+    sel.innerHTML = DEPARTMENTS.map(d=>`<option value="${d.id}" ${d.id===currentDeptId?"selected":""}>${escAttr(d.name)}</option>`).join("");
+  }
+  document.title = `商品管理システム（${getCurrentDept().name}）`;
+}
+function switchDepartment(id){
+  if(!DEPARTMENTS.some(d=>d.id===id) || id === currentDeptId) return;
+  try{ localStorage.setItem(DEPT_STORAGE_KEY, id); }catch(e){ alert("部門の選択を保存できませんでした。"); applyDeptMenu(); return; }
+  appReloadAfterSync(); // 未保存の変更をクラウドへ送ってから、選んだ部門のデータで読み込み直す
+}
+registerBootStep(function(){
+  applyDeptMenu();
+  const allowed = allowedPagesForCurrentDept();
+  const active = APP_PAGE_IDS.find(p=>document.getElementById("page-"+p) && document.getElementById("page-"+p).classList.contains("active"));
+  if(allowed.length && !allowed.includes(active)) switchPage(allowed[0]);
+});
 async function switchPage(page){
+  { const allowed = allowedPagesForCurrentDept(); if(allowed.length && !allowed.includes(page)) page = allowed[0]; }
   document.getElementById("page-products").classList.toggle("active", page==="products");
   document.getElementById("page-ingredients").classList.toggle("active", page==="ingredients");
   document.getElementById("page-recipes").classList.toggle("active", page==="recipes");
@@ -16174,7 +16258,7 @@ function exportFullAppBackup(){
   const blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `商品管理システム_全データバックアップ_${todayStr()}.json`;
+  a.download = `商品管理システム_${getCurrentDept().name}_全データバックアップ_${todayStr()}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
