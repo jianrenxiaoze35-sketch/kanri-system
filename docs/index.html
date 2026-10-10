@@ -1509,11 +1509,11 @@
             </div>
             <div class="toolbar" style="margin-bottom:10px;gap:6px;">
               <button class="secondary active" id="otherPayReconcileModeSideBtn" onclick="setOtherPayReconcileMode('side')">振込と決済を並べて照合</button>
-              <button class="secondary" id="otherPayReconcileModeDetailBtn" onclick="setOtherPayReconcileMode('detail')">明細と実際の振込金額の入力</button>
+              <button class="secondary" id="otherPayReconcileModeDetailBtn" onclick="setOtherPayReconcileMode('detail')">明細一覧</button>
             </div>
             <div id="otherPayReconcileSide"></div>
             <div id="otherPayReconcileDetailWrap" style="display:none;">
-            <div class="hint" style="margin-bottom:8px;">選択した決済会社・月について、取り込んだCSV（funfoは支払履歴CSV、Squareはお取引CSV、PAYGATEは日別内訳CSV〈任意〉または精算明細CSV）の1決済ごとの明細を日にち・時間順にそのまま一覧表示します（決済方法は取り込んだブランド名をそのまま表示）。「振込予定金額」はCSVに記載された受取額（無い場合は販売金額－決済手数料で計算）を1決済ごとにそのまま表示します。日付が変わるごとに、その日の合計行を挟みます。該当するCSVデータが無い場合は「－（データなし）」と表示されます。「実際の振込金額」は通帳・入金明細を見ながら手入力してください（入力欄から離れると自動保存されます）。差額が0円（±1円まで許容）であれば「✅一致」、そうでなければ「⚠️不一致」と表示します。販売データが無いのに通帳には振込がある、というケースも下の「＋振込のみ追加」から登録できます。</div>
+            <div class="hint" style="margin-bottom:8px;">選択した決済会社・月について、取り込んだCSV（funfoは支払履歴CSV、Squareはお取引CSV、PAYGATEは日別内訳CSV〈任意〉または精算明細CSV）の1決済ごとの明細を日にち・時間順にそのまま一覧表示します（決済方法は取り込んだブランド名をそのまま表示）。「振込予定金額」はCSVに記載された受取額（無い場合は販売金額－決済手数料で計算）を1決済ごとにそのまま表示します。日付が変わるごとに、その日の合計行を挟みます。該当するCSVデータが無い場合は「－（データなし）」と表示されます。</div>
             <div style="overflow-x:auto;">
             <table style="border-collapse:collapse;font-size:12.5px;width:100%;">
               <thead>
@@ -1525,20 +1525,12 @@
                   <th style="padding:5px 8px;border:1px solid var(--border);">販売金額</th>
                   <th style="padding:5px 8px;border:1px solid var(--border);">決済手数料</th>
                   <th style="padding:5px 8px;border:1px solid var(--border);">振込予定金額（自動）</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">実際の振込金額</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">差異</th>
                 </tr>
               </thead>
               <tbody id="otherPayReconcileBody"></tbody>
             </table>
             </div>
             <div id="otherPayReconcileEmpty" class="hint" style="display:none;margin-top:8px;">選択した月・決済会社のデータがありません。</div>
-            <div class="toolbar" style="margin-top:8px;gap:8px;flex-wrap:wrap;">
-              <span class="hint" style="margin:0;">＋振込のみ追加（販売データが無いのに口座に振込がある場合）：</span>
-              <input type="date" id="otherPayReconcileManualDate">
-              <input type="number" id="otherPayReconcileManualAmount" placeholder="実際の振込金額" style="width:150px;">
-              <button class="secondary" onclick="addManualOtherPayDeposit()">追加</button>
-            </div>
             </div>
 
             <div style="margin-top:18px;padding-top:12px;border-top:1px dashed var(--border);">
@@ -15941,7 +15933,7 @@ function renderOtherPayCompanyView(){
 // 取り込んだCSVの1決済ごとの明細をそのまま日にち・時間順に一覧表示する（決済方法は取り込んだ
 // 具体的なブランド名：Visa/Master/PayPay/交通系...など。「クレジットカード」のような総称ではない）。
 // 実際の入金と突き合わせるため、日付が変わるタイミングごとに、その日（または振込単位）の
-// 合計＋実際の振込金額入力欄をはさむ。合計をまとめる基準日は、会社ごとに実際の入金日に
+// 合計をはさむ。合計をまとめる基準日は、会社ごとに実際の入金日に
 // 最も近いものを使う：
 //   funfo   … 振込日（CSVの「振込日」列。無い場合は決済日で代用）
 //   PAYGATE … 支払日（精算明細CSVの先頭に書かれている実際の入金日。日別内訳CSVがあれば
@@ -15996,14 +15988,6 @@ function otherPayReconcileSourceRows(source){
   }
   return otherPayRows.filter(r => r.source === source);
 }
-function saveOtherPayDeposit(dateStr, source, valueStr){
-  const trimmed = String(valueStr == null ? "" : valueStr).trim();
-  const value = trimmed === "" ? null : (Number(trimmed) || 0);
-  if(!otherPayDeposits[dateStr]) otherPayDeposits[dateStr] = {};
-  otherPayDeposits[dateStr][source] = value;
-  persistOtherPayDeposits();
-  renderOtherPayReconcileView();
-}
 function otherPayReconcileSelection(){
   const monthEl = document.getElementById("otherPayReconcileMonth");
   const companyEl = document.getElementById("otherPayReconcileCompany");
@@ -16026,8 +16010,6 @@ function otherPayReconcileTxRowHtml(r){
     <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.amount)}円</td>
     <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.feeAmount)}円</td>
     <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${r.net != null ? fmtNum(r.net) + "円" : "－（データなし）"}</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">－</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">－</td>
   </tr>`;
 }
 // 振込予定金額は、1決済ごとにCSVへ記載された受取額（無ければ販売金額－決済手数料で代用した値、
@@ -16045,19 +16027,6 @@ function otherPayReconcileSubtotalRowHtml(groupDate, group, source){
   const feeAmount = group.reduce((s, r) => s + r.feeAmount, 0);
   const netAmount = otherPayReconcileExpectedAmount(group);
   const hasExpected = netAmount !== null;
-  const actual = (otherPayDeposits[groupDate] || {})[source];
-  const hasActual = actual !== null && actual !== undefined;
-  const diff = (hasActual && hasExpected) ? (actual - netAmount) : null;
-  let diffCellHtml;
-  if(!hasExpected){
-    diffCellHtml = `<span style="color:var(--muted);">－（データなし）</span>`;
-  } else if(!hasActual){
-    diffCellHtml = `<span style="color:var(--muted);">❓未入力</span>`;
-  } else if(Math.abs(diff) <= 1){
-    diffCellHtml = `<span style="color:#1a8a3d;font-weight:700;">${fmtNum(diff)}円　✅一致</span>`;
-  } else {
-    diffCellHtml = `<span style="color:#c0392b;font-weight:700;">${fmtNum(diff)}円　⚠️不一致</span>`;
-  }
   return `<tr style="font-weight:700;background:var(--bg);">
     <td style="padding:4px 8px;border:1px solid var(--border);" colspan="2">${groupDate}（${weekday}）振込分</td>
     <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${group.length}件</td>
@@ -16065,26 +16034,7 @@ function otherPayReconcileSubtotalRowHtml(groupDate, group, source){
     <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(amount)}円</td>
     <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(feeAmount)}円</td>
     <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${hasExpected ? fmtNum(netAmount) + "円" : "－（データなし）"}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">
-      <input type="number" value="${hasActual ? actual : ""}" placeholder="未入力" style="width:110px;text-align:right;font-weight:700;"
-        onchange="saveOtherPayDeposit('${groupDate}','${source}', this.value)">円
-    </td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${diffCellHtml}</td>
   </tr>`;
-}
-// 明細（CSV）が1件も無いのに、通帳側の実際の振込金額だけ登録されている日付を拾い出す
-// （「販売データは無いが振込明細にはある」ケース）。otherPayDepositsは日付をキーに
-// {source: 金額|null} を持つため、対象月・対象会社に値が入っている日付のうち、
-// CSVから作られたグループに含まれていないものを抽出する。
-function otherPayReconcileManualOnlyDates(source, monthKey, existingGroupDates){
-  return Object.keys(otherPayDeposits || {})
-    .filter(d => d.slice(0, 7) === monthKey)
-    .filter(d => !existingGroupDates.has(d))
-    .filter(d => {
-      const v = (otherPayDeposits[d] || {})[source];
-      return v !== null && v !== undefined;
-    })
-    .sort();
 }
 function otherPayReconcileGroupedByDate(source, monthKey){
   const rows = otherPayReconcileTransactionRows(source, monthKey);
@@ -16096,10 +16046,6 @@ function otherPayReconcileGroupedByDate(source, monthKey){
     bucket.push(r);
   });
   flush();
-  const existingGroupDates = new Set(groups.map(g => g.groupDate));
-  otherPayReconcileManualOnlyDates(source, monthKey, existingGroupDates).forEach(d => {
-    groups.push({ groupDate: d, bucket: [] });
-  });
   groups.sort((a, b) => a.groupDate.localeCompare(b.groupDate));
   return groups;
 }
@@ -16107,7 +16053,7 @@ function otherPayReconcileGroupedByDate(source, monthKey){
    PAYGATE：精算明細（支払日×決済方法×対象期間ごとの振込額）と、日別内訳CSV（実際の取引）を、精算期間に
             割り当てて比較する。決済明細が無い精算、精算に割り当てられない決済明細を「反映されていない」として示す。
    funfo/Square：CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べ、
-            通帳の実際の振込金額（入力）との差異も確認できる。 */
+            受取額と、決済明細の販売金額－手数料の差異を確認する。振込日がまだ来ていない決済も示す。 */
 let otherPayReconcileMode = "side"; // "side"（並べて照合） | "detail"（従来の明細表示）
 function setOtherPayReconcileMode(m){
   otherPayReconcileMode = m;
@@ -16153,31 +16099,33 @@ function buildOtherPaySideBySide(source, monthKey){
         diff: null, status: "精算明細に反映されていない（未精算、または精算明細が未取込）", level: "ng"
       });
     });
-    return { rows, notes, hasActualInput: false };
+    return { rows, notes };
   }
   // funfo / Square
   if(source === "square") notes.push("SquareのCSVには振込日の情報が無いため、取引日ごとにまとめています（実際の入金日とは異なる場合があります）。");
+  const today = todayStr();
   const groups = otherPayReconcileGroupedByDate(source, monthKey);
   groups.forEach(g => {
     const b = g.bucket;
     const amount = b.reduce((t, r) => t + r.amount, 0);
     const fee = b.reduce((t, r) => t + r.feeAmount, 0);
     const net = otherPayReconcileExpectedAmount(b);
-    const actual = (otherPayDeposits[g.groupDate] || {})[source];
-    const hasActual = actual !== null && actual !== undefined;
     const dates = b.map(r => r.date).sort();
-    let status, level, diff = null;
-    if(!b.length){ status = "決済明細なし（振込のみ登録されている）"; level = "ng"; if(hasActual) diff = actual; }
-    else if(!hasActual){ status = "実際の振込金額が未入力"; level = "warn"; }
-    else { diff = actual - net; if(Math.abs(diff) <= 1){ status = "一致"; level = "ok"; } else { status = "実際の振込と不一致"; level = "ng"; } }
+    const rightNet = amount - fee;
+    const diff = (net != null) ? rightNet - net : null;
+    let status, level;
+    if(source === "funfo" && g.groupDate > today){ status = "振込予定日前（まだ振り込まれていません）"; level = "warn"; }
+    else if(diff == null){ status = "受取額のデータなし"; level = "warn"; }
+    else if(Math.abs(diff) <= 1){ status = "一致"; level = "ok"; }
+    else { status = "受取額と、販売金額－手数料が合いません"; level = "ng"; }
     rows.push({
-      payDate: g.groupDate, label: b.length ? `決済日 ${dates[0]}${dates[0] !== dates[dates.length - 1] ? "〜" + dates[dates.length - 1] : ""}` : "",
-      left: b.length ? { amount, fee, net } : null,
-      right: b.length ? { count: b.length, amount, fee, net: amount - fee } : null,
-      actual: hasActual ? actual : null, diff, status, level
+      payDate: g.groupDate, label: `決済日 ${dates[0]}${dates[0] !== dates[dates.length - 1] ? "〜" + dates[dates.length - 1] : ""}`,
+      left: { amount, fee, net },
+      right: { count: b.length, amount, fee, net: rightNet },
+      diff, status, level
     });
   });
-  return { rows, notes, hasActualInput: true };
+  return { rows, notes };
 }
 function renderOtherPaySideBySide(){
   const box = document.getElementById("otherPayReconcileSide");
@@ -16192,16 +16140,12 @@ function renderOtherPaySideBySide(){
   data.rows.forEach(r => counts[r.level]++);
   const body = data.rows.map(r => {
     const wd = r.payDate ? WEEKDAY_LABELS_JA[new Date(r.payDate + "T00:00:00").getDay()] : "";
-    const actualCell = data.hasActualInput
-      ? `<td style="${tdS}text-align:right;"><input type="number" value="${r.actual != null ? r.actual : ""}" placeholder="未入力" style="width:100px;text-align:right;" onchange="saveOtherPayDeposit('${r.payDate}','${source}', this.value)">円</td>`
-      : "";
     return `<tr>
       <td style="${tdS}">${r.payDate ? `${r.payDate}（${wd}）` : "－"}</td>
       <td style="${tdS}text-align:left;">${escAttr(r.label)}</td>
       <td style="${tdS}text-align:right;background:#f4f8f5;">${num(r.left && r.left.amount)}</td>
       <td style="${tdS}text-align:right;background:#f4f8f5;">${num(r.left && r.left.fee)}</td>
       <td style="${tdS}text-align:right;background:#f4f8f5;font-weight:700;">${num(r.left && r.left.net)}</td>
-      ${actualCell}
       <td style="${tdS}text-align:right;background:#f4f6fb;">${r.right ? r.right.count + "件" : "<span style=\"color:var(--muted);\">－</span>"}</td>
       <td style="${tdS}text-align:right;background:#f4f6fb;">${num(r.right && r.right.amount)}</td>
       <td style="${tdS}text-align:right;background:#f4f6fb;">${num(r.right && r.right.fee)}</td>
@@ -16210,9 +16154,9 @@ function renderOtherPaySideBySide(){
       <td style="${tdS}text-align:left;${levelStyle[r.level]}">${levelMark[r.level]}${escAttr(r.status)}</td>
     </tr>`;
   }).join("");
-  const colsLeft = 3 + (data.hasActualInput ? 1 : 0);
+  const colsLeft = 3;
   const leftTitle = source === "paygate" ? "振込データ（精算明細）" : "振込データ（振込日ごとの受取額）";
-  const diffTitle = source === "paygate" ? "差異（決済－振込）" : "差異（実際の振込－受取額）";
+  const diffTitle = source === "paygate" ? "差異（決済－振込）" : "差異（決済明細－受取額）";
   box.innerHTML = `
     ${data.notes.map(n => `<div class="hint" style="margin-bottom:6px;color:#a8740a;">${escAttr(n)}</div>`).join("")}
     <div style="margin-bottom:8px;font-size:12.5px;font-weight:700;">
@@ -16230,7 +16174,6 @@ function renderOtherPaySideBySide(){
         </tr>
         <tr style="background:var(--bg);">
           <th style="${tdS}">販売金額</th><th style="${tdS}">手数料</th><th style="${tdS}">${source === "paygate" ? "振込額" : "受取額"}</th>
-          ${data.hasActualInput ? `<th style="${tdS}">実際の振込金額（入力）</th>` : ""}
           <th style="${tdS}">件数</th><th style="${tdS}">販売金額</th><th style="${tdS}">手数料</th><th style="${tdS}">受取額</th>
         </tr>
       </thead>
@@ -16239,14 +16182,14 @@ function renderOtherPaySideBySide(){
     <div class="hint" style="margin-top:8px;">
       ${source === "paygate"
         ? "精算明細（PAYGATEの支払日・決済方法・対象期間ごとの振込額）と、日別内訳の決済明細を、精算期間に割り当てて比べています。決済明細側の手数料は、精算明細の手数料を取引金額の割合で配分した概算です。"
-        : "CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べています。通帳で確認した金額を入力すると、差異を確認できます。"}
+        : "CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べています。"}
     </div>`;
 }
 function renderOtherPayReconcileView(){
   const body = document.getElementById("otherPayReconcileBody");
   const emptyEl = document.getElementById("otherPayReconcileEmpty");
   if(!body) return;
-  // 表示モード（並べて照合／明細と実際の振込金額の入力）
+  // 表示モード（並べて照合／明細一覧）
   const sideBtn = document.getElementById("otherPayReconcileModeSideBtn"), detailBtn = document.getElementById("otherPayReconcileModeDetailBtn");
   if(sideBtn) sideBtn.classList.toggle("active", otherPayReconcileMode === "side");
   if(detailBtn) detailBtn.classList.toggle("active", otherPayReconcileMode === "detail");
@@ -16267,19 +16210,6 @@ function renderOtherPayReconcileView(){
   }
   renderOtherPayRegiCrossCheck(monthKey, source);
 }
-// 「＋振込のみ追加」フォームから、CSV上に対応する販売データが無い日付の実際の振込金額を登録する。
-function addManualOtherPayDeposit(){
-  const dateEl = document.getElementById("otherPayReconcileManualDate");
-  const amountEl = document.getElementById("otherPayReconcileManualAmount");
-  const dateStr = dateEl && dateEl.value ? dateEl.value : "";
-  const amountStr = amountEl && amountEl.value ? amountEl.value : "";
-  if(!dateStr){ alert("日付を入力してください。"); return; }
-  if(amountStr.trim() === ""){ alert("実際の振込金額を入力してください。"); return; }
-  const { source } = otherPayReconcileSelection();
-  saveOtherPayDeposit(dateStr, source, amountStr);
-  if(dateEl) dateEl.value = "";
-  if(amountEl) amountEl.value = "";
-}
 function exportOtherPayReconcileToExcel(){
   if(typeof XLSX === "undefined"){ salesExcelUnavailableAlert(); return; }
   const { monthKey, source } = otherPayReconcileSelection();
@@ -16287,13 +16217,11 @@ function exportOtherPayReconcileToExcel(){
     const data = buildOtherPaySideBySide(source, monthKey);
     const head = [source === "paygate" ? "支払日" : "振込日", source === "paygate" ? "決済方法（対象期間）" : "決済日",
       "振込データ 販売金額", "振込データ 手数料", source === "paygate" ? "振込データ 振込額" : "振込データ 受取額"];
-    if(data.hasActualInput) head.push("実際の振込金額");
     head.push("決済データ 件数", "決済データ 販売金額", "決済データ 手数料", "決済データ 受取額", "差異", "状態");
     const aoa = [head];
     const n = v => v == null ? "" : Math.round(v);
     data.rows.forEach(r => {
       const line = [r.payDate, r.label, n(r.left && r.left.amount), n(r.left && r.left.fee), n(r.left && r.left.net)];
-      if(data.hasActualInput) line.push(n(r.actual));
       line.push(r.right ? r.right.count : "", n(r.right && r.right.amount), n(r.right && r.right.fee), n(r.right && r.right.net), n(r.diff), r.status);
       aoa.push(line);
     });
@@ -16303,25 +16231,21 @@ function exportOtherPayReconcileToExcel(){
     return;
   }
   const groups = otherPayReconcileGroupedByDate(source, monthKey);
-  const aoa = [["日付", "曜日", "時間", "決済方法", "販売金額", "決済手数料", "振込予定金額（自動）", "実際の振込金額", "差異"]];
+  const aoa = [["日付", "曜日", "時間", "決済方法", "販売金額", "決済手数料", "振込予定金額（自動）"]];
   groups.forEach(g => {
     g.bucket.forEach(r => {
       const dateObj = new Date(r.date + "T00:00:00");
-      aoa.push([r.date, WEEKDAY_LABELS_JA[dateObj.getDay()], r.time || "", r.brand || "不明", Math.round(r.amount), Math.round(r.feeAmount), r.net != null ? Math.round(r.net) : "データなし", "", ""]);
+      aoa.push([r.date, WEEKDAY_LABELS_JA[dateObj.getDay()], r.time || "", r.brand || "不明", Math.round(r.amount), Math.round(r.feeAmount), r.net != null ? Math.round(r.net) : "データなし"]);
     });
     const amount = g.bucket.reduce((s, r) => s + r.amount, 0);
     const feeAmount = g.bucket.reduce((s, r) => s + r.feeAmount, 0);
     const netAmount = otherPayReconcileExpectedAmount(g.bucket);
-    const hasExpected = netAmount !== null;
-    const actual = (otherPayDeposits[g.groupDate] || {})[source];
-    const hasActual = actual !== null && actual !== undefined;
-    const diff = (hasActual && hasExpected) ? (actual - netAmount) : "";
     const dateObj = new Date(g.groupDate + "T00:00:00");
-    aoa.push([g.groupDate + " 振込分", WEEKDAY_LABELS_JA[dateObj.getDay()], "", g.bucket.length ? `${g.bucket.length}件合計` : "販売データなし", Math.round(amount), Math.round(feeAmount), hasExpected ? Math.round(netAmount) : "データなし", hasActual ? Math.round(actual) : "", diff === "" ? "" : Math.round(diff)]);
+    aoa.push([g.groupDate + " 振込分", WEEKDAY_LABELS_JA[dateObj.getDay()], "", `${g.bucket.length}件合計`, Math.round(amount), Math.round(feeAmount), netAmount !== null ? Math.round(netAmount) : "データなし"]);
   });
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{wch:14},{wch:6},{wch:8},{wch:16},{wch:12},{wch:12},{wch:16},{wch:14},{wch:10}];
+  ws["!cols"] = [{wch:14},{wch:6},{wch:8},{wch:16},{wch:12},{wch:12},{wch:16}];
   XLSX.utils.book_append_sheet(wb, ws, OTHERPAY_RECONCILE_COMPANY_LABELS[source] || source);
 
   const crossRows = computeRegiOtherPaySlipRows(monthKey, source);
