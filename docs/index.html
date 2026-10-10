@@ -51,10 +51,10 @@
   #page-labor table th,#page-labor table td{text-align:center;}
   #page-labor .card{box-shadow:0 1px 3px rgba(35,79,56,.06);margin-bottom:10px;}
   #page-labor .hint{line-height:1.6;}
-  #laborTabs{display:inline-flex;gap:2px;padding:3px;background:#e9eeeb;border-radius:9px;margin-bottom:12px;flex-wrap:wrap;}
-  #laborTabs button{background:transparent;color:#4d5a54;border:none;padding:7px 16px;border-radius:7px;font-size:13px;}
-  #laborTabs button:hover{background:rgba(255,255,255,.6);}
-  #laborTabs button.active{background:#fff;color:var(--main-dark);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.14);}
+  #laborTabs,.seg-tabs{display:inline-flex;gap:2px;padding:3px;background:#e9eeeb;border-radius:9px;margin-bottom:12px;flex-wrap:wrap;}
+  #laborTabs button,.seg-tabs button{background:transparent;color:#4d5a54;border:none;padding:7px 16px;border-radius:7px;font-size:13px;}
+  #laborTabs button:hover,.seg-tabs button:hover{background:rgba(255,255,255,.6);}
+  #laborTabs button.active,.seg-tabs button.active{background:#fff;color:var(--main-dark);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.14);}
   .lb-tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
   .lb-tile{flex:1;min-width:150px;background:var(--card);border:1px solid var(--border);border-top:3px solid var(--main);border-radius:8px;padding:9px 14px;}
   .lb-tile.alt{border-top-color:var(--accent);}
@@ -1666,6 +1666,15 @@
       <div class="topbar">
         <h2>設定</h2>
       </div>
+      <div id="settingsTabs" class="seg-tabs">
+        <button class="secondary active" id="settingsViewClassifyBtn" onclick="switchSettingsView('classify')">分類</button>
+        <button class="secondary" id="settingsViewBudgetBtn" onclick="switchSettingsView('budget')">予算管理設定</button>
+        <button class="secondary" id="settingsViewAccountBtn" onclick="switchSettingsView('account')">アカウント</button>
+        <button class="secondary" id="settingsViewDataBtn" onclick="switchSettingsView('data')">データ保存</button>
+      </div>
+
+      <!-- データ保存（クラウド保存・全データのバックアップ／復元） -->
+      <div id="settingsDataView" style="display:none;">
       <div class="card" style="margin-bottom:16px;padding:14px 18px;">
         <h3 style="margin-top:0;">☁ クラウド保存</h3>
         <div class="hint">データはGoogleスプレッドシート「商品管理システム データ」に保存され、同じURLをどの端末で開いても同じ内容になります（開くときに合言葉が必要です）。各ブラウザにも控えが残ります。別の端末で同じ項目を同時に編集した場合は、保存時に確認が出ます。</div>
@@ -1693,6 +1702,18 @@
         <div id="fullAppBackupResult" class="hint" style="margin-top:6px;"></div>
         <div class="hint" style="margin-top:6px;">※ 復元すると、現在ブラウザに保存されている全データが選択したバックアップファイルの内容で上書きされます。この操作は取り消せません。</div>
       </div>
+      </div>
+
+      <!-- アカウント（内容は後ほど追加） -->
+      <div id="settingsAccountView" style="display:none;">
+        <div class="card" style="padding:14px 18px;">
+          <h3 style="margin-top:0;">アカウント</h3>
+          <div class="hint">アカウントの設定項目は、今後追加します。</div>
+        </div>
+      </div>
+
+      <!-- 分類（大分類・中分類・小分類などの選択肢） -->
+      <div id="settingsClassifyView">
       <div class="hint" style="margin-bottom:14px;">商品マスタ・原料・資材・半製品マスタ・半製品/未完成品管理・仕入れ管理などで使う選択肢（大分類・小分類・中分類など）をここでまとめて編集できます。大分類と小分類は商品・原料の両方で共通の選択肢を使用します。</div>
       <div class="card">
         <div class="toolbar" style="margin-bottom:10px;">
@@ -1708,7 +1729,11 @@
           <span id="settingsSaveStatus" class="hint" style="margin:0;"></span>
         </div>
       </div>
-      <div class="card" style="margin-top:16px;">
+      </div>
+
+      <!-- 予算管理設定（予算管理：各種データ項目設定） -->
+      <div id="settingsBudgetView" style="display:none;">
+      <div class="card">
         <h3 style="margin-top:0;">予算管理：各種データ項目設定</h3>
         <div class="hint" style="margin-bottom:10px;">販売促進費・一般管理費の各項目に、仕入れ管理データのどの中分類・小分類の組み合わせを集計するかを設定します。</div>
         <div class="toolbar" style="margin-bottom:10px;">
@@ -1724,6 +1749,7 @@
           <button onclick="saveBudgetCategoryMappingsFromDraft()">保存</button>
           <span id="budgetMappingSaveStatus" class="hint" style="margin:0;"></span>
         </div>
+      </div>
       </div>
     </div>
 
@@ -5116,6 +5142,15 @@ registerBootStep(function(){
   const active = APP_PAGE_IDS.find(p=>document.getElementById("page-"+p) && document.getElementById("page-"+p).classList.contains("active"));
   if(allowed.length && !allowed.includes(active)) switchPage(allowed[0]);
 });
+// 設定ページの表示切替（分類／予算管理設定／アカウント／データ保存）
+function switchSettingsView(view){
+  const views = { classify: "Classify", budget: "Budget", account: "Account", data: "Data" };
+  Object.keys(views).forEach(v=>{
+    const K = views[v];
+    document.getElementById("settingsView"+K+"Btn").classList.toggle("active", v===view);
+    document.getElementById("settings"+K+"View").style.display = (v===view) ? "" : "none";
+  });
+}
 async function switchPage(page){
   { const allowed = allowedPagesForCurrentDept(); if(allowed.length && !allowed.includes(page)) page = allowed[0]; }
   document.getElementById("page-products").classList.toggle("active", page==="products");
