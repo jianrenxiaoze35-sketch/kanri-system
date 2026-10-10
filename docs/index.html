@@ -16,6 +16,25 @@
   .dept-switch label{display:block;font-size:11px;color:#b9cbc1;margin-bottom:3px;}
   .dept-switch select{width:100%;padding:6px 8px;font-size:13px;font-weight:700;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;}
   .dept-switch select option{color:#141413;background:#fff;}
+  .acct-chip{margin:4px 20px 2px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:#e6eee9;background:rgba(255,255,255,.1);border-radius:6px;padding:4px 6px 4px 10px;}
+  .acct-chip button{padding:2px 8px;font-size:11px;background:rgba(255,255,255,.2);}
+  .acct-chip button:hover{background:rgba(255,255,255,.35);}
+  #accountGate{position:fixed;inset:0;z-index:10050;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px;}
+  #accountGate .ag-card{background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:24px 26px;width:min(400px,100%);}
+  #accountGate h2{margin:0 0 4px;font-size:18px;}
+  #accountGate .ag-step{font-size:12px;color:var(--muted);margin-bottom:14px;}
+  #accountGate .ag-depts{display:grid;gap:8px;}
+  #accountGate .ag-depts button{padding:12px;font-size:14px;text-align:center;}
+  #accountGate select,#accountGate input{width:100%;box-sizing:border-box;padding:10px;font-size:15px;margin-bottom:10px;}
+  #accountGate .ag-err{color:var(--danger);font-size:12.5px;min-height:18px;margin-bottom:6px;}
+  #accountGate .ag-actions{display:flex;gap:8px;}
+  #accountGate .ag-actions button{flex:1;padding:10px;font-size:14px;}
+  .acc-tree{display:grid;gap:6px;}
+  .acc-tree .acc-page{border:1px solid var(--border);border-radius:6px;padding:6px 10px;}
+  .acc-tree .acc-page-head{font-weight:700;display:flex;align-items:center;gap:6px;}
+  .acc-tree .acc-views{display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 0 0 22px;font-size:12.5px;}
+  .acc-tree label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+  .acc-editor{border:2px solid var(--main);}
   .nav-item{display:flex;align-items:center;gap:8px;padding:12px 20px;cursor:pointer;font-size:14px;color:#dfe9e3;}
   .nav-item.active{background:var(--main);color:#fff;font-weight:bold;}
   .nav-item.disabled{color:#7c8f85;cursor:default;}
@@ -440,6 +459,10 @@
     <div class="dept-switch">
       <label for="deptSelect">部門</label>
       <select id="deptSelect" onchange="switchDepartment(this.value)"></select>
+    </div>
+    <div class="acct-chip" id="acctChip" style="display:none;">
+      <span id="acctChipName"></span>
+      <button type="button" onclick="accountLogout()" title="ログアウトして、別のアカウントでログインし直します">切替</button>
     </div>
     <div id="cloudStatusSide" style="font-size:11px;padding:8px 20px 4px;color:#dfe9e3;">☁ 接続中…</div>
     <div class="nav-item active" id="nav-products" onclick="switchPage('products')">📦 商品マスタ</div>
@@ -1706,10 +1729,7 @@
 
       <!-- アカウント（内容は後ほど追加） -->
       <div id="settingsAccountView" style="display:none;">
-        <div class="card" style="padding:14px 18px;">
-          <h3 style="margin-top:0;">アカウント</h3>
-          <div class="hint">アカウントの設定項目は、今後追加します。</div>
-        </div>
+        <div id="accountViewBody"></div>
       </div>
 
       <!-- 分類（大分類・中分類・小分類などの選択肢） -->
@@ -2476,7 +2496,8 @@ const DEPARTMENTS = [
 ];
 const DEFAULT_DEPT_ID = "craft";
 const DEPT_STORAGE_KEY = "kanri_dept_v1";
-const DEPT_SHARED_KEYS = [];
+const ACCOUNTS_KEY = "app_accounts_v1"; // アカウント（部門をまたいで共通。クラウドに保存される）
+const DEPT_SHARED_KEYS = [ACCOUNTS_KEY];
 let currentDeptId = (function(){
   let id = "";
   try{ id = localStorage.getItem(DEPT_STORAGE_KEY) || ""; }catch(e){}
@@ -3078,6 +3099,7 @@ const _bootSteps = [];
 function registerBootStep(fn){ _bootSteps.push(fn); }
 async function runBootSteps(){
   await _regiDailyStoreReady;
+  await appAccountGate(); // アカウントが登録されていれば、部門選択→氏名選択→暗証番号（無ければ何もしない）
   for(const step of _bootSteps){
     try{ step(); }catch(err){ console.error("boot step failed:", err); }
   }
@@ -5113,11 +5135,323 @@ function importPurchasesExcel(event){
   reader.readAsArrayBuffer(file);
 }
 
+/* ===================== アカウント（部門・氏名・暗証番号・表示するページ／ビューの制限） =====================
+   開くとき：合言葉 →（アカウントが1件以上あれば）部門選択 → 氏名選択 → 暗証番号。
+   アカウントごとに、使える部門と、表示するページ・ビューを制限する。
+   ※ これは画面の表示を絞る機能で、データの閲覧そのものを防ぐセキュリティ機能ではない
+     （全データは合言葉を知っている端末に読み込まれるため）。 */
+const APP_ACCESS_REGISTRY = [
+  { page:"products", label:"商品マスタ", views:[] },
+  { page:"ingredients", label:"原料・資材・半製品マスタ", cur:()=>ingredientView, go:v=>switchIngredientView(v),
+    views:[["all","全体","ingViewAllBtn"],["raw","原料","ingViewRawBtn"],["prep","仕込み/半製品","ingViewPrepBtn"],["material","資材","ingViewMaterialBtn"],["equip","備品","ingViewEquipBtn"],["uncategorized","未分類","ingViewUncategorizedBtn"]] },
+  { page:"recipes", label:"原価・レシピ管理", views:[] },
+  { page:"purchases", label:"請求書／仕入れ管理", cur:()=>purchaseView, go:v=>switchPurchaseView(v),
+    views:[["invoice","請求書","purchaseViewInvoiceBtn"],["supplier","仕入れ先","purchaseViewSupplierBtn"],["bunrui","中分類","purchaseViewBunruiBtn"],["delivery","納品確認","purchaseViewDeliveryBtn"]] },
+  { page:"inventory", label:"在庫・棚卸", cur:()=>inventoryView, go:v=>switchInventoryView(v),
+    views:[["products","商品","invViewProductsBtn"],["materials","原料・資材","invViewMaterialsBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
+  { page:"sales", label:"売上管理", cur:()=>salesView, go:v=>switchSalesView(v),
+    views:[["list","リストビュー","salesViewListBtn"],["table","テーブルビュー","salesViewTableBtn"],["hourly","時間帯別ビュー","salesViewHourlyBtn"]] },
+  { page:"labor", label:"人件費管理", cur:()=>laborView, go:v=>switchLaborView(v),
+    views:[["hourly","時間別人件費","laborViewHourlyBtn"],["daily","日別人件費","laborViewDailyBtn"],["monthly","月別人件費","laborViewMonthlyBtn"],["yearly","年別人件費","laborViewYearlyBtn"],["wage","基本設定","laborViewWageBtn"],["employees","従業員情報","laborViewEmployeesBtn"],["welfare","福利厚生","laborViewWelfareBtn"]] },
+  { page:"budget", label:"予算管理", cur:()=>budgetView, go:v=>switchBudgetView(v),
+    views:[["overview","全体","budgetViewOverviewBtn"],["expense","経費管理","budgetViewExpenseBtn"],["data","各種データ","budgetViewDataBtn"]] },
+  { page:"regi", label:"レジ締め・売上集計", cur:()=>regiView, go:v=>switchRegiView(v),
+    views:[["regi","①レジ締め","regiViewRegiBtn"],["sales","②売上集計","regiViewSalesBtn"],["slip","③伝票","regiViewSlipBtn"],["history","④過去データ","regiViewHistoryBtn"],["otherpay","⑤その他決済集計","regiViewOtherpayBtn"],["settings","設定","regiViewSettingsBtn"]] },
+  { page:"settings", label:"設定", cur:()=>settingsCurrentView, go:v=>switchSettingsView(v),
+    views:[["classify","分類","settingsViewClassifyBtn"],["budget","予算管理設定","settingsViewBudgetBtn"],["account","アカウント","settingsViewAccountBtn"],["data","データ保存","settingsViewDataBtn"]] }
+];
+const ACCOUNT_SESSION_KEY = "kanri_session_v1"; // 開いているあいだだけ有効（タブを閉じると、次はまたログインが必要）
+let currentAccount = null; // null＝制限なし（アカウント未登録、または未ログイン）
+function loadAccounts(){
+  try{ const a = JSON.parse(appStore.getItem(ACCOUNTS_KEY) || "[]"); return Array.isArray(a) ? a : []; }catch(e){ return []; }
+}
+function saveAccounts(list){ appStore.setItem(ACCOUNTS_KEY, JSON.stringify(list)); }
+async function accountPinHash(id, pin){
+  const str = `kanri-pin:${id}:${pin}`;
+  try{
+    if(window.crypto && crypto.subtle){
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+    }
+  }catch(e){}
+  let h = 2166136261; // 暗号APIが使えない環境用の簡易ハッシュ
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return "f" + (h >>> 0).toString(16);
+}
+function accountAllowsView(page, view){
+  if(!currentAccount) return true;
+  return (currentAccount.views || {})[`${page}.${view}`] !== false;
+}
+function accountAllowsPage(page){
+  if(!currentAccount) return true;
+  if((currentAccount.pages || {})[page] === false) return false;
+  const reg = APP_ACCESS_REGISTRY.find(r=>r.page===page);
+  if(reg && reg.views.length) return reg.views.some(v=>accountAllowsView(page, v[0]));
+  return true;
+}
+function accountAllowedDepts(){
+  if(!currentAccount) return DEPARTMENTS.map(d=>d.id);
+  return DEPARTMENTS.map(d=>d.id).filter(id=>(currentAccount.deptIds || []).includes(id));
+}
+// 表示しないビューのボタンを隠し、いま開いているビューが許可されていなければ最初の許可ビューへ移す。
+function applyAccountViewRestrictions(page, moveView){
+  APP_ACCESS_REGISTRY.forEach(r=>{
+    if(page && r.page !== page) return;
+    r.views.forEach(([v,label,btn])=>{
+      const el = document.getElementById(btn);
+      if(el) el.style.display = accountAllowsView(r.page, v) ? "" : "none";
+    });
+    if(moveView && r.views.length && r.cur && !accountAllowsView(r.page, r.cur())){
+      const first = r.views.find(v=>accountAllowsView(r.page, v[0]));
+      if(first) r.go(first[0]);
+    }
+  });
+}
+function renderAccountChip(){
+  const chip = document.getElementById("acctChip");
+  if(!chip) return;
+  chip.style.display = currentAccount ? "" : "none";
+  if(currentAccount) document.getElementById("acctChipName").textContent = "👤 " + currentAccount.name;
+}
+function accountLogout(){
+  try{ sessionStorage.removeItem(ACCOUNT_SESSION_KEY); }catch(e){}
+  appReloadAfterSync();
+}
+// 起動時のログイン処理。アカウントが無ければ何もしない（従来どおり制限なし）。
+async function appAccountGate(){
+  const accounts = loadAccounts();
+  currentAccount = null;
+  if(!accounts.length) return;
+  let sess = null;
+  try{ sess = JSON.parse(sessionStorage.getItem(ACCOUNT_SESSION_KEY) || "null"); }catch(e){}
+  const finish = (acc, deptId)=>{
+    try{ sessionStorage.setItem(ACCOUNT_SESSION_KEY, JSON.stringify({ accountId: acc.id, deptId })); }catch(e){}
+    currentAccount = acc;
+    if(deptId !== currentDeptId){
+      try{ localStorage.setItem(DEPT_STORAGE_KEY, deptId); }catch(e){}
+      location.reload();
+      return false; // 読み込み直しの間は先へ進めない
+    }
+    return true;
+  };
+  if(sess){
+    const acc = accounts.find(a=>a.id === sess.accountId);
+    if(acc && (acc.deptIds || []).includes(sess.deptId)){
+      if(!finish(acc, sess.deptId)) await new Promise(()=>{});
+      return;
+    }
+  }
+  const overlay = document.createElement("div");
+  overlay.id = "accountGate";
+  document.body.appendChild(overlay);
+  const bootOv = document.getElementById("appBootLoadingOverlay");
+  if(bootOv) bootOv.style.display = "none";
+  await new Promise(resolve=>{
+    let deptId = "", acc = null;
+    const showDept = ()=>{
+      overlay.innerHTML = `<div class="ag-card"><h2>商品管理システム</h2><div class="ag-step">① 部門を選んでください</div>
+        <div class="ag-depts">${DEPARTMENTS.map(d=>`<button type="button" data-d="${d.id}" class="secondary">${escAttr(d.name)}</button>`).join("")}</div></div>`;
+      overlay.querySelectorAll("[data-d]").forEach(b=>b.onclick = ()=>{ deptId = b.dataset.d; showName(); });
+    };
+    const showName = ()=>{
+      const list = accounts.filter(a=>(a.deptIds || []).includes(deptId));
+      const dname = DEPARTMENTS.find(d=>d.id===deptId).name;
+      overlay.innerHTML = `<div class="ag-card"><h2>${escAttr(dname)}</h2><div class="ag-step">② 氏名を選んでください</div>
+        ${list.length ? `<select id="agName">${list.map(a=>`<option value="${escAttr(a.id)}">${escAttr(a.name)}</option>`).join("")}</select>` : `<div class="ag-err">この部門に登録されたアカウントがありません。</div>`}
+        <div class="ag-actions"><button type="button" class="secondary" id="agBack">戻る</button>${list.length ? `<button type="button" id="agNext">次へ</button>` : ""}</div></div>`;
+      overlay.querySelector("#agBack").onclick = showDept;
+      const next = overlay.querySelector("#agNext");
+      if(next) next.onclick = ()=>{ acc = accounts.find(a=>a.id === overlay.querySelector("#agName").value); showPin(); };
+    };
+    const showPin = ()=>{
+      overlay.innerHTML = `<div class="ag-card"><h2>${escAttr(acc.name)}</h2><div class="ag-step">③ 暗証番号を入力してください</div>
+        <input type="password" id="agPin" inputmode="numeric" autocomplete="off" placeholder="暗証番号">
+        <div class="ag-err" id="agErr"></div>
+        <div class="ag-actions"><button type="button" class="secondary" id="agBack">戻る</button><button type="button" id="agGo">ログイン</button></div></div>`;
+      const pin = overlay.querySelector("#agPin");
+      pin.focus();
+      overlay.querySelector("#agBack").onclick = showName;
+      const go = async ()=>{
+        const h = await accountPinHash(acc.id, pin.value);
+        if(h !== acc.pinHash){ overlay.querySelector("#agErr").textContent = "暗証番号が違います。"; pin.value = ""; pin.focus(); return; }
+        overlay.remove();
+        if(finish(acc, deptId)) resolve();
+      };
+      overlay.querySelector("#agGo").onclick = go;
+      pin.addEventListener("keydown", e=>{ if(e.key === "Enter") go(); });
+    };
+    showDept();
+  });
+}
+
+/* ---- 設定ページ：アカウントビュー ---- */
+let accountDraft = null; // 編集中のアカウント（新規・編集）
+let accountDraftIsNew = false;
+function accountSummary(a){
+  const pages = APP_ACCESS_REGISTRY.filter(r=> (a.pages||{})[r.page] !== false && (!r.views.length || r.views.some(v=>(a.views||{})[`${r.page}.${v[0]}`] !== false)));
+  const nViews = APP_ACCESS_REGISTRY.reduce((t,r)=> t + ((a.pages||{})[r.page] === false ? 0 : r.views.filter(v=>(a.views||{})[`${r.page}.${v[0]}`] !== false).length), 0);
+  return `${pages.length}ページ・${nViews}ビュー`;
+}
+function renderAccountView(){
+  const box = document.getElementById("accountViewBody");
+  if(!box) return;
+  const accounts = loadAccounts();
+  const rows = accounts.map((a,i)=>`<tr>
+    <td style="text-align:left;font-weight:600;">${escAttr(a.name)}${currentAccount && currentAccount.id===a.id ? ' <span class="count-badge">ログイン中</span>' : ''}</td>
+    <td style="text-align:left;">${(a.deptIds||[]).map(id=>{ const d = DEPARTMENTS.find(x=>x.id===id); return d ? escAttr(d.name) : ""; }).filter(Boolean).join("、")}</td>
+    <td>${accountSummary(a)}</td>
+    <td class="actions-col"><button class="secondary" onclick="accountEdit('${escAttr(a.id)}')">編集</button><button class="danger" onclick="accountDelete('${escAttr(a.id)}')">削除</button></td></tr>`).join("");
+  box.innerHTML = `
+    <div class="card" style="padding:14px 18px;margin-bottom:12px;">
+      <h3 style="margin-top:0;">アカウント</h3>
+      <div class="hint" style="margin-bottom:8px;">
+        アカウントを登録すると、開くときに「部門 → 氏名 → 暗証番号」でログインする形になります。アカウントごとに、使える部門と、表示するページ・ビューを制限できます。<br>
+        アカウントが1件も無いあいだは、これまでどおり全員が制限なしで使えます。設定ページ（アカウント）を開けるアカウントは、誰でもアカウントを編集できます。<br>
+        <b>※ 表示を絞る機能です。</b>合言葉を知っている端末には全データが読み込まれるため、データの閲覧そのものを防ぐセキュリティ機能ではありません。
+      </div>
+      <button onclick="accountNew()">＋ アカウントを追加</button>
+    </div>
+    ${accounts.length ? `<div class="card" style="margin-bottom:12px;"><table style="min-width:0;"><thead><tr><th>氏名</th><th>使える部門</th><th>表示範囲</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">アカウントはまだ登録されていません（制限なし）。</div>`}
+    <div id="accountEditor"></div>`;
+  renderAccountEditor();
+}
+function accountNew(){
+  accountDraftIsNew = true;
+  accountDraft = { id: "acc_" + Date.now().toString(36) + Math.random().toString(36).slice(2,5), name: "", deptIds: [], pinHash: "", pages: {}, views: {}, pin: "" };
+  renderAccountEditor();
+  const ed = document.getElementById("accountEditor"); if(ed) ed.scrollIntoView({behavior:"smooth", block:"start"});
+}
+function accountEdit(id){
+  const a = loadAccounts().find(x=>x.id===id);
+  if(!a) return;
+  accountDraftIsNew = false;
+  accountDraft = JSON.parse(JSON.stringify(a)); accountDraft.pin = "";
+  accountDraft.pages = accountDraft.pages || {}; accountDraft.views = accountDraft.views || {};
+  renderAccountEditor();
+  const ed = document.getElementById("accountEditor"); if(ed) ed.scrollIntoView({behavior:"smooth", block:"start"});
+}
+function accountCancelEdit(){ accountDraft = null; renderAccountEditor(); }
+function renderAccountEditor(){
+  const box = document.getElementById("accountEditor");
+  if(!box) return;
+  if(!accountDraft){ box.innerHTML = ""; return; }
+  const d = accountDraft;
+  box.innerHTML = `<div class="card acc-editor" style="padding:14px 18px;">
+    <h3 style="margin-top:0;">${accountDraftIsNew ? "アカウントを追加" : "アカウントを編集"}</h3>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px 16px;">
+      <div class="form-field"><label>氏名 *</label><input type="text" id="accName" value="${escAttr(d.name)}" oninput="accountDraft.name=this.value"></div>
+      <div class="form-field"><label>暗証番号（4桁以上の数字）${accountDraftIsNew ? " *" : "（変更するときだけ入力）"}</label><input type="password" id="accPin" inputmode="numeric" autocomplete="new-password" oninput="accountDraft.pin=this.value" placeholder="${accountDraftIsNew ? "" : "空欄なら変更しません"}"></div>
+    </div>
+    <div style="margin:12px 0 4px;font-weight:700;">使える部門 *</div>
+    <div style="display:flex;gap:6px 18px;flex-wrap:wrap;">
+      ${DEPARTMENTS.map(x=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" ${d.deptIds.includes(x.id)?"checked":""} onchange="accountDraftToggleDept('${x.id}',this.checked)">${escAttr(x.name)}</label>`).join("")}
+    </div>
+    <div style="margin:14px 0 4px;font-weight:700;display:flex;align-items:center;gap:8px;">表示するページ・ビュー
+      <button class="secondary" style="padding:2px 8px;font-size:11px;" onclick="accountDraftAll(true)">すべて選択</button>
+      <button class="secondary" style="padding:2px 8px;font-size:11px;" onclick="accountDraftAll(false)">すべて解除</button>
+    </div>
+    <div class="acc-tree" id="accTree">${accountTreeHtml()}</div>
+    <div class="modal-footer" style="justify-content:flex-start;margin-top:14px;">
+      <button onclick="accountSave()">保存</button>
+      <button class="secondary" onclick="accountCancelEdit()">キャンセル</button>
+      <span id="accountSaveStatus" class="hint" style="margin:0;"></span>
+    </div>
+  </div>`;
+}
+function accountTreeHtml(){
+  const d = accountDraft;
+  return APP_ACCESS_REGISTRY.map(r=>{
+    const pageOn = d.pages[r.page] !== false;
+    const views = r.views.map(v=>{
+      const on = pageOn && d.views[`${r.page}.${v[0]}`] !== false;
+      return `<label><input type="checkbox" ${on?"checked":""} ${pageOn?"":"disabled"} onchange="accountDraftToggleView('${r.page}','${v[0]}',this.checked)">${escAttr(v[1])}</label>`;
+    }).join("");
+    return `<div class="acc-page"><div class="acc-page-head"><label><input type="checkbox" ${pageOn?"checked":""} onchange="accountDraftTogglePage('${r.page}',this.checked)">${escAttr(r.label)}</label></div>${views ? `<div class="acc-views">${views}</div>` : ""}</div>`;
+  }).join("");
+}
+function accountDraftToggleDept(id, on){
+  const s = new Set(accountDraft.deptIds); if(on) s.add(id); else s.delete(id);
+  accountDraft.deptIds = DEPARTMENTS.map(x=>x.id).filter(x=>s.has(x));
+}
+function accountDraftTogglePage(page, on){
+  accountDraft.pages[page] = on;
+  const reg = APP_ACCESS_REGISTRY.find(r=>r.page===page);
+  if(on) reg.views.forEach(v=>{ accountDraft.views[`${page}.${v[0]}`] = true; });
+  document.getElementById("accTree").innerHTML = accountTreeHtml();
+}
+function accountDraftToggleView(page, view, on){
+  accountDraft.views[`${page}.${view}`] = on;
+  document.getElementById("accTree").innerHTML = accountTreeHtml();
+}
+function accountDraftAll(on){
+  APP_ACCESS_REGISTRY.forEach(r=>{
+    accountDraft.pages[r.page] = on;
+    r.views.forEach(v=>{ accountDraft.views[`${r.page}.${v[0]}`] = on; });
+  });
+  document.getElementById("accTree").innerHTML = accountTreeHtml();
+}
+// 保存後に「設定ページのアカウントビューを開けるアカウント」が1件も無くなると、誰も編集できなくなるため保存させない。
+function accountCanEditAccounts(a){
+  if((a.pages||{}).settings === false) return false;
+  return (a.views||{})["settings.account"] !== false;
+}
+async function accountSave(){
+  const d = accountDraft;
+  const status = document.getElementById("accountSaveStatus");
+  const fail = (m)=>{ if(status){ status.style.color = "var(--danger)"; status.textContent = m; } };
+  if(!d.name.trim()) return fail("氏名を入力してください。");
+  if(!d.deptIds.length) return fail("使える部門を1つ以上選んでください。");
+  if(accountDraftIsNew || d.pin){
+    if(!/^\d{4,}$/.test(d.pin)) return fail("暗証番号は4桁以上の数字で入力してください。");
+  }
+  const list = loadAccounts();
+  const dup = list.find(a=> a.id !== d.id && a.name.trim() === d.name.trim() && a.deptIds.some(x=>d.deptIds.includes(x)));
+  if(dup) return fail("同じ部門に、同じ氏名のアカウントがすでにあります。");
+  if(!APP_ACCESS_REGISTRY.some(r=>accountAllowsPageFor(d, r.page))) return fail("表示するページを1つ以上選んでください。");
+  const rec = { id: d.id, name: d.name.trim(), deptIds: d.deptIds, pages: d.pages, views: d.views, pinHash: d.pinHash };
+  if(d.pin) rec.pinHash = await accountPinHash(d.id, d.pin);
+  const idx = list.findIndex(a=>a.id === d.id);
+  if(idx >= 0) list[idx] = rec; else list.push(rec);
+  if(!list.some(accountCanEditAccounts)) return fail("設定ページの「アカウント」を表示できるアカウントが1件も無くなるため、保存できません。");
+  saveAccounts(list);
+  // 最初の1件を登録した場合は、そのアカウントでログインした状態にして続けて使えるようにする
+  if(list.length === 1 && !currentAccount){
+    currentAccount = rec;
+    try{ sessionStorage.setItem(ACCOUNT_SESSION_KEY, JSON.stringify({ accountId: rec.id, deptId: currentDeptId })); }catch(e){}
+  } else if(currentAccount && currentAccount.id === rec.id){
+    currentAccount = rec;
+  }
+  accountDraft = null;
+  applyDeptMenu();
+  renderAccountView();
+}
+function accountAllowsPageFor(a, page){
+  if((a.pages||{})[page] === false) return false;
+  const reg = APP_ACCESS_REGISTRY.find(r=>r.page===page);
+  return reg.views.length ? reg.views.some(v=>(a.views||{})[`${page}.${v[0]}`] !== false) : true;
+}
+function accountDelete(id){
+  const list = loadAccounts();
+  const a = list.find(x=>x.id===id);
+  if(!a) return;
+  if(!confirm(`アカウント「${a.name}」を削除しますか？`)) return;
+  const rest = list.filter(x=>x.id !== id);
+  if(rest.length && !rest.some(accountCanEditAccounts)){
+    alert("設定ページの「アカウント」を表示できるアカウントが1件も無くなるため、削除できません。");
+    return;
+  }
+  saveAccounts(rest);
+  if(currentAccount && currentAccount.id === id){ accountLogout(); return; }
+  if(accountDraft && accountDraft.id === id) accountDraft = null;
+  renderAccountView();
+}
+
 // 部門ごとのメニュー表示。DEPARTMENTSのmenusに含まれるページだけをサイドバーに出す（nullはすべて）。
 const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","settings"];
 function allowedPagesForCurrentDept(){
   const m = getCurrentDept().menus;
-  return m ? APP_PAGE_IDS.filter(p=>m.includes(p)) : APP_PAGE_IDS.slice();
+  const byDept = m ? APP_PAGE_IDS.filter(p=>m.includes(p)) : APP_PAGE_IDS.slice();
+  return byDept.filter(accountAllowsPage); // ログイン中のアカウントに許可されたページだけ
 }
 function applyDeptMenu(){
   const allowed = allowedPagesForCurrentDept();
@@ -5127,12 +5461,18 @@ function applyDeptMenu(){
   });
   const sel = document.getElementById("deptSelect");
   if(sel){
-    sel.innerHTML = DEPARTMENTS.map(d=>`<option value="${d.id}" ${d.id===currentDeptId?"selected":""}>${escAttr(d.name)}</option>`).join("");
+    const okDepts = accountAllowedDepts();
+    sel.innerHTML = DEPARTMENTS.filter(d=>okDepts.includes(d.id)).map(d=>`<option value="${d.id}" ${d.id===currentDeptId?"selected":""}>${escAttr(d.name)}</option>`).join("");
+    sel.disabled = okDepts.length <= 1;
   }
+  renderAccountChip();
+  applyAccountViewRestrictions();
   document.title = `商品管理システム（${getCurrentDept().name}）`;
 }
 function switchDepartment(id){
   if(!DEPARTMENTS.some(d=>d.id===id) || id === currentDeptId) return;
+  if(!accountAllowedDepts().includes(id)){ alert("このアカウントでは、その部門は使えません。"); applyDeptMenu(); return; }
+  if(currentAccount){ try{ sessionStorage.setItem(ACCOUNT_SESSION_KEY, JSON.stringify({ accountId: currentAccount.id, deptId: id })); }catch(e){} }
   try{ localStorage.setItem(DEPT_STORAGE_KEY, id); }catch(e){ alert("部門の選択を保存できませんでした。"); applyDeptMenu(); return; }
   appReloadAfterSync(); // 未保存の変更をクラウドへ送ってから、選んだ部門のデータで読み込み直す
 }
@@ -5143,7 +5483,10 @@ registerBootStep(function(){
   if(allowed.length && !allowed.includes(active)) switchPage(allowed[0]);
 });
 // 設定ページの表示切替（分類／予算管理設定／アカウント／データ保存）
+let settingsCurrentView = "classify";
 function switchSettingsView(view){
+  settingsCurrentView = view;
+  if(view === "account") renderAccountView();
   const views = { classify: "Classify", budget: "Budget", account: "Account", data: "Data" };
   Object.keys(views).forEach(v=>{
     const K = views[v];
@@ -5153,6 +5496,7 @@ function switchSettingsView(view){
 }
 async function switchPage(page){
   { const allowed = allowedPagesForCurrentDept(); if(allowed.length && !allowed.includes(page)) page = allowed[0]; }
+  applyAccountViewRestrictions(page, true); // 許可されていないビューは隠し、開いているビューが許可外なら移す
   document.getElementById("page-products").classList.toggle("active", page==="products");
   document.getElementById("page-ingredients").classList.toggle("active", page==="ingredients");
   document.getElementById("page-recipes").classList.toggle("active", page==="recipes");
