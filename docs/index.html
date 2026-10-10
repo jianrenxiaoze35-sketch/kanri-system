@@ -15153,12 +15153,12 @@ function renderHistoryRegiClose(rst){
   const pc = rst.posCash || {};
   const posTotal = (pc.funfo||0) + (pc.smaregi||0);
   const expected = grandTheory + posTotal;
-  const diff = expected - grandActual;
+  const diff = grandActual - expected; // 過不足＝実数−期待値
   const diffOk = diff === 0;
   const diffBox = `<div style="background:${diffOk?"#eefaf0":"#fdecea"};border:1px solid ${diffOk?"var(--main)":"var(--danger)"};border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:14px;">
     理論値合計 ${fmtNum(grandTheory)}円　＋　現金売上 ${fmtNum(posTotal)}円　＝　期待値 <strong>${fmtNum(expected)}円</strong><br>
-    実数合計 ${fmtNum(grandActual)}円　　差額
-    <span style="font-size:20px;font-weight:700;color:${diffOk?"var(--main)":"var(--danger)"};">　${fmtNum(diff)}円</span>
+    実数合計 ${fmtNum(grandActual)}円　　過不足
+    <span style="font-size:20px;font-weight:700;color:${diffOk?"var(--main)":"var(--danger)"};">　${regiDiffLabel(diff)}</span>
   </div>`;
   const posBox = `<div class="hint" style="margin-bottom:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;">
     現金売上内訳：funfo ${fmtNum(pc.funfo||0)}円　＋　スマレジ ${fmtNum(pc.smaregi||0)}円　＝　合計 ${fmtNum(posTotal)}円
@@ -17517,17 +17517,23 @@ function bindPosCash(){
   computePosCash();
 }
 
+/* レジ締めの過不足（実数−期待値）を符号つきで表示する。＋＝現金が多い、−＝現金が足りない */
+function regiDiffLabel(diff){
+  if(diff === 0) return "±0円（一致）";
+  return diff > 0 ? `＋${fmtNum(diff)}円（多い）` : `−${fmtNum(-diff)}円（不足）`;
+}
+
 function computePosCash(){
   const f = regiCloseState.posCash.funfo || 0;
   const s = regiCloseState.posCash.smaregi || 0;
   const posTotal = f + s;
   const expected = lastRegiTheoryTotal + posTotal;
-  const diff = expected - lastRegiActualTotal;
+  const diff = lastRegiActualTotal - expected; // 過不足＝実数−期待値
   const box = document.getElementById("regiDiffBox");
   if(box){
     box.innerHTML =
       `理論値合計 ${fmtNum(lastRegiTheoryTotal)}円　＋　現金売上 ${fmtNum(posTotal)}円　＝　期待値 <strong>${fmtNum(expected)}円</strong>` +
-      `<br>実数合計 ${fmtNum(lastRegiActualTotal)}円　　差額 <span style="font-size:22px;">${fmtNum(diff)}円</span>`;
+      `<br>実数合計 ${fmtNum(lastRegiActualTotal)}円　　過不足 <span style="font-size:22px;">${regiDiffLabel(diff)}</span>`;
     box.style.background = diff===0 ? "#eefaf0" : "#fdecea";
     box.style.borderColor = diff===0 ? "#2c7a3d" : "#c0392b";
     box.style.color = diff===0 ? "#2c7a3d" : "#c0392b";
