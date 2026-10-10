@@ -900,7 +900,7 @@
         <button class="secondary" id="laborViewHourlyBtn" onclick="switchLaborView('hourly')">時間別人件費</button>
         <button class="secondary" id="laborViewDailyBtn" onclick="switchLaborView('daily')">日別人件費</button>
         <button class="secondary" id="laborViewMonthlyBtn" onclick="switchLaborView('monthly')">月別人件費</button>
-        <button class="secondary" id="laborViewYearlyBtn" onclick="switchLaborView('yearly')">年別人件費</button>
+        <button class="secondary" id="laborViewYearlyBtn" onclick="switchLaborView('yearly')">年度別人件費</button>
         <button class="secondary" id="laborViewWageBtn" onclick="switchLaborView('wage')">基本設定</button>
         <button class="secondary" id="laborViewEmployeesBtn" onclick="switchLaborView('employees')">従業員情報</button>
         <button class="secondary" id="laborViewWelfareBtn" onclick="switchLaborView('welfare')">福利厚生</button>
@@ -975,19 +975,19 @@
         </div>
       </div>
 
-      <!-- 年別人件費 -->
+      <!-- 年度別人件費（10月〜翌年9月） -->
       <div id="laborYearlyView" style="display:none;">
         <div class="toolbar" style="margin-bottom:10px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象期間：
-            <input type="number" id="laborYearlyFrom" style="width:90px;" placeholder="開始年" onchange="renderLaborYearlyView()"> 年 ～ <input type="number" id="laborYearlyTo" style="width:90px;" placeholder="終了年" onchange="renderLaborYearlyView()"> 年
+            <input type="number" id="laborYearlyFrom" style="width:90px;" placeholder="開始年度" onchange="renderLaborYearlyView()"> 年度 ～ <input type="number" id="laborYearlyTo" style="width:90px;" placeholder="終了年度" onchange="renderLaborYearlyView()"> 年度
           </label>
-          <span class="hint" style="margin:0;align-self:center;">空欄の場合は、勤怠データのあるすべての年を表示します。</span>
+          <span class="hint" style="margin:0;align-self:center;">年度は10月〜翌年9月です（2025年度＝2025年10月〜2026年9月）。空欄の場合は、勤怠データのあるすべての年度を表示します。</span>
         </div>
         <div class="hint" style="margin-bottom:8px;">役員・業務委託など「月給制（固定）」の給与体系の従業員は勤怠記録が無いため、のべ出勤人数・総労働時間には含まれませんが、人件費合計には基本給×12ヶ月分を上乗せしています。</div>
         <div class="card">
           <table>
             <thead>
-              <tr><th>年</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th><th>人時生産性</th></tr>
+              <tr><th>年度</th><th>対象期間</th><th>のべ出勤人数</th><th>総労働時間</th><th>人件費合計</th><th>人時生産性</th></tr>
             </thead>
             <tbody id="laborYearlyTableBody"></tbody>
           </table>
@@ -5152,7 +5152,7 @@ const APP_ACCESS_REGISTRY = [
   { page:"sales", label:"売上管理", cur:()=>salesView, go:v=>switchSalesView(v),
     views:[["list","リストビュー","salesViewListBtn"],["table","テーブルビュー","salesViewTableBtn"],["hourly","時間帯別ビュー","salesViewHourlyBtn"]] },
   { page:"labor", label:"人件費管理", cur:()=>laborView, go:v=>switchLaborView(v),
-    views:[["hourly","時間別人件費","laborViewHourlyBtn"],["daily","日別人件費","laborViewDailyBtn"],["monthly","月別人件費","laborViewMonthlyBtn"],["yearly","年別人件費","laborViewYearlyBtn"],["wage","基本設定","laborViewWageBtn"],["employees","従業員情報","laborViewEmployeesBtn"],["welfare","福利厚生","laborViewWelfareBtn"]] },
+    views:[["hourly","時間別人件費","laborViewHourlyBtn"],["daily","日別人件費","laborViewDailyBtn"],["monthly","月別人件費","laborViewMonthlyBtn"],["yearly","年度別人件費","laborViewYearlyBtn"],["wage","基本設定","laborViewWageBtn"],["employees","従業員情報","laborViewEmployeesBtn"],["welfare","福利厚生","laborViewWelfareBtn"]] },
   { page:"budget", label:"予算管理", cur:()=>budgetView, go:v=>switchBudgetView(v),
     views:[["overview","全体","budgetViewOverviewBtn"],["expense","経費管理","budgetViewExpenseBtn"],["data","各種データ","budgetViewDataBtn"]] },
   { page:"regi", label:"レジ締め・売上集計", cur:()=>regiView, go:v=>switchRegiView(v),
@@ -11201,14 +11201,14 @@ registerBootStep(function(){
   appStore.setItem(LABOR_WAGE_CATEGORY_MIGRATION_FLAG, "1");
 });
 // 役員・業務委託など「月給制(固定)」の従業員は勤怠記録を取らないため、日別の勤怠明細からは
-// 人件費が積み上がらない。その月額合計を返し、月別・年別人件費の合計に上乗せする。
+// 人件費が積み上がらない。その月額合計を返し、月別・年度別人件費の合計に上乗せする。
 function sumMonthlyFixedSalaries(asOfISO){
   return laborEmployees
     .filter(e=>e.calcType==="monthly_fixed")
     .reduce((s,e)=> s + ((asOfISO ? getEffectiveEmployee(e, asOfISO) : e).monthlySalary||0), 0);
 }
 // 月給制(固定)の日割り人件費＝月給合計 ÷ その月の「年間出勤日数」（基本設定）。勤怠記録のある日（営業した日）に計上する。
-// その月の出勤日数が未設定の場合は日割りせず0を返す（月別・年別では従来どおり月額をまとめて計上する）。
+// その月の出勤日数が未設定の場合は日割りせず0を返す（月別・年度別では従来どおり月額をまとめて計上する）。
 function getLaborFixedDailyCost(dateISO){
   const days = getLaborAnnualWorkDays(parseInt(dateISO.slice(0,4),10), parseInt(dateISO.slice(5,7),10));
   return days > 0 ? sumMonthlyFixedSalaries(dateISO) / days : 0;
@@ -12188,23 +12188,30 @@ function renderLaborMonthlyView(){
 }
 
 function renderLaborYearlyView(){
+  // 年度は10月〜翌年9月。年度の表記は開始年（2025年度＝2025年10月〜2026年9月。売上管理の週別ビューと同じ）。
   const yFrom = parseInt(document.getElementById("laborYearlyFrom").value, 10);
   const yTo = parseInt(document.getElementById("laborYearlyTo").value, 10);
-  const years = Array.from(new Set(attendanceRecords.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort()
-    .filter(y=> (isNaN(yFrom) || Number(y) >= Math.min(yFrom, isNaN(yTo) ? yFrom : yTo)) && (isNaN(yTo) || Number(y) <= Math.max(yTo, isNaN(yFrom) ? yTo : yFrom)));
+  const lo = isNaN(yFrom) ? (isNaN(yTo) ? -Infinity : yTo) : (isNaN(yTo) ? yFrom : Math.min(yFrom, yTo));
+  const hi = isNaN(yTo) ? Infinity : (isNaN(yFrom) ? yTo : Math.max(yFrom, yTo));
+  const fys = Array.from(new Set(attendanceRecords.filter(r=>r.date).map(r=>salesFiscalYearForDate(r.date)))).sort((a,b)=>a-b)
+    .filter(fy=> fy >= lo && fy <= hi);
   const body = document.getElementById("laborYearlyTableBody");
-  document.getElementById("laborYearlyEmptyMsg").style.display = years.length ? "none" : "block";
-  // 役員・業務委託など月給制(固定)の従業員の年間合計（月額×12ヶ月分）を各年の人件費合計に上乗せする。
-  body.innerHTML = years.map(year=>{
-    const yearRecords = attendanceRecords.filter(r=>r.date && r.date.slice(0,4)===year && r.clockIn && r.clockOut);
+  document.getElementById("laborYearlyEmptyMsg").style.display = fys.length ? "none" : "block";
+  body.innerHTML = fys.map(fy=>{
+    const start = `${fy}-10-01`, end = `${fy+1}-09-30`;
+    const recs = attendanceRecords.filter(r=>r.date && r.date>=start && r.date<=end && r.clockIn && r.clockOut);
     let totalMin=0, totalWage=0;
-    yearRecords.forEach(r=>{
+    recs.forEach(r=>{
       const emp = laborEmployees.find(e=>e.employeeNumber===r.employeeNumber);
       const { totalMin: tm, cost } = computeDayLaborCost(emp, r);
       totalMin += tm; totalWage += cost;
     });
-    for(let m=1;m<=12;m++) totalWage += getLaborFixedCostForMonth(Number(year), m);
-    return `<tr><td>${year}年</td><td>${yearRecords.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(year+"-01-01", year+"-12-31")))}</td></tr>`;
+    // 役員・業務委託など月給制(固定)の人件費：年度内の12か月分（10月〜翌年9月）を上乗せする。
+    for(let k=0;k<12;k++){
+      const m = ((9 + k) % 12) + 1, y = k < 3 ? fy : fy + 1;
+      totalWage += getLaborFixedCostForMonth(y, m);
+    }
+    return `<tr><td>${fy}年度</td><td>${fy}年10月〜${fy+1}年9月</td><td>${recs.length}</td><td>${fmtNum(Math.round(totalMin/60*100)/100)}時間</td><td>${fmtNum(Math.round(totalWage))}円</td><td>${fmtLaborProductivity(computeLaborProductivityForDates(salesDateRange(start, end)))}</td></tr>`;
   }).join("");
 }
 
@@ -12316,7 +12323,7 @@ function renderLaborSpecialSection(){
       <td colspan="2" style="font-size:11px;color:var(--muted);">従業員 ${cnt("地域おこし協力隊")}名</td>
     </tr></tbody></table>
     <div class="hint" style="margin-top:6px;">
-      ・<b>役員・業務委託</b>（月給制・固定給）：月給 ÷ その月の「年間出勤日数」を、勤怠記録のある日（営業した日）に日割りで計上します（日別・月別・年別人件費、売上管理の人件費に反映）。出勤日数が未入力の月は、従来どおり月額を月別・年別にまとめて計上します。<br>
+      ・<b>役員・業務委託</b>（月給制・固定給）：月給 ÷ その月の「年間出勤日数」を、勤怠記録のある日（営業した日）に日割りで計上します（日別・月別・年度別人件費、売上管理の人件費に反映）。出勤日数が未入力の月は、従来どおり月額を月別・年別にまとめて計上します。<br>
       ・<b>地域おこし協力隊</b>：給与体系「地域おこし協力隊」の従業員は、勤怠のうち所定労働時間を超えた分（残業）の金額だけを計上し、通常の労務時間分は計上しません。給与体系と従業員の設定は「従業員情報」タブで行います。
     </div>`;
 }
