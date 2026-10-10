@@ -1497,7 +1497,7 @@
 
           <div id="otherPayPanelReconcile" style="display:none;">
             <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-              <label style="font-size:12.5px;">対象月：<input type="month" id="otherPayReconcileMonth" onchange="renderOtherPayReconcileView()"></label>
+              <label style="font-size:12.5px;"><span id="otherPayReconcileMonthLabel">対象月</span>：<input type="month" id="otherPayReconcileMonth" onchange="renderOtherPayReconcileView()"></label>
               <label style="font-size:12.5px;">決済会社：
                 <select id="otherPayReconcileCompany" onchange="renderOtherPayReconcileView()">
                   <option value="funfo">funfo</option>
@@ -15953,7 +15953,7 @@ const OTHERPAY_RECONCILE_REGI_SOURCE = {
   square: { label: "funfo伝票", hint: "②売上集計に取り込まれたfunfo伝票（xlsx）のその他決済（現金以外）を、日にち・時間順に一覧表示します。Square端末はfunfoレジでの会計にのみ使われるため、この明細がSquareの精算データと対応します。" },
   paygate: { label: "スマレジ取引", hint: "②売上集計に取り込まれたスマレジ取引CSVのその他決済（現金以外）を、日にち・時間順に一覧表示します。スマレジのレジではPAYGATE端末しか使わないため、この明細がPAYGATEの精算データと対応します。" }
 };
-function otherPayReconcileTransactionRows(source, monthKey){
+function otherPayReconcileTransactionRows(source, monthKey, basis){
   let rows;
   if(source === "paygate" && paygateDetailRows && paygateDetailRows.length){
     // 日別内訳CSV（実際の取引ごとの明細・手数料は精算明細から日割り配分済み）が取り込まれていれば
@@ -15972,7 +15972,8 @@ function otherPayReconcileTransactionRows(source, monthKey){
       groupDate: r.payDate || r.date
     }));
   }
-  rows = rows.filter(r => r.groupDate && r.groupDate.slice(0, 7) === monthKey);
+  // basis==="date" のときは決済日（取引日）が対象月のもの、省略時は振込日が対象月のものを対象にする。
+  rows = rows.filter(r => { const d = basis === "date" ? r.date : r.groupDate; return d && d.slice(0, 7) === monthKey; });
   // 振込単位（groupDate）でまとめて見えるよう、まず振込日、その中では実際の取引日時の順に並べる。
   rows.sort((a, b) => {
     if(a.groupDate !== b.groupDate) return a.groupDate.localeCompare(b.groupDate);
@@ -16036,8 +16037,8 @@ function otherPayReconcileSubtotalRowHtml(groupDate, group, source){
     <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${hasExpected ? fmtNum(netAmount) + "円" : "－（データなし）"}</td>
   </tr>`;
 }
-function otherPayReconcileGroupedByDate(source, monthKey){
-  const rows = otherPayReconcileTransactionRows(source, monthKey);
+function otherPayReconcileGroupedByDate(source, monthKey, basis){
+  const rows = otherPayReconcileTransactionRows(source, monthKey, basis);
   const groups = []; // [{ groupDate, bucket }]（rowsは既にgroupDate順に並んでいる前提）
   let curGroup = null, bucket = [];
   const flush = () => { if(curGroup !== null) groups.push({ groupDate: curGroup, bucket }); };
@@ -16063,7 +16064,9 @@ function buildOtherPaySideBySide(source, monthKey){
   const rows = [];
   const notes = [];
   if(source === "paygate"){
-    const periods = paygateSettlementPeriods().filter(p => (p.payDate || "").slice(0, 7) === monthKey);
+    // 対象月（決済日）に対象期間がかかる精算を対象にする（精算期間は月初〜15日・16日〜月末のため、通常は月をまたがない）。
+    const mStart = monthKey + "-01", mEnd = monthKey + "-31";
+    const periods = paygateSettlementPeriods().filter(p => p.start <= mEnd && p.end >= mStart);
     const hasDetail = paygateDetailRows.length > 0;
     if(!hasDetail) notes.push("PAYGATEの日別内訳（電子マネー取引履歴・バーコード決済取引履歴・クレジット処理結果）が取り込まれていないため、決済データ側は空です。");
     periods.sort((a, b) => (a.payDate || "").localeCompare(b.payDate || "") || a.method.localeCompare(b.method) || a.periodLabel.localeCompare(b.periodLabel));
@@ -16104,7 +16107,9 @@ function buildOtherPaySideBySide(source, monthKey){
   // funfo / Square
   if(source === "square") notes.push("SquareのCSVには振込日の情報が無いため、取引日ごとにまとめています（実際の入金日とは異なる場合があります）。");
   const today = todayStr();
-  const groups = otherPayReconcileGroupedByDate(source, monthKey);
+  // 決済日が対象月の明細を、振込日ごとにまとめる（振込が翌月になる決済も含む。月をまたぐ振込は対象月分のみ）。
+  const groups = otherPayReconcileGroupedByDate(source, monthKey, "date");
+  notes.push("決済日が対象月の決済を、振込日ごとにまとめています。振込日が翌月になる決済も含まれます。");
   groups.forEach(g => {
     const b = g.bucket;
     const amount = b.reduce((t, r) => t + r.amount, 0);
@@ -16181,7 +16186,7 @@ function renderOtherPaySideBySide(){
       : `<div class="hint">選択した月・決済会社のデータがありません。</div>`}
     <div class="hint" style="margin-top:8px;">
       ${source === "paygate"
-        ? "精算明細（PAYGATEの支払日・決済方法・対象期間ごとの振込額）と、日別内訳の決済明細を、精算期間に割り当てて比べています。決済明細側の手数料は、精算明細の手数料を取引金額の割合で配分した概算です。"
+        ? "決済日（精算の対象期間）が対象月にかかる精算について、精算明細（PAYGATEの支払日・決済方法・対象期間ごとの振込額）と、日別内訳の決済明細を、精算期間に割り当てて比べています。決済明細側の手数料は、精算明細の手数料を取引金額の割合で配分した概算です。"
         : "CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べています。"}
     </div>`;
 }
@@ -16196,6 +16201,8 @@ function renderOtherPayReconcileView(){
   const sideBox = document.getElementById("otherPayReconcileSide"), detailWrap = document.getElementById("otherPayReconcileDetailWrap");
   if(sideBox) sideBox.style.display = otherPayReconcileMode === "side" ? "" : "none";
   if(detailWrap) detailWrap.style.display = otherPayReconcileMode === "detail" ? "" : "none";
+  const monthLabel = document.getElementById("otherPayReconcileMonthLabel");
+  if(monthLabel) monthLabel.textContent = otherPayReconcileMode === "side" ? "対象月（決済日）" : "対象月（振込日）";
   if(otherPayReconcileMode === "side") renderOtherPaySideBySide();
   const { monthKey, source } = otherPayReconcileSelection();
   const groups = otherPayReconcileGroupedByDate(source, monthKey);
