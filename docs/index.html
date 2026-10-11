@@ -1980,6 +1980,21 @@
 </div>
 
 <!-- Business Hours Settings Modal -->
+<!-- レシピのExcel一括登録：マスタと一致しなかった項目を、マスタから選んで対応づけるダイアログ -->
+<div class="modal-overlay" id="recipeMatchModalOverlay">
+  <div class="modal" style="width:760px;max-width:96vw;">
+    <h3>マスタとの照合</h3>
+    <div class="hint" style="margin-bottom:10px;">Excelの次の名称が、マスタと一致しませんでした。右の欄に、対応するマスタの項目を選んでください（文字を入力すると絞り込めます）。空欄のままにした項目は、スキップします。選んだ対応は、次回の取り込みでも自動で使われます。</div>
+    <div id="recipeMatchBody" style="max-height:60vh;overflow:auto;"></div>
+    <datalist id="recipeMatchMaterialList"></datalist>
+    <datalist id="recipeMatchProductList"></datalist>
+    <div class="modal-footer">
+      <button class="secondary" onclick="cancelRecipeImportMatch()">取り込まない</button>
+      <button onclick="applyRecipeImportMatch()">この対応で取り込む</button>
+    </div>
+  </div>
+</div>
+
 <!-- その他経費の按分先を選ぶダイアログ（仕入れ管理の一覧から開く） -->
 <div class="modal-overlay" id="purchaseAllocModalOverlay">
   <div class="modal compact-modal" style="width:560px;">
@@ -8558,6 +8573,91 @@ function downloadRecipeImportTemplate(){
   XLSX.writeFile(wb, "レシピ一括登録テンプレート.xlsx");
 }
 
+/* ---- レシピ一括登録：名称の照合（完全一致 → 以前に選んだ対応 → マスタから選択） ---- */
+const RECIPE_IMPORT_ALIAS_KEY = "recipe_import_aliases_v1";
+let recipeImportAliases = { materials: {}, products: {} }; // Excel上の名称・コード → マスタのID
+registerBootStep(function(){
+  try{
+    const v = JSON.parse(appStore.getItem(RECIPE_IMPORT_ALIAS_KEY) || "null");
+    if(v && typeof v === "object"){
+      recipeImportAliases = { materials: v.materials || {}, products: v.products || {} };
+    }
+  }catch(e){}
+});
+function saveRecipeImportAliases(){ appStore.setItem(RECIPE_IMPORT_ALIAS_KEY, JSON.stringify(recipeImportAliases)); }
+function normalizeNameForMatch(str){
+  return String(str||"").normalize("NFKC").replace(/[\s　\-－ー・･、,，()（）]/g, "").toLowerCase();
+}
+// 名称の近さ（0〜1）。包含関係と、2文字単位の一致率（Dice係数）から求める。
+function nameSimilarity(a, b){
+  const na = normalizeNameForMatch(a), nb = normalizeNameForMatch(b);
+  if(!na || !nb) return 0;
+  if(na === nb) return 1;
+  if(na.includes(nb) || nb.includes(na)) return 0.7 + 0.3 * Math.min(na.length, nb.length) / Math.max(na.length, nb.length);
+  const grams = t=>{ const g = new Map(); for(let i=0;i<t.length-1;i++){ const k = t.slice(i,i+2); g.set(k, (g.get(k)||0)+1); } return g; };
+  const ga = grams(na), gb = grams(nb);
+  let inter = 0, total = 0;
+  ga.forEach((c,k)=>{ total += c; if(gb.has(k)) inter += Math.min(c, gb.get(k)); });
+  gb.forEach(c=>{ total += c; });
+  return total ? 2 * inter / total : 0;
+}
+function recipeMaterialCandidates(){
+  return materials.filter(m=>!NON_MATERIAL_BUNRUI.includes(m.bunrui));
+}
+function recipeMaterialLabel(m){
+  return `${m.name||"(名称なし)"}（${[m.department, m.bunrui].filter(Boolean).join("／") || "分類なし"}）`;
+}
+function recipeProductLabel(p){ return `${p.code||""} - ${p.name||""}`; }
+
+// 取り込み行（Excelの行）から、レシピの登録内容と、マスタと一致しなかった項目を求める。
+// overrides は、ダイアログで選んだ対応（{materials:{名称:id}, products:{キー:id}}）。
+function buildRecipeImportPlan(rows, overrides){
+  const ov = overrides || { materials: {}, products: {} };
+  const groups = new Map();
+  const groupOrder = [];
+  const unmatchedProducts = new Map();   // キー(コード or 商品名) → 行番号の配列
+  const unmatchedMaterials = new Map();  // 資材名 → [{rowNo, productName}]
+  const skippedRows = [];
+  rows.forEach(r=>{
+    const { code, productName, materialName, usageRaw, rowNo } = r;
+    let product = code ? products.find(p=>String(p.code)===code) : null;
+    if(!product && productName) product = products.find(p=>p.name===productName);
+    const prodKey = code || productName || `(${rowNo}行目)`;
+    if(!product){
+      const id = ov.products[prodKey] || recipeImportAliases.products[prodKey];
+      product = id ? products.find(p=>p.id===id) : null;
+    }
+    if(!product){
+      if(!unmatchedProducts.has(prodKey)) unmatchedProducts.set(prodKey, []);
+      unmatchedProducts.get(prodKey).push(rowNo);
+      return;
+    }
+    const groupKey = product.id;
+    if(!groups.has(groupKey)){ groups.set(groupKey, { product, items: [] }); groupOrder.push(groupKey); }
+    const group = groups.get(groupKey);
+    if(!materialName) return;
+    let material = materials.find(m=>m.name===materialName);
+    if(!material){
+      const id = ov.materials[materialName] || recipeImportAliases.materials[materialName];
+      material = id ? materials.find(m=>m.id===id) : null;
+    }
+    if(!material){
+      if(!unmatchedMaterials.has(materialName)) unmatchedMaterials.set(materialName, []);
+      unmatchedMaterials.get(materialName).push({ rowNo, productName: product.name });
+      skippedRows.push(`${rowNo}行目：${materialName}`);
+      return;
+    }
+    const usage = parseFloat(usageRaw);
+    if(!usage || usage <= 0){
+      skippedRows.push(`${rowNo}行目：${materialName}（使用量が未入力または0以下）`);
+      return;
+    }
+    group.items.push({ materialId: material.id, usage });
+  });
+  return { groups, groupOrder, unmatchedProducts, unmatchedMaterials, skippedRows };
+}
+
+let pendingRecipeImportRows = null;
 function importRecipesExcel(event){
   const file = event.target.files[0];
   if(!file) return;
@@ -8567,89 +8667,133 @@ function importRecipesExcel(event){
   }
   const reader = new FileReader();
   reader.onload = function(e){
-    let rows;
+    let rawRows;
     try{
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      rawRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
     }catch(err){
       alert("Excelファイルの読み込みに失敗しました。ファイル形式をご確認ください。");
       event.target.value = "";
       return;
     }
-
-    // 商品コード（無ければ商品名）でグルーピングする
-    const groups = new Map();
-    const groupOrder = [];
-    const unmatchedProducts = new Set();
-    const unmatchedMaterials = new Set();
-    const skippedRows = [];
-
-    rows.forEach((row, rowIdx)=>{
+    const rows = [];
+    rawRows.forEach((row, rowIdx)=>{
       const code = (row["商品コード"]||"").toString().trim();
       const productName = (row["商品名"]||"").toString().trim();
       const materialName = (row["資材・原料名"]||"").toString().trim();
-      const usageRaw = row["使用量"];
-
       if(!code && !productName && !materialName) return; // 完全な空行はスキップ
-
-      let product = code ? products.find(p=>String(p.code)===code) : null;
-      if(!product && productName) product = products.find(p=>p.name===productName);
-      if(!product){
-        unmatchedProducts.add(code || productName || `(${rowIdx+2}行目)`);
-        return;
-      }
-
-      const groupKey = product.id;
-      if(!groups.has(groupKey)){
-        groups.set(groupKey, { product, items: [] });
-        groupOrder.push(groupKey);
-      }
-      const group = groups.get(groupKey);
-
-      if(!materialName) return; // 資材の指定が無い行は品目登録をスキップ
-      const material = materials.find(m=>m.name===materialName);
-      if(!material){
-        unmatchedMaterials.add(materialName);
-        skippedRows.push(`${rowIdx+2}行目：${materialName}`);
-        return;
-      }
-      const usage = parseFloat(usageRaw);
-      if(!usage || usage <= 0){
-        skippedRows.push(`${rowIdx+2}行目：${materialName}（使用量が未入力または0以下）`);
-        return;
-      }
-      group.items.push({ materialId: material.id, usage });
+      rows.push({ code, productName, materialName, usageRaw: row["使用量"], rowNo: rowIdx + 2 });
     });
-
-    let recipeCount = 0, itemCount = 0;
-    // Excel一括登録は商品向けレシピのみに対応する（半製品・仕込み自体のレシピは「＋ 新規追加」から個別登録）。
-    groupOrder.forEach(productId=>{
-      const g = groups.get(productId);
-      if(!g.items.length) return; // 有効な品目が1件も無いレシピは登録しない
-      const existing = recipes.find(r=>r.targetType==="product" && r.targetId===productId);
-      const record = {
-        id: existing ? existing.id : (String(Date.now()) + Math.random().toString(36).slice(2,7)),
-        targetType: "product",
-        targetId: productId,
-        items: g.items
-      };
-      const idx = recipes.findIndex(r=>r.targetType==="product" && r.targetId===productId);
-      if(idx>=0) recipes[idx] = record; else recipes.push(record);
-      recipeCount++;
-      itemCount += g.items.length;
-    });
-
-    saveRecipes();
     event.target.value = "";
-
-    let msg = `${recipeCount}件のレシピ（品目合計${itemCount}件）を取り込みました（同じ商品に既存レシピがある場合は上書きされます）。`;
-    if(unmatchedProducts.size) msg += `\n\n商品マスタに一致する商品が見つからず、スキップした行：${[...unmatchedProducts].join("、")}`;
-    if(unmatchedMaterials.size) msg += `\n\n原料・資材・半製品マスタに一致する資材が見つからず、スキップした品目：${[...unmatchedMaterials].join("、")}\n（先に原料・資材・半製品マスタへ登録してから、再度取り込んでください）`;
-    alert(msg);
+    const plan = buildRecipeImportPlan(rows, null);
+    if(plan.unmatchedProducts.size || plan.unmatchedMaterials.size){
+      // マスタと一致しなかった項目は、マスタから選んで対応づけてもらう
+      pendingRecipeImportRows = rows;
+      openRecipeImportMatch(plan);
+      return;
+    }
+    commitRecipeImportPlan(plan);
   };
   reader.readAsArrayBuffer(file);
+}
+
+function openRecipeImportMatch(plan){
+  const matList = document.getElementById("recipeMatchMaterialList");
+  const prodList = document.getElementById("recipeMatchProductList");
+  const mats = recipeMaterialCandidates();
+  const prods = products.slice();
+  matList.innerHTML = mats.map(m=>`<option value="${escAttr(recipeMaterialLabel(m))}"></option>`).join("");
+  prodList.innerHTML = prods.map(p=>`<option value="${escAttr(recipeProductLabel(p))}"></option>`).join("");
+  const body = document.getElementById("recipeMatchBody");
+  const best = (name, list, labelFn, nameFn)=>{
+    let top = null, score = 0;
+    list.forEach(x=>{ const sc = nameSimilarity(name, nameFn(x)); if(sc > score){ score = sc; top = x; } });
+    return score >= 0.6 ? labelFn(top) : "";
+  };
+  const section = (title, entries, kind)=>entries.length ? `
+    <div style="font-weight:700;margin:10px 0 6px;">${title}（${entries.length}件）</div>
+    <table class="bulk-table compact-table" style="min-width:0;width:100%;">
+      <thead><tr><th style="width:38%;">Excelの名称</th><th>マスタの項目を選択</th></tr></thead>
+      <tbody>${entries.map(([name, info], i)=>`
+        <tr>
+          <td style="text-align:left;white-space:normal;">${escAttr(name)}<div class="hint" style="margin:0;">${info}</div></td>
+          <td><input type="text" list="${kind==="material" ? "recipeMatchMaterialList" : "recipeMatchProductList"}" data-kind="${kind}" data-key="${escAttr(name)}"
+               value="${escAttr(kind==="material" ? best(name, mats, recipeMaterialLabel, m=>m.name) : best(name, prods, recipeProductLabel, p=>p.name))}"
+               placeholder="入力して絞り込み（空欄＝スキップ）" style="width:100%;box-sizing:border-box;"></td>
+        </tr>`).join("")}
+      </tbody>
+    </table>` : "";
+  const prodEntries = [...plan.unmatchedProducts.entries()].map(([k, rows])=>[k, `${rows.length}行（${rows.slice(0,5).join("、")}行目${rows.length>5?"…":""}）`]);
+  const matEntries = [...plan.unmatchedMaterials.entries()].map(([k, infos])=>{
+    const prodNames = Array.from(new Set(infos.map(x=>x.productName))).slice(0,3).join("、");
+    return [k, `${infos.length}行／使用先：${escAttr(prodNames)}${new Set(infos.map(x=>x.productName)).size>3?" ほか":""}`];
+  });
+  body.innerHTML = section("商品マスタに一致しない商品", prodEntries, "product") + section("原料・資材・半製品マスタに一致しない資材・原料", matEntries, "material");
+  document.getElementById("recipeMatchModalOverlay").classList.add("show");
+}
+function cancelRecipeImportMatch(){
+  document.getElementById("recipeMatchModalOverlay").classList.remove("show");
+  pendingRecipeImportRows = null;
+}
+function applyRecipeImportMatch(){
+  const rows = pendingRecipeImportRows;
+  if(!rows){ cancelRecipeImportMatch(); return; }
+  const mats = recipeMaterialCandidates();
+  const prods = products.slice();
+  const matByLabel = new Map(mats.map(m=>[recipeMaterialLabel(m), m]));
+  const prodByLabel = new Map(prods.map(p=>[recipeProductLabel(p), p]));
+  const overrides = { materials: {}, products: {} };
+  let unresolved = [];
+  document.querySelectorAll("#recipeMatchBody input[data-kind]").forEach(inp=>{
+    const v = inp.value.trim();
+    if(!v) return; // 空欄＝スキップ
+    const key = inp.dataset.key;
+    if(inp.dataset.kind === "material"){
+      const m = matByLabel.get(v) || mats.find(x=>x.name === v);
+      if(m) overrides.materials[key] = m.id; else unresolved.push(`${key} → 「${v}」`);
+    } else {
+      const pr = prodByLabel.get(v) || prods.find(x=>x.name === v || String(x.code) === v);
+      if(pr) overrides.products[key] = pr.id; else unresolved.push(`${key} → 「${v}」`);
+    }
+  });
+  if(unresolved.length){
+    alert("次の入力は、マスタの項目として選べませんでした。候補の一覧から選び直してください。\n\n" + unresolved.slice(0,10).join("\n"));
+    return;
+  }
+  // 選んだ対応は、次回以降も自動で使う
+  Object.assign(recipeImportAliases.materials, overrides.materials);
+  Object.assign(recipeImportAliases.products, overrides.products);
+  saveRecipeImportAliases();
+  document.getElementById("recipeMatchModalOverlay").classList.remove("show");
+  pendingRecipeImportRows = null;
+  commitRecipeImportPlan(buildRecipeImportPlan(rows, overrides));
+}
+
+function commitRecipeImportPlan(plan){
+  let recipeCount = 0, itemCount = 0;
+  // Excel一括登録は商品向けレシピのみに対応する（半製品・仕込み自体のレシピは「＋ 新規追加」から個別登録）。
+  plan.groupOrder.forEach(productId=>{
+    const g = plan.groups.get(productId);
+    if(!g.items.length) return; // 有効な品目が1件も無いレシピは登録しない
+    const existing = recipes.find(r=>r.targetType==="product" && r.targetId===productId);
+    const record = {
+      id: existing ? existing.id : (String(Date.now()) + Math.random().toString(36).slice(2,7)),
+      targetType: "product",
+      targetId: productId,
+      items: g.items
+    };
+    const idx = recipes.findIndex(r=>r.targetType==="product" && r.targetId===productId);
+    if(idx>=0) recipes[idx] = record; else recipes.push(record);
+    recipeCount++;
+    itemCount += g.items.length;
+  });
+  saveRecipes();
+  let msg = `${recipeCount}件のレシピ（品目合計${itemCount}件）を取り込みました（同じ商品に既存レシピがある場合は上書きされます）。`;
+  if(plan.unmatchedProducts.size) msg += `\n\n商品マスタに一致する商品が選ばれず、スキップした行：${[...plan.unmatchedProducts.keys()].join("、")}`;
+  if(plan.unmatchedMaterials.size) msg += `\n\n原料・資材・半製品マスタの項目が選ばれず、スキップした品目：${[...plan.unmatchedMaterials.keys()].join("、")}\n（先に原料・資材・半製品マスタへ登録するか、次回の取り込みでマスタの項目を選んでください）`;
+  alert(msg);
 }
 
 // 対象の種類（商品／半製品・仕込み）に応じて、対象選択セレクトの選択肢を入れ替える。
