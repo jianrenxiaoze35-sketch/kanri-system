@@ -3569,6 +3569,7 @@ function absorbNewSupplierNames(supplierNames){
 
 function savePurchases(){
   invalidateMaterialOtherExpenseCache();
+  invalidateSalesMaterialConsumptionCache(); // 代替資材の在庫割り当ては仕入れ数量にも依存するため
   try{
     appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
   }catch(err){
@@ -8778,11 +8779,16 @@ function commitRecipeImportPlan(plan){
     const g = plan.groups.get(productId);
     if(!g.items.length) return; // 有効な品目が1件も無いレシピは登録しない
     const existing = recipes.find(r=>r.targetType==="product" && r.targetId===productId);
+    // 既存レシピを上書きする場合も、同じ資材に設定していた代替資材は引き継ぐ
+    const keptItems = g.items.map(it=>{
+      const old = existing ? (existing.items||[]).find(x=>x.materialId===it.materialId && Array.isArray(x.alternatives) && x.alternatives.length) : null;
+      return old ? Object.assign({}, it, { alternatives: old.alternatives.slice() }) : it;
+    });
     const record = {
       id: existing ? existing.id : (String(Date.now()) + Math.random().toString(36).slice(2,7)),
       targetType: "product",
       targetId: productId,
-      items: g.items
+      items: keptItems
     };
     const idx = recipes.findIndex(r=>r.targetType==="product" && r.targetId===productId);
     if(idx>=0) recipes[idx] = record; else recipes.push(record);
@@ -8884,9 +8890,27 @@ function removeRecipeItem(i){
   currentRecipeItems.splice(i, 1);
   renderRecipeItems();
 }
+// 代替可能な資材・原料の追加・削除
+function addRecipeItemAlternative(i, materialId){
+  if(!materialId) return;
+  const it = currentRecipeItems[i];
+  if(!it) return;
+  if(!Array.isArray(it.alternatives)) it.alternatives = [];
+  if(!it.alternatives.includes(materialId) && materialId !== it.materialId) it.alternatives.push(materialId);
+  renderRecipeItems();
+}
+function removeRecipeItemAlternative(i, materialId){
+  const it = currentRecipeItems[i];
+  if(!it || !Array.isArray(it.alternatives)) return;
+  it.alternatives = it.alternatives.filter(id=>id !== materialId);
+  renderRecipeItems();
+}
 
 function updateRecipeItem(i, field, value){
   currentRecipeItems[i][field] = value;
+  if(field === "materialId" && Array.isArray(currentRecipeItems[i].alternatives)){
+    currentRecipeItems[i].alternatives = currentRecipeItems[i].alternatives.filter(id=>id !== value);
+  }
   if(field === "materialId"){
     // 最後の行で資材を選択したら、自動で次の空行を追加してそこへフォーカスする
     // （「＋ 行を追加」をクリックする手間を省き、連続して品目を入力しやすくする）。
@@ -8963,6 +8987,33 @@ function renderRecipeItems(){
     const unitPrice = m ? computeMaterialUnitPrice(m) : 0;
     const usage = parseFloat(it.usage) || 0;
     const subtotal = usage * unitPrice;
+    // 代替可能な資材・原料（メインの資材と置き換えて使える物）。在庫を減らすときは、メイン＋代替のうち在庫数が最も少ない物から減らす。
+    const alts = Array.isArray(it.alternatives) ? it.alternatives : [];
+    let altRowHtml = "";
+    if(it.materialId){
+      const used = new Set([it.materialId].concat(alts));
+      const candidates = selectableMaterials.filter(x=>!used.has(x.id) && !NON_MATERIAL_BUNRUI.includes(x.bunrui))
+        .sort((a,b)=>{
+          const sa = (a.bunrui===m.bunrui ? 2 : 0) + (a.subCategory===m.subCategory ? 1 : 0);
+          const sb = (b.bunrui===m.bunrui ? 2 : 0) + (b.subCategory===m.subCategory ? 1 : 0);
+          return sb - sa || (a.name||"").localeCompare(b.name||"", "ja");
+        });
+      const chips = alts.map(id=>{
+        const am = materials.find(x=>x.id===id);
+        return am ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#eef5f1;border:1px solid var(--border);border-radius:999px;padding:1px 4px 1px 10px;margin-right:6px;">${escAttr(am.name||"")}<button type="button" class="danger" style="padding:0 6px;line-height:1.5;" onclick="removeRecipeItemAlternative(${i},'${am.id}')" title="代替から外す">×</button></span>` : "";
+      }).join("");
+      altRowHtml = `
+        <tr class="ri-alt-row">
+          <td colspan="6" style="text-align:left;background:#fafcfb;padding:4px 10px 8px 24px;">
+            <span style="font-size:11.5px;color:var(--muted);margin-right:6px;">↳ 代替できる資材・原料：</span>${chips}
+            <select onchange="addRecipeItemAlternative(${i}, this.value)" style="font-size:12px;max-width:260px;">
+              <option value="">＋ 代替を追加…</option>
+              ${candidates.map(c=>`<option value="${c.id}">${escAttr(c.name||"")}${c.subCategory ? "（"+escAttr(c.subCategory)+"）" : ""}</option>`).join("")}
+            </select>
+            ${alts.length ? '<span style="font-size:11px;color:var(--muted);margin-left:8px;">在庫が最も少ない物から先に減らします（原価はメインの資材で計算）</span>' : ""}
+          </td>
+        </tr>`;
+    }
     return `
       <tr>
         <td><select id="ri-material-${i}" onchange="updateRecipeItem(${i},'materialId',this.value)">${matOptionsHtml}</select></td>
@@ -8971,7 +9022,7 @@ function renderRecipeItems(){
         <td class="unit-price">${unitPrice ? fmtNum(Math.round(unitPrice*100)/100) : ""}</td>
         <td class="unit-price" id="ri-subtotal-${i}">${subtotal ? fmtNum(Math.round(subtotal*100)/100) : ""}</td>
         <td class="actions-col"><button class="danger row-remove" onclick="removeRecipeItem(${i})">×</button></td>
-      </tr>
+      </tr>${altRowHtml}
     `;
   }).join("");
   updateRecipeTotals();
@@ -9002,7 +9053,12 @@ function saveRecipe(){
   }
   const items = currentRecipeItems
     .filter(it=>it.materialId && parseFloat(it.usage) > 0)
-    .map(it=>({ materialId: it.materialId, usage: parseFloat(it.usage) }));
+    .map(it=>{
+      const rec = { materialId: it.materialId, usage: parseFloat(it.usage) };
+      const alts = (Array.isArray(it.alternatives) ? it.alternatives : []).filter(id=>id && id !== it.materialId);
+      if(alts.length) rec.alternatives = Array.from(new Set(alts));
+      return rec;
+    });
 
   if(targetType === "material" && items.some(it=>it.materialId===targetId)){
     alert("対象の半製品・仕込み自体を、そのレシピの資材として使用することはできません（自己参照になります）。該当の品目を除いてから保存してください。");
@@ -9271,7 +9327,17 @@ function accumulateMaterialUsagePerProductUnit(recipe, multiplier, usageMap, vis
       accumulateMaterialUsagePerProductUnit(subRecipe, usage, usageMap, visited);
       visited.delete(m.id);
     } else {
-      usageMap[m.id] = (usageMap[m.id]||0) + usage;
+      // 代替可能な資材・原料（alternatives）が指定されている品目は、メインと代替をひとまとめにした
+      // グループ（キー "G:id1,id2,…"）として積み上げる。どれから在庫を減らすかは、売上の消費量を
+      // 組み立てるときに、在庫数が最も少ないものから順に決める（getSalesMaterialConsumptionIndex参照）。
+      const alts = (Array.isArray(it.alternatives) ? it.alternatives : [])
+        .filter(id=> id && id !== m.id && materials.some(x=>x.id===id));
+      if(alts.length){
+        const key = "G:" + [m.id].concat(alts).join(",");
+        usageMap[key] = (usageMap[key]||0) + usage;
+      } else {
+        usageMap[m.id] = (usageMap[m.id]||0) + usage;
+      }
     }
   });
   return usageMap;
@@ -9282,6 +9348,49 @@ function computeMaterialUsagePerProductUnit(productId){
   return accumulateMaterialUsagePerProductUnit(recipe, 1, {}, new Set());
 }
 
+// 代替可能な資材・原料（メイン＋代替）の消費を、各資材へ割り当てる。
+// 売上の古い順に処理し、その時点で在庫数が最も少ない資材から先に減らす（在庫が無い資材は飛ばす。
+// 全てが在庫切れのときは、メインの資材をマイナスにする）。時点の在庫数は、各資材について
+// 「棚卸の数量＋基準日より後の仕入れ－基準日より後の消費（直接の消費＋ここまでの割り当て分）」で求める。
+function allocateAlternativeConsumption(index, groupEvents){
+  const matById = new Map(materials.map(m=>[m.id, m]));
+  const ids = new Set();
+  groupEvents.forEach(ev=>ev.members.forEach(id=>ids.add(id)));
+  const purchasedBy = {};
+  purchases.forEach(p=>{
+    const d = purchaseEffectiveDate(p);
+    (p.items||[]).forEach(it=>{
+      if(!ids.has(it.materialId)) return;
+      (purchasedBy[it.materialId] = purchasedBy[it.materialId] || []).push({ date: d, qty: parseFloat(it.qty) || 0 });
+    });
+  });
+  const stockAt = (id, date)=>{
+    const m = matById.get(id);
+    if(!m) return 0;
+    const asOf = m.stockCountAsOfDate || "";
+    const inScope = dt => asOf ? !!(dt && dt > asOf) : true;
+    let stock = parseFloat(m.stockCount) || 0;
+    (purchasedBy[id] || []).forEach(e=>{ if(inScope(e.date) && e.date <= date) stock += e.qty; });
+    (index[id] || []).forEach(e=>{ if(inScope(e.date) && e.date <= date) stock -= e.qty; });
+    return stock;
+  };
+  groupEvents.sort((a,b)=> a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  groupEvents.forEach(ev=>{
+    let remaining = ev.qty;
+    const order = ev.members.map(id=>({ id, stock: stockAt(id, ev.date) })).sort((a,b)=> a.stock - b.stock);
+    order.forEach(x=>{
+      if(remaining <= 1e-9 || x.stock <= 0) return;
+      const take = Math.min(remaining, x.stock);
+      (index[x.id] = index[x.id] || []).push({ date: ev.date, qty: take });
+      remaining -= take;
+    });
+    if(remaining > 1e-9){
+      const target = ev.members[0]; // 全ての在庫が尽きたときは、メインの資材で不足として計上する
+      (index[target] = index[target] || []).push({ date: ev.date, qty: remaining });
+    }
+  });
+}
+
 // 売上管理の販売実績から、資材ごとに「いつ・どれだけ消費されたか」の一覧を1回だけ組み立てて
 // キャッシュしておく（資材数×売上日数のオーダーで再帰計算をやり直すと重くなるため）。
 // 売上・レシピ・原料マスタが変更されたら invalidateSalesMaterialConsumptionCache() で必ず破棄すること。
@@ -9290,6 +9399,7 @@ function invalidateSalesMaterialConsumptionCache(){ _salesMaterialConsumptionCac
 function getSalesMaterialConsumptionIndex(){
   if(_salesMaterialConsumptionCache) return _salesMaterialConsumptionCache;
   const index = {}; // materialId -> [{date, qty}]
+  const groupEvents = []; // 代替可能な資材・原料の消費（{date, members, qty}）
   const usageMapByProduct = {}; // productId -> {materialId: 使用量} | null（レシピ未登録）
   (salesDays||[]).forEach(day=>{
     (day.items||[]).forEach(it=>{
@@ -9306,11 +9416,17 @@ function getSalesMaterialConsumptionIndex(){
       Object.keys(usageMap).forEach(mid=>{
         const perUnit = usageMap[mid];
         if(!perUnit) return;
+        if(mid.indexOf("G:") === 0){
+          // 代替可能な資材・原料のグループ：後で、在庫が少ないものから順に割り当てる
+          groupEvents.push({ date: day.date||"", members: mid.slice(2).split(","), qty: perUnit * soldQty });
+          return;
+        }
         if(!index[mid]) index[mid] = [];
         index[mid].push({ date: day.date||"", qty: perUnit * soldQty });
       });
     });
   });
+  if(groupEvents.length) allocateAlternativeConsumption(index, groupEvents);
   _salesMaterialConsumptionCache = index;
   return index;
 }
