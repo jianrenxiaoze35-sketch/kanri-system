@@ -356,9 +356,9 @@
   table.inv-sheet-table td{text-align:right;font-variant-numeric:tabular-nums;}
   table.inv-sheet-table td.text{text-align:left;}
   table.inv-sheet-table tbody tr:hover td{background:#f4f9f6;}
-  table.inv-sheet-table tr > *:nth-child(11),
-  table.inv-sheet-table tr > [colspan="10"]:nth-child(2),
-  table.inv-sheet-table tr > th[colspan="10"]:first-child + td{border-left:2px solid #aab8b0;}
+  table.inv-sheet-table tr > *:nth-child(10),
+  table.inv-sheet-table tr > [colspan="9"]:nth-child(2),
+  table.inv-sheet-table tr > th[colspan="9"]:first-child + td{border-left:2px solid #aab8b0;}
   table.inv-sheet-table td.inv-agg{font-weight:700;}
   table.inv-sheet-table td.inv-diff-neg{color:#c0392b;font-weight:700;background:#fdf1ef;}
   table.inv-sheet-table td.inv-diff-pos{color:#2c6fb0;font-weight:700;background:#eef4fb;}
@@ -18622,7 +18622,6 @@ function renderInventoryItemRowCells(item, editable){
   if(!editable){
     return `
       <td class="text" title="${escAttr(item.category||"")}">${item.category||""}</td>
-      <td class="text" title="${escAttr(item.maker||"")}">${item.maker||""}</td>
       <td class="text" title="${escAttr(item.name||"")}">${item.name||""}</td>
       <td>${item.theoretical==null?"":fmtNum(item.theoretical)}</td>
       <td>${fmtNum(item.actual)}</td>
@@ -18638,7 +18637,6 @@ function renderInventoryItemRowCells(item, editable){
   const diff = item.theoretical == null ? null : (agg - item.theoretical);
   return `
     <td class="text" title="${escAttr(item.category||"")}">${item.category||""}</td>
-    <td class="text" title="${escAttr(item.maker||"")}">${item.maker||""}</td>
     <td class="text" title="${escAttr(item.name||"")}">${item.name||""}</td>
     <td>${item.theoretical==null?"":fmtNum(item.theoretical)}</td>
     <td><input type="number" value="${item.actual??""}" oninput="updateInventoryDraftEntry('${key}','actual',this.value)"></td>
@@ -18651,14 +18649,14 @@ function renderInventoryItemRowCells(item, editable){
 }
 
 function renderInventoryColumnCell(rowDesc, editable){
-  if(!rowDesc) return `<td colspan="10"></td>`;
-  if(rowDesc.type === "bunrui") return `<th colspan="10" class="inv-group-small">${rowDesc.label}</th>`;
+  if(!rowDesc) return `<td colspan="9"></td>`;
+  if(rowDesc.type === "bunrui") return `<th colspan="9" class="inv-group-small">${rowDesc.label}</th>`;
   return renderInventoryItemRowCells(rowDesc.item, editable);
 }
 
-// 棚卸表1列ぶん（10列）の幅(%)：小分類・メーカー・名称・理論値・実数・ロット実数・実数合計・差異・1P入数・ロット入数
-const INV_SHEET_COL_WIDTHS = [5, 5.5, 10.5, 4, 5, 5, 4.5, 4, 3.5, 3.5];
-const INV_SHEET_HEADER_CELLS = "<th>小分類</th><th>メーカー</th><th>名称</th><th>理論値</th><th>実数</th><th>ロット実数</th><th>実数合計</th><th>差異</th><th>1P入数</th><th>ロット入数</th>";
+// 棚卸表1列ぶん（9列）の幅(%)：小分類・名称・理論値・実数・ロット実数・実数合計・差異・1P入数・ロット入数
+const INV_SHEET_COL_WIDTHS = [5.5, 15, 4, 5, 5, 4.5, 4, 3.5, 3.5];
+const INV_SHEET_HEADER_CELLS = "<th>小分類</th><th>名称</th><th>理論値</th><th>実数</th><th>ロット実数</th><th>実数合計</th><th>差異</th><th>1P入数</th><th>ロット入数</th>";
 
 // 部門（大）→保管場所（中）→分類（小）の階層で、1列目・2列目に分けたA4向けの棚卸表テーブル群のHTMLを作る。
 // editable=trueなら実数入力欄付き（棚卸表タブ）、falseなら確定済みの値のみを表示する読み取り専用（記録タブ）。
@@ -18687,8 +18685,8 @@ function buildInventorySheetTablesHtml(items, editable){
         <table class="inv-sheet-table">
           <colgroup>${INV_SHEET_COL_WIDTHS.concat(INV_SHEET_COL_WIDTHS).map(w=>`<col style="width:${w}%">`).join("")}</colgroup>
           <tbody>
-            <tr><th colspan="20" class="inv-group-mid">保管場所：${sg.storageGroup}</th></tr>
-            <tr><th colspan="10">1列目</th><th colspan="10">2列目</th></tr>
+            <tr><th colspan="18" class="inv-group-mid">保管場所：${sg.storageGroup}</th></tr>
+            <tr><th colspan="9">1列目</th><th colspan="9">2列目</th></tr>
             <tr>${INV_SHEET_HEADER_CELLS}${INV_SHEET_HEADER_CELLS}</tr>
             ${bodyRows.join("")}
           </tbody>
