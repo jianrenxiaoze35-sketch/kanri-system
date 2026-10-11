@@ -35,6 +35,8 @@
   .acc-tree .acc-views{display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 0 0 22px;font-size:12.5px;}
   .acc-tree label{display:flex;align-items:center;gap:4px;cursor:pointer;}
   .acc-editor{border:2px solid var(--main);}
+  .alloc-link{color:var(--accent);cursor:pointer;text-decoration:underline;white-space:normal;}
+  .alloc-link:hover{color:var(--main-dark);}
   .nav-item{display:flex;align-items:center;gap:8px;padding:12px 20px;cursor:pointer;font-size:14px;color:#dfe9e3;}
   .nav-item.active{background:var(--main);color:#fff;font-weight:bold;}
   .nav-item.disabled{color:#7c8f85;cursor:default;}
@@ -1950,6 +1952,21 @@
 </div>
 
 <!-- Business Hours Settings Modal -->
+<!-- その他経費の按分先を選ぶダイアログ（仕入れ管理の一覧から開く） -->
+<div class="modal-overlay" id="purchaseAllocModalOverlay">
+  <div class="modal compact-modal" style="width:560px;">
+    <h3 id="purchaseAllocTitle">按分先を選ぶ</h3>
+    <div id="purchaseAllocInfo" class="hint" style="margin-bottom:10px;"></div>
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="purchaseAllocMode" value="all" onchange="renderPurchaseAllocEditor()"> 請求書内の全ての原料・資材・備品の行へ均等に按分する</label>
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;"><input type="radio" name="purchaseAllocMode" value="select" onchange="renderPurchaseAllocEditor()"> 選んだ原料・資材・備品の行だけに按分する</label>
+    <div id="purchaseAllocTargets" style="margin-left:22px;max-height:300px;overflow:auto;"></div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closePurchaseAllocEditor()">キャンセル</button>
+      <button onclick="savePurchaseAllocEditor()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -4037,7 +4054,7 @@ function renderPurchaseRow(p, otherExpenseShare, extraRowStyle){
     targetText = tp.length ? "→ " + tp.map(x=>purchaseRowLabel(x).replace(/（[\d,]+円）$/, "")).join("、") : "→ 請求書内全体";
   }
   const allocatedCell = isOtherExpense
-    ? `<span style="color:var(--muted);" title="${escAttr(targetText)}">－（${escAttr(targetText)}）</span>`
+    ? `<span class="alloc-link" onclick="openPurchaseAllocEditor('${p.id}')" title="クリックして、按分先（請求書内全体／選んだ行だけ）を変更します">${escAttr(targetText)} ✎</span>`
     : fmtNum(Math.round((otherExpenseShare||0)*100)/100);
   // 資材が未紐付けの明細がある場合、行全体に色を付けて一目でわかるようにする（原料・資材・半製品マスタの
   // 「在庫数(計算)」にこの明細の数量が反映されていない原因になっている）。
@@ -5729,6 +5746,64 @@ function refreshPurchaseAllocBox(){
 }
 function onPurchaseAllocModeChange(){
   refreshPurchaseAllocBox();
+}
+
+/* ---- 一覧から按分先を選ぶダイアログ ---- */
+let purchaseAllocEditId = null;
+let purchaseAllocDraft = [];
+function openPurchaseAllocEditor(id){
+  const p = purchases.find(x=>x.id===id);
+  if(!p) return;
+  purchaseAllocEditId = id;
+  purchaseAllocDraft = Array.isArray(p.allocTargetIds) ? p.allocTargetIds.slice() : [];
+  const modeVal = purchaseAllocDraft.length ? "select" : "all";
+  document.querySelectorAll('input[name="purchaseAllocMode"]').forEach(r=>{ r.checked = r.value === modeVal; });
+  document.getElementById("purchaseAllocTitle").textContent = "按分先を選ぶ";
+  document.getElementById("purchaseAllocInfo").innerHTML =
+    `<b>${escAttr(p.itemName || "(品名なし)")}</b>　${escAttr(p.category || p.bunrui || "")}　金額 ${fmtNum(Math.round(purchaseItemsTotal(p)*100)/100)}円<br>この金額を、どの原料・資材・備品の行に加算するかを選びます。`;
+  renderPurchaseAllocEditor();
+  document.getElementById("purchaseAllocModalOverlay").classList.add("show");
+}
+function renderPurchaseAllocEditor(){
+  const p = purchases.find(x=>x.id===purchaseAllocEditId);
+  const box = document.getElementById("purchaseAllocTargets");
+  if(!p || !box) return;
+  const select = (document.querySelector('input[name="purchaseAllocMode"]:checked') || {}).value === "select";
+  box.style.display = select ? "" : "none";
+  if(!select) return;
+  const myKey = purchaseGroupKey(p).key;
+  const candidates = purchases.filter(c=> c.id !== p.id && !isOtherExpensePurchase(c) && purchaseGroupKey(c).key === myKey);
+  if(!candidates.length){
+    box.innerHTML = '<div class="hint" style="margin:0;color:var(--danger);">同じ請求書番号（無ければ請求日）の原料・資材・備品の行がありません。</div>';
+    return;
+  }
+  box.innerHTML = candidates.map(c=>`
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+      <input type="checkbox" value="${escAttr(c.id)}" ${purchaseAllocDraft.includes(c.id) ? "checked" : ""} onchange="onPurchaseAllocEditorToggle(this.value,this.checked)">
+      <span>${escAttr(purchaseRowLabel(c))}</span>
+    </label>`).join("");
+}
+function onPurchaseAllocEditorToggle(id, checked){
+  const set = new Set(purchaseAllocDraft);
+  if(checked) set.add(id); else set.delete(id);
+  purchaseAllocDraft = Array.from(set);
+}
+function closePurchaseAllocEditor(){
+  document.getElementById("purchaseAllocModalOverlay").classList.remove("show");
+  purchaseAllocEditId = null;
+}
+function savePurchaseAllocEditor(){
+  const p = purchases.find(x=>x.id===purchaseAllocEditId);
+  if(!p){ closePurchaseAllocEditor(); return; }
+  const select = (document.querySelector('input[name="purchaseAllocMode"]:checked') || {}).value === "select";
+  if(select && !purchaseAllocDraft.length){
+    alert("按分先の行を1つ以上選んでください。請求書内全体に按分する場合は「全ての行へ均等に按分する」を選んでください。");
+    return;
+  }
+  p.allocTargetIds = select ? purchaseAllocDraft.slice() : [];
+  p.updatedAt = new Date().toISOString();
+  closePurchaseAllocEditor();
+  savePurchases();
 }
 function onPurchaseAllocTargetToggle(id, checked){
   const set = new Set(currentAllocTargetIds);
