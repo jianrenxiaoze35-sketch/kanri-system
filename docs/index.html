@@ -567,6 +567,8 @@
         <button class="secondary" id="ingViewUncategorizedBtn" onclick="switchIngredientView('uncategorized')">未分類 <span class="count-badge" id="ingViewUncategorizedCount"></span></button>
       </div>
 
+      <div id="ingredientCleanupBanner" style="display:none;margin-bottom:10px;padding:10px 14px;border:1px solid #e0c36a;background:#fff8e1;border-radius:8px;font-size:13px;"></div>
+
       <div class="card" id="ingredientTableWrap">
         <table style="min-width:2700px;">
           <thead>
@@ -7876,7 +7878,66 @@ function inlineSelectOptions(list, value){
   return opts;
 }
 
+/* ---- 原料・資材・備品に該当しない項目の整理 ----
+   コスト・割引・送料/その他・値引・設備・求人（および、レシピで使われていないイニシャルコスト）は、原料・資材・備品
+   ではなく費用・値引の項目であり、仕入れ管理の「その他経費」の行として扱う。マスタに残っているこれらの項目を消去し、
+   仕入れ管理の明細の資材紐づけだけを外す（金額・数量・按分は仕入れ管理の行にそのまま残る）。
+   レシピ（原価計算）で使われている項目は、原価に影響するため消去せず、残して知らせる。 */
+const NON_MATERIAL_BUNRUI = ["コスト","割引","送料/その他","値引","設備","求人"];
+function findNonMaterialMaterials(){
+  const usedInRecipe = new Set();
+  recipes.forEach(r=>{
+    (r.items||[]).forEach(it=>{ if(it.materialId) usedInRecipe.add(it.materialId); });
+    if(r.targetType === "material" && r.targetId) usedInRecipe.add(r.targetId); // この資材自体にレシピがある
+  });
+  const removable = [], keptInRecipe = [];
+  materials.forEach(m=>{
+    const isNonMaterial = NON_MATERIAL_BUNRUI.includes(m.bunrui) || m.bunrui === "イニシャルコスト";
+    if(!isNonMaterial) return;
+    if(usedInRecipe.has(m.id)) keptInRecipe.push(m); else removable.push(m);
+  });
+  return { removable, keptInRecipe };
+}
+function countPurchaseLinesForMaterial(materialId){
+  let n = 0;
+  purchases.forEach(p=>{ (p.items||[]).forEach(it=>{ if(it.materialId === materialId) n++; }); });
+  return n;
+}
+function renderIngredientCleanupBanner(){
+  const box = document.getElementById("ingredientCleanupBanner");
+  if(!box) return;
+  const { removable, keptInRecipe } = findNonMaterialMaterials();
+  if(!removable.length && !keptInRecipe.length){ box.style.display = "none"; return; }
+  const names = removable.slice(0, 6).map(m=>escAttr(m.name||"(名称なし)")).join("、") + (removable.length > 6 ? `…ほか${removable.length - 6}件` : "");
+  box.style.display = "";
+  box.innerHTML = `
+    <div style="font-weight:700;margin-bottom:4px;">⚠ 原料・資材・備品に該当しない項目があります</div>
+    ${removable.length ? `<div>コスト・割引・送料など費用の項目が <b>${removable.length}件</b> 登録されています（${names}）。これらは仕入れ管理の「その他経費」の行として扱うため、マスタからは消去できます。
+      <button type="button" style="margin-left:8px;" onclick="cleanupNonMaterialMaterials()">整理する（マスタから消去）</button></div>` : ""}
+    ${keptInRecipe.length ? `<div style="margin-top:4px;color:var(--muted);">${keptInRecipe.length}件（${keptInRecipe.slice(0,4).map(m=>escAttr(m.name||"")).join("、")}${keptInRecipe.length>4?"…":""}）は、レシピ（原価計算）で使われているため残しています。</div>` : ""}`;
+}
+function cleanupNonMaterialMaterials(){
+  const { removable } = findNonMaterialMaterials();
+  if(!removable.length){ alert("整理する項目はありません。"); return; }
+  const lines = removable.slice(0, 15).map(m=>`・${m.name||"(名称なし)"}（${m.bunrui}／仕入れ明細${countPurchaseLinesForMaterial(m.id)}件に紐づき）`);
+  if(!confirm(`次の${removable.length}件を、原料・資材・半製品マスタから消去します。\n\n${lines.join("\n")}${removable.length > 15 ? `\n…ほか${removable.length - 15}件` : ""}\n\n・仕入れ管理の明細（金額・数量・按分）はそのまま残り、資材との紐づけだけが外れます。\n・レシピで使われている項目は消去しません。\n\nよろしいですか？`)) return;
+  const ids = new Set(removable.map(m=>m.id));
+  let unlinked = 0;
+  purchases.forEach(p=>{
+    (p.items||[]).forEach(it=>{
+      if(ids.has(it.materialId)){ it.materialId = ""; unlinked++; }
+    });
+  });
+  materials = materials.filter(m=>!ids.has(m.id));
+  appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
+  invalidateMaterialOtherExpenseCache();
+  saveIngredients();
+  try{ renderPurchases(); }catch(e){}
+  alert(`${removable.length}件をマスタから消去しました（仕入れ明細${unlinked}件の紐づけを外しました）。`);
+}
+
 function renderIngredients(){
+  renderIngredientCleanupBanner();
   // 一覧を表示するたびに、単価（1P価格・1ロット価格）を最新の仕入れ実績に揃える。仕入れの保存を経由しない
   // 変更（取込・クラウドからの読み込み・端末間の更新など）があっても、古い単価のまま表示されないようにする。
   try{
