@@ -3892,9 +3892,9 @@ function computeMaterialPurchaseStats(){
 
 // 仕入れ管理の仕入れ実績をもとに、原料・資材・半製品マスタの単価（packPrice/lotPrice、
 // および入数・入数単位）を自動的に反映する。
-// - 対象資材の全ての通常仕入れ明細を数量加重平均し、税抜の実質仕入単価（1単位あたり）を求める。
-// - 1P入り数（packQty。未設定なら1として扱い、その場合は自動的に1で確定する）を掛けて、
-//   税抜の1パック相当額をpackPriceとして保存する。taxRateは資材ごとに既に設定されている値を
+// - 対象資材の全ての通常仕入れ明細（金額は税込）を数量加重平均し、税込の実質仕入単価（1単位あたり）を求める。
+// - 1P入り数（packQty。未設定なら1として扱い、その場合は自動的に1で確定する）を掛け、資材の税率で割り戻した
+//   税抜の1パック相当額をpackPriceとして保存する（一覧では税率を掛けて、仕入れ管理の金額どおりの税込に戻る）。taxRateは資材ごとに既に設定されている値を
 //   尊重し、ここでは変更しない（税込換算・その他経費按分・原価計算用単価は、この値をもとに
 //   一覧表示・CSV書き出し側で従来通り自動計算される）。
 // - ロット入り数・入数単位は1P入り数・単位に揃え、1ロット価格もpackPriceと同じ値にする
@@ -3907,6 +3907,8 @@ function syncMaterialPricesFromPurchases(){
   materials.forEach(m=>{
     const s = stats[m.id];
     if(!s || !s.totalQty) return;
+    // 仕入れ管理に入力する金額は全て税込。マスタのpackPrice・lotPriceは税抜で持つため、資材の税率で割り戻す。
+    const taxDivisor = 1 + (parseFloat(m.taxRate) || 0);
     let packQty, packPricePretax;
     if(m.bunrui === "イニシャルコスト"){
       // イニシャルコストは「1パックあたりの購入単価×入り数」という通常資材の考え方に当てはまらない。
@@ -3915,12 +3917,13 @@ function syncMaterialPricesFromPurchases(){
       // 金額（packPrice）に累計仕入れ金額をそのまま使う。こうすることで、対象商品をさらに仕入れて
       // このイニシャルコスト資材の仕入れ数だけを追加登録するたびに、原価計算用単価（税込累計金額÷
       // 累計仕入れ数量）が自動的に下がっていく。
+      // 仕入れ管理の金額は税込のため、税率で割って税抜のpackPriceにする（一覧では税率を掛けて税込に戻す）。
       packQty = Math.round(s.totalQty * 100) / 100;
-      packPricePretax = Math.round(s.totalAmount * 100) / 100;
+      packPricePretax = Math.round(s.totalAmount / taxDivisor * 10000) / 10000;
     } else {
-      const avgUnitPricePretax = s.totalAmount / s.totalQty;
+      const avgUnitPriceTaxIncl = s.totalAmount / s.totalQty;
       packQty = parseFloat(m.packQty) || 1;
-      packPricePretax = Math.round(avgUnitPricePretax * packQty * 100) / 100;
+      packPricePretax = Math.round(avgUnitPriceTaxIncl * packQty / taxDivisor * 10000) / 10000;
     }
     if(m.packQty !== packQty || m.packPrice !== packPricePretax ||
        m.lotQty !== packQty || m.lotUnit !== (m.unit||"") || m.lotPrice !== packPricePretax){
