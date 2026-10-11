@@ -1733,6 +1733,7 @@
       </div>
       <div id="settingsTabs" class="seg-tabs">
         <button class="secondary active" id="settingsViewClassifyBtn" onclick="switchSettingsView('classify')">分類</button>
+        <button class="secondary" id="settingsViewDisplayBtn" onclick="switchSettingsView('display')">表示設定</button>
         <button class="secondary" id="settingsViewBudgetBtn" onclick="switchSettingsView('budget')">予算管理設定</button>
         <button class="secondary" id="settingsViewAccountBtn" onclick="switchSettingsView('account')">アカウント</button>
         <button class="secondary" id="settingsViewDataBtn" onclick="switchSettingsView('data')">データ保存</button>
@@ -1791,6 +1792,20 @@
           <span id="settingsSaveStatus" class="hint" style="margin:0;"></span>
         </div>
       </div>
+      </div>
+
+      <!-- 表示設定（原料・資材・半製品マスタ／在庫・棚卸に表示する小分類） -->
+      <div id="settingsDisplayView" style="display:none;">
+        <div class="card" style="padding:14px 18px;">
+          <h3 style="margin-top:0;">表示する小分類（原料・資材・半製品マスタ／在庫・棚卸）</h3>
+          <div class="hint" style="margin-bottom:10px;">チェックを入れた小分類の原料・資材・半製品だけを、「🥕 原料・資材・半製品マスタ」と「📊 在庫・棚卸」（原料・資材タブ・棚卸表）に表示します。チェックを外した小分類のデータは消えません（表示されなくなるだけです）。変更はすぐに反映されます。</div>
+          <div class="toolbar" style="margin-bottom:10px;">
+            <button class="secondary" onclick="setAllDisplayCategories(true)">すべて表示</button>
+            <button class="secondary" onclick="setAllDisplayCategories(false)">すべて非表示</button>
+            <span id="displaySettingsStatus" class="hint" style="margin:0;align-self:center;"></span>
+          </div>
+          <div id="displaySettingsBody"></div>
+        </div>
       </div>
 
       <!-- 予算管理設定（予算管理：各種データ項目設定） -->
@@ -5337,7 +5352,7 @@ const APP_ACCESS_REGISTRY = [
   { page:"regi", label:"レジ締め・売上集計", cur:()=>regiView, go:v=>switchRegiView(v),
     views:[["regi","①レジ締め","regiViewRegiBtn"],["sales","②売上集計","regiViewSalesBtn"],["slip","③伝票","regiViewSlipBtn"],["history","④過去データ","regiViewHistoryBtn"],["otherpay","⑤その他決済集計","regiViewOtherpayBtn"],["settings","設定","regiViewSettingsBtn"]] },
   { page:"settings", label:"設定", cur:()=>settingsCurrentView, go:v=>switchSettingsView(v),
-    views:[["classify","分類","settingsViewClassifyBtn"],["budget","予算管理設定","settingsViewBudgetBtn"],["account","アカウント","settingsViewAccountBtn"],["data","データ保存","settingsViewDataBtn"]] }
+    views:[["classify","分類","settingsViewClassifyBtn"],["display","表示設定","settingsViewDisplayBtn"],["budget","予算管理設定","settingsViewBudgetBtn"],["account","アカウント","settingsViewAccountBtn"],["data","データ保存","settingsViewDataBtn"]] }
 ];
 const ACCOUNT_SESSION_KEY = "kanri_session_v1"; // 開いているあいだだけ有効（タブを閉じると、次はまたログインが必要）
 let currentAccount = null; // null＝制限なし（アカウント未登録、または未ログイン）
@@ -5666,7 +5681,8 @@ let settingsCurrentView = "classify";
 function switchSettingsView(view){
   settingsCurrentView = view;
   if(view === "account") renderAccountView();
-  const views = { classify: "Classify", budget: "Budget", account: "Account", data: "Data" };
+  const views = { classify: "Classify", display: "Display", budget: "Budget", account: "Account", data: "Data" };
+  if(view === "display") renderDisplaySettings();
   Object.keys(views).forEach(v=>{
     const K = views[v];
     document.getElementById("settingsView"+K+"Btn").classList.toggle("active", v===view);
@@ -6328,6 +6344,17 @@ function applyOptionChangePlan(plan){
     });
   });
   dirtyKeys.forEach((whole, key)=>{ appStore.setItem(key, JSON.stringify(whole)); });
+  // 小分類の名称変更・削除は、表示設定（非表示にした小分類）にも反映する
+  const catRen = plan.renames.category || {};
+  const catDel = new Set(plan.deletions.category || []);
+  if(Object.keys(catRen).length || catDel.size){
+    materialDisplaySettings.hiddenCategories = Array.from(new Set(
+      materialDisplaySettings.hiddenCategories
+        .map(c=> Object.prototype.hasOwnProperty.call(catRen, c) ? catRen[c] : c)
+        .filter(c=>!catDel.has(c))
+    ));
+    saveMaterialDisplaySettings();
+  }
   return changed;
 }
 // 反映後に、開いている各ページの一覧を最新の内容で描き直す。
@@ -7886,7 +7913,88 @@ function inlineSelectOptions(list, value){
 const NON_MATERIAL_BUNRUI = ["コスト","割引","送料/その他","値引","設備","求人"];
 // 原料・資材・半製品マスタ（一覧・一括編集・CSV）と在庫・棚卸には、コスト・割引など原料・資材・備品に該当しない項目を表示しない。
 // （データ自体は消さずに残す。仕入れ管理の明細や、レシピでの使用には影響しない。）
-function isHiddenNonMaterial(m){ return !!m && NON_MATERIAL_BUNRUI.includes(m.bunrui); }
+// 表示設定（設定ページの「表示設定」ビュー）：原料・資材・半製品マスタ／在庫・棚卸に表示する小分類を選ぶ。
+// hiddenCategories に入っている小分類の資材は表示しない（新しく増えた小分類は、既定で表示される）。
+// hideUnsetCategory が true のとき、小分類が未設定の資材も表示しない。
+const MATERIAL_DISPLAY_SETTINGS_KEY = "material_display_settings_v1";
+let materialDisplaySettings = { hiddenCategories: [], hideUnsetCategory: false };
+registerBootStep(function(){
+  try{
+    const v = JSON.parse(appStore.getItem(MATERIAL_DISPLAY_SETTINGS_KEY) || "null");
+    if(v && typeof v === "object"){
+      materialDisplaySettings = {
+        hiddenCategories: Array.isArray(v.hiddenCategories) ? v.hiddenCategories : [],
+        hideUnsetCategory: v.hideUnsetCategory === true
+      };
+    }
+  }catch(e){}
+});
+function saveMaterialDisplaySettings(){
+  appStore.setItem(MATERIAL_DISPLAY_SETTINGS_KEY, JSON.stringify(materialDisplaySettings));
+}
+function isMaterialHiddenByDisplaySettings(m){
+  const c = (m && m.subCategory) ? String(m.subCategory) : "";
+  if(!c) return materialDisplaySettings.hideUnsetCategory === true;
+  return materialDisplaySettings.hiddenCategories.includes(c);
+}
+function isHiddenNonMaterial(m){
+  return !!m && (NON_MATERIAL_BUNRUI.includes(m.bunrui) || isMaterialHiddenByDisplaySettings(m));
+}
+
+/* ---- 設定ページ：表示設定ビュー ---- */
+function renderDisplaySettings(){
+  const box = document.getElementById("displaySettingsBody");
+  if(!box) return;
+  const cats = Array.isArray(OPTIONS.category) ? OPTIONS.category.slice() : [];
+  // 資材に実際に付いている小分類のうち、選択肢に無いものも（古いデータ用に）並べる
+  const counts = {};
+  materials.forEach(m=>{
+    if(NON_MATERIAL_BUNRUI.includes(m.bunrui)) return;
+    const c = m.subCategory ? String(m.subCategory) : "";
+    counts[c] = (counts[c] || 0) + 1;
+    if(c && !cats.includes(c)) cats.push(c);
+  });
+  const hidden = new Set(materialDisplaySettings.hiddenCategories);
+  const item = (key, label, checked, count)=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:${checked ? "#fff" : "#f4f4f4"};">
+      <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleDisplayCategory('${key.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}', this.checked)">
+      <span style="flex:1;${checked ? "" : "color:var(--muted);"}">${escAttr(label)}</span>
+      <span class="count-badge">${count || 0}件</span>
+    </label>`;
+  box.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;">
+    ${item("", "（小分類が未設定）", !materialDisplaySettings.hideUnsetCategory, counts[""])}
+    ${cats.map(c=>item(c, c, !hidden.has(c), counts[c])).join("")}
+  </div>`;
+}
+function toggleDisplayCategory(cat, show){
+  if(cat === ""){
+    materialDisplaySettings.hideUnsetCategory = !show;
+  } else {
+    const set = new Set(materialDisplaySettings.hiddenCategories);
+    if(show) set.delete(cat); else set.add(cat);
+    materialDisplaySettings.hiddenCategories = Array.from(set);
+  }
+  afterDisplaySettingsChange();
+}
+function setAllDisplayCategories(show){
+  const cats = Array.isArray(OPTIONS.category) ? OPTIONS.category.slice() : [];
+  materials.forEach(m=>{ const c = m.subCategory ? String(m.subCategory) : ""; if(c && !cats.includes(c)) cats.push(c); });
+  materialDisplaySettings.hiddenCategories = show ? [] : cats;
+  materialDisplaySettings.hideUnsetCategory = !show;
+  afterDisplaySettingsChange();
+}
+function afterDisplaySettingsChange(){
+  saveMaterialDisplaySettings();
+  renderDisplaySettings();
+  // 原料・資材・半製品マスタ、在庫・棚卸の表示を、新しい設定に合わせて更新する
+  try{ renderIngredients(); }catch(e){}
+  try{ renderInventoryActiveView(); }catch(e){}
+  const st = document.getElementById("displaySettingsStatus");
+  if(st){
+    st.textContent = "保存しました。原料・資材・半製品マスタと在庫・棚卸に反映しました。";
+    setTimeout(()=>{ st.textContent = ""; }, 3000);
+  }
+}
 function findNonMaterialMaterials(){
   const usedInRecipe = new Set();
   recipes.forEach(r=>{
