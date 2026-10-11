@@ -340,6 +340,8 @@
   #page-inventory .card > table tbody tr:hover td{background:#f0f6f2;}
   #invProductsView .card,#invMaterialsView .card{max-height:72vh;}
   #invProductsView input[type=checkbox],#invMaterialsView input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+  .inv-storage-cell{cursor:pointer;min-height:18px;padding:2px 6px;border:1px dashed #b9c4be;border-radius:4px;background:#fffef7;}
+  .inv-storage-cell:hover{border-color:var(--main);background:#f0f6f2;}
   #page-inventory .toolbar.inv-tabs{margin-bottom:10px;}
   .inv-dept-block{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--card);box-shadow:0 1px 3px rgba(35,79,56,.06);}
   .inv-group-large{background:var(--main-dark);color:#fff;font-weight:700;padding:5px 12px;font-size:13px;letter-spacing:.5px;}
@@ -1816,7 +1818,7 @@
         <div class="card">
           <div class="hint" style="margin:10px 12px 0;">棚卸表に含める商品にチェックを入れてください（商品は初期状態では対象外です。理論値・保管場所・中分類などの在庫項目を持たないため、実数のみ手入力で記録されます）。</div>
           <table>
-            <thead><tr><th style="width:60px;">対象</th><th>商品コード</th><th>名称</th><th>大分類</th><th>小分類</th></tr></thead>
+            <thead><tr><th style="width:60px;">対象</th><th>商品コード</th><th>名称</th><th>大分類</th><th>小分類</th><th>保管場所</th></tr></thead>
             <tbody id="invProductsBody"></tbody>
           </table>
         </div>
@@ -5958,6 +5960,7 @@ const OPTION_DATA_TARGETS = {
   ],
   status: [{ label:"原料・資材・半製品", rows:()=>materials, fields:["status"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials }],
   storageLocation: [
+    { label:"商品", rows:()=>products, arrayFields:["storageLocations"], key:()=>STORAGE_KEY, whole:()=>products },
     { label:"原料・資材・半製品", rows:()=>materials, arrayFields:["storageLocations"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
     { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["storageGroup"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
   ],
@@ -7224,6 +7227,8 @@ function saveProductsBulk(){
       specialWholesaleCostRatio: pctNum(cost, specialWholesalePrice),
       accounting: r.accounting||"", creditAccount: r.creditAccount||"", customer: r.customer||"",
       posSystem: r.posSystem||"", posTaxRate: parseFloat(r.posTaxRate)||0.1,
+      stocktakeTarget: original ? original.stocktakeTarget === true : false,
+      storageLocations: original && Array.isArray(original.storageLocations) ? original.storageLocations : [],
       priceHistory, updatedAt
     };
   });
@@ -8930,6 +8935,7 @@ function saveProduct(){
     posSystem: document.getElementById("f_posSystem").value,
     posTaxRate: parseFloat(document.getElementById("f_posTaxRate").value) || 0.1,
     stocktakeTarget: document.getElementById("f_stocktakeTarget").checked,
+    storageLocations: idx>=0 && Array.isArray(products[idx].storageLocations) ? products[idx].storageLocations : [], // 在庫・棚卸の商品ビューで登録した保管場所
     priceHistory, updatedAt
   };
 
@@ -18071,13 +18077,16 @@ function collectInventoryStocktakeItems(){
   products.forEach(p=>{
     if(!isProductStocktakeTarget(p)) return;
     const materialKey = "product:"+p.id;
-    items.push({
-      key: materialKey+"|（保管場所未設定）", materialKey, sourceType: "product", sourceId: p.id,
-      department: p.department || "（大分類未設定）",
-      storageGroup: "（保管場所未設定）",
-      bunruiGroup: "商品",
-      category: p.category || "", maker: "", name: p.name || "",
-      theoretical: null, packQty: 0, lotQty: 0
+    const locations = (Array.isArray(p.storageLocations) && p.storageLocations.length) ? p.storageLocations : ["（保管場所未設定）"];
+    locations.forEach(loc=>{
+      items.push({
+        key: materialKey+"|"+loc, materialKey, sourceType: "product", sourceId: p.id,
+        department: p.department || "（大分類未設定）",
+        storageGroup: loc,
+        bunruiGroup: "商品",
+        category: p.category || "", maker: "", name: p.name || "",
+        theoretical: null, packQty: 0, lotQty: 0
+      });
     });
   });
   return items;
@@ -18347,9 +18356,53 @@ function renderInventoryProductsView(){
       <td class="text">${p.name||""}</td>
       <td class="text">${p.department||""}</td>
       <td class="text">${p.category||""}</td>
+      <td class="text"><div class="inv-storage-cell" onclick="event.stopPropagation();openInvProductStorageEditor('${p.id}', this)" title="クリックして保管場所を登録（複数選択できます）">${(p.storageLocations||[]).length ? escAttr((p.storageLocations||[]).join("、")) : '<span style="color:var(--muted);">未設定（クリックして登録）</span>'}</div></td>
     </tr>
   `).join("");
 }
+
+// 商品の保管場所を登録するポップオーバー（原料・資材の保管場所編集と同じ #storageLocationPopover を使う）。
+let invProductStorageEditId = null;
+function openInvProductStorageEditor(id, btn){
+  const p = products.find(x=>x.id===id);
+  const pop = document.getElementById("storageLocationPopover");
+  if(!p || !pop || !btn) return;
+  invProductStorageEditId = id;
+  const checkboxesHtml = buildStorageLocationCheckboxListHtml(p.storageLocations, `toggleProductStorageLocation('${id}',this.value,this.checked)`);
+  pop.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <div style="font-size:11.5px;font-weight:700;">${escAttr(p.name||"")}の保管場所</div>
+      <div style="display:flex;flex-wrap:wrap;gap:2px 8px;">${checkboxesHtml || '<span class="hint">設定ページの分類ビューで、保管場所の選択肢を登録してください。</span>'}</div>
+      <button type="button" class="secondary" style="padding:2px 6px;font-size:11px;align-self:flex-start;" onclick="closeInvProductStorageEditor()">閉じる</button>
+    </div>`;
+  pop.style.display = "block";
+  const rect = btn.getBoundingClientRect();
+  pop.style.left = Math.round(rect.left) + "px";
+  pop.style.top = Math.round(rect.bottom + 4) + "px";
+  requestAnimationFrame(()=>{
+    const r = pop.getBoundingClientRect();
+    if(r.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - r.width - 8) + "px";
+    if(r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, Math.round(rect.top - r.height - 4)) + "px";
+  });
+}
+function closeInvProductStorageEditor(){
+  invProductStorageEditId = null;
+  const pop = document.getElementById("storageLocationPopover");
+  if(pop){ pop.style.display = "none"; pop.innerHTML = ""; }
+  renderInventoryProductsView();
+}
+function toggleProductStorageLocation(id, loc, checked){
+  const p = products.find(x=>x.id===id);
+  if(!p) return;
+  const current = new Set(p.storageLocations || []);
+  if(checked) current.add(loc); else current.delete(loc);
+  p.storageLocations = OPTIONS.storageLocation.filter(l=>current.has(l)).concat(Array.from(current).filter(l=>!OPTIONS.storageLocation.includes(l)));
+  appStore.setItem(STORAGE_KEY, JSON.stringify(products));
+}
+// ポップオーバーの外側をクリックしたら、保管場所の編集を閉じる
+document.addEventListener("click", function(){
+  if(invProductStorageEditId) closeInvProductStorageEditor();
+});
 
 function renderInventoryMaterialsView(){
   const body = document.getElementById("invMaterialsBody");
