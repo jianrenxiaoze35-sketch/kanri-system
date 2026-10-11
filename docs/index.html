@@ -664,7 +664,11 @@
             <button class="secondary" onclick="stepPurchaseSupplierYear(1)">翌年度 ▶</button>
           </div>
         </div>
-        <div class="hint" style="margin:0 0 6px;">10月始まり〜翌年9月末の年度で集計します。矢印ボタンで過去の年度も確認できます。</div>
+        <div class="hint" style="margin:0 0 6px;">10月始まり〜翌年9月末の年度で集計します。矢印ボタンで過去の年度も確認できます。仕入れ先の見出しをクリックすると、その仕入れ先の明細を畳めます。</div>
+        <div class="toolbar" style="margin-bottom:6px;">
+          <button class="secondary" onclick="setAllPurchaseGroups('supplier', false)">すべて開く</button>
+          <button class="secondary" onclick="setAllPurchaseGroups('supplier', true)">すべて畳む</button>
+        </div>
         <div class="card" style="overflow:auto;">
           <table id="purchaseSupplierTable">
             <thead id="purchaseSupplierTableHead"></thead>
@@ -675,7 +679,14 @@
       </div>
 
       <div id="purchaseViewBunruiWrap" style="display:none;">
-        <div class="topbar"><h2>中分類別</h2></div>
+        <div class="topbar">
+          <h2>中分類別</h2>
+          <div class="toolbar">
+            <button class="secondary" onclick="setAllPurchaseGroups('bunrui', false)">すべて開く</button>
+            <button class="secondary" onclick="setAllPurchaseGroups('bunrui', true)">すべて畳む</button>
+          </div>
+        </div>
+        <div class="hint" style="margin:0 0 6px;">中分類の見出しをクリックすると、その中分類の明細を畳めます。</div>
         <div class="card">
           <table>
             <thead>
@@ -4174,6 +4185,42 @@ function switchPurchaseView(view){
   updatePurchaseDeliveryAlertBadge();
 }
 
+/* ---------- 仕入れ管理：グループ見出しの開閉（仕入れ先ビュー・中分類ビュー） ----------
+   見出し行をクリックすると、そのグループの明細行を畳む／開く。畳んだ状態は再描画しても保持する。 */
+const purchaseCollapsedGroups = { supplier: new Set(), bunrui: new Set() };
+const PURCHASE_GROUP_BODY_IDS = { supplier: "purchaseSupplierTableBody", bunrui: "purchaseBunruiTableBody" };
+function applyPurchaseGroupCollapse(view){
+  const tbody = document.getElementById(PURCHASE_GROUP_BODY_IDS[view]);
+  if(!tbody) return;
+  const set = purchaseCollapsedGroups[view];
+  tbody.querySelectorAll("tr[data-pgkey]").forEach(tr=>{
+    const key = tr.dataset.pgkey;
+    const collapsed = set.has(key);
+    if(tr.classList.contains("pg-header")){
+      const chev = tr.querySelector(".pg-chev");
+      if(chev) chev.textContent = collapsed ? "▶" : "▼";
+    } else {
+      tr.style.display = collapsed ? "none" : "";
+    }
+  });
+}
+function togglePurchaseGroup(view, tr){
+  const key = tr.dataset.pgkey;
+  const set = purchaseCollapsedGroups[view];
+  if(set.has(key)) set.delete(key); else set.add(key);
+  applyPurchaseGroupCollapse(view);
+}
+function setAllPurchaseGroups(view, collapse){
+  const tbody = document.getElementById(PURCHASE_GROUP_BODY_IDS[view]);
+  const set = purchaseCollapsedGroups[view];
+  set.clear();
+  if(collapse && tbody) tbody.querySelectorAll("tr.pg-header").forEach(tr=>set.add(tr.dataset.pgkey));
+  applyPurchaseGroupCollapse(view);
+}
+function purchaseGroupHeaderOpen(view, key){
+  return `<tr class="group-header pg-header" data-pgkey="${escAttr(key)}" onclick="togglePurchaseGroup('${view}', this)" style="cursor:pointer;" title="クリックで明細を畳む／開く">`;
+}
+
 /* ---------- 仕入れ管理：中分類ビュー ---------- */
 function renderPurchaseBunruiView(){
   const groupsMap = new Map();
@@ -4193,10 +4240,11 @@ function renderPurchaseBunruiView(){
   body.innerHTML = keys.map(key=>{
     const items = groupsMap.get(key).slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
     const total = items.reduce((s,p)=>s+purchaseItemsTotal(p),0);
-    const headerRow = `<tr class="group-header"><td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(key)} <span style="font-weight:400;color:var(--muted);">（${items.length}件・合計${fmtNum(Math.round(total*100)/100)}円）</span></td></tr>`;
-    const rowsHtml = items.map(p=>renderPurchaseRow(p, null)).join("");
+    const headerRow = `${purchaseGroupHeaderOpen("bunrui", key)}<td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);"><span class="pg-chev">▼</span> ${escAttr(key)} <span style="font-weight:400;color:var(--muted);">（${items.length}件・合計${fmtNum(Math.round(total*100)/100)}円）</span></td></tr>`;
+    const rowsHtml = items.map(p=>renderPurchaseRow(p, null).replace(/<tr/, `<tr data-pgkey="${escAttr(key)}"`)).join("");
     return headerRow + rowsHtml;
   }).join("");
+  applyPurchaseGroupCollapse("bunrui");
 }
 
 /* ---------- 仕入れ管理：仕入れ先ビュー（10月始まり年度・月別数量/金額/単価） ---------- */
@@ -4268,7 +4316,7 @@ function renderPurchaseSupplierView(){
     const itemNames = Array.from(itemsMap.keys()).sort((a,b)=>a.localeCompare(b,"ja"));
     const supplierTotalQty = itemNames.reduce((s,n)=>s+itemsMap.get(n).totalQty,0);
     const supplierTotalAmount = itemNames.reduce((s,n)=>s+itemsMap.get(n).totalAmount,0);
-    const headerRow = `<tr class="group-header"><td colspan="${3+months.length*3}" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(supplier)} <span style="font-weight:400;color:var(--muted);">（総数${fmtNum(Math.round(supplierTotalQty*100)/100)}／総額${fmtNum(Math.round(supplierTotalAmount*100)/100)}円）</span></td></tr>`;
+    const headerRow = `${purchaseGroupHeaderOpen("supplier", supplier)}<td colspan="${3+months.length*3}" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);"><span class="pg-chev">▼</span> ${escAttr(supplier)} <span style="font-weight:400;color:var(--muted);">（総数${fmtNum(Math.round(supplierTotalQty*100)/100)}／総額${fmtNum(Math.round(supplierTotalAmount*100)/100)}円）</span></td></tr>`;
     const itemRows = itemNames.map(name=>{
       const rec = itemsMap.get(name);
       const monthCells = months.map(mo=>{
@@ -4278,10 +4326,11 @@ function renderPurchaseSupplierView(){
         const unitPrice = qty ? amount/qty : 0;
         return `<td>${m?fmtNum(Math.round(qty*100)/100):""}</td><td>${m?fmtNum(Math.round(amount*100)/100):""}</td><td>${m&&unitPrice?fmtNum(Math.round(unitPrice*100)/100):""}</td>`;
       }).join("");
-      return `<tr><td class="text">${escAttr(name)}</td><td>${fmtNum(Math.round(rec.totalQty*100)/100)}</td><td>${fmtNum(Math.round(rec.totalAmount*100)/100)}</td>${monthCells}</tr>`;
+      return `<tr data-pgkey="${escAttr(supplier)}"><td class="text">${escAttr(name)}</td><td>${fmtNum(Math.round(rec.totalQty*100)/100)}</td><td>${fmtNum(Math.round(rec.totalAmount*100)/100)}</td>${monthCells}</tr>`;
     }).join("");
     return headerRow + itemRows;
   }).join("");
+  applyPurchaseGroupCollapse("supplier");
 }
 
 /* ---------- 仕入れ管理：納品確認ビュー ---------- */
