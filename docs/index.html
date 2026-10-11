@@ -3488,6 +3488,7 @@ function absorbNewSupplierNames(supplierNames){
 }
 
 function savePurchases(){
+  invalidateMaterialOtherExpenseCache();
   try{
     appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
   }catch(err){
@@ -8626,7 +8627,21 @@ function computeManualMaterialUnitPrice(m){
   const qty = parseFloat(m.packQty) || 0;
   const priceTax = computeTaxIncluded(m.packPrice, m.taxRate);
   if(!qty) return 0;
-  return priceTax / qty;
+  // 仕入れ管理の「その他経費按分」（送料/その他・イニシャルコスト・値引・コスト・割引を、同じ請求書の
+  // 仕入れ明細へ按分した金額）も、原価計算用の単価に含める。以前は一覧の「1ロット合計金額」「1P価格税込」の
+  // 表示にだけ含まれていて、レシピ・商品の原価には反映されていなかった。
+  return priceTax / qty + getMaterialOtherExpensePerUnit(m.id);
+}
+// 資材ごとの「仕入れ数量1単位あたりの、その他経費按分額」。原価計算のたびに全仕入れを集計し直さないよう、
+// 結果を短時間キャッシュする（仕入れの保存時に破棄。念のため1秒で失効する）。
+let _otherExpensePerUnitCache = null;
+function invalidateMaterialOtherExpenseCache(){ _otherExpensePerUnitCache = null; }
+function getMaterialOtherExpensePerUnit(materialId){
+  const now = Date.now();
+  if(!_otherExpensePerUnitCache || now - _otherExpensePerUnitCache.at > 1000 || _otherExpensePerUnitCache.n !== purchases.length){
+    _otherExpensePerUnitCache = { at: now, n: purchases.length, data: computeMaterialOtherExpenseAllocations() };
+  }
+  return _otherExpensePerUnitCache.data[materialId] || 0;
 }
 
 // 資材/原料/半製品・仕込みの原価計算用単価。
