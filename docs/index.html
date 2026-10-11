@@ -165,7 +165,8 @@
   /* 横スクロール時にチェックボックス列・名称列を左に固定表示する */
   .ing-sticky-col{position:sticky;background:var(--card);z-index:2;}
   .ing-sticky-check{left:0;width:36px;min-width:36px;max-width:36px;}
-  .ing-sticky-name{left:36px;min-width:130px;box-shadow:2px 0 4px rgba(0,0,0,.08);}
+  .ing-sticky-name{left:36px;min-width:300px;width:300px;max-width:300px;box-shadow:2px 0 4px rgba(0,0,0,.08);}
+  #ingredientTableWrap td.ing-sticky-name input{width:100%;min-width:0;}
   th.ing-sticky-col{z-index:4;}
   tr:hover .ing-sticky-col{background:#f7faf8;}
   tr.ing-row-incomplete .ing-sticky-col{background:#fffdf5;}
