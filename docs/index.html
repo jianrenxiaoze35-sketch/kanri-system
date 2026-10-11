@@ -7767,7 +7767,7 @@ function updateIngredientViewCounts(){
   Object.keys(INGREDIENT_VIEW_BUNRUI).forEach(v=>{
     const viewBunrui = INGREDIENT_VIEW_BUNRUI[v];
     const count = materials.filter(m=>
-      (v === "uncategorized" ? isIngredientUncategorized(m) : (!viewBunrui || viewBunrui.includes(m.bunrui)))
+      !isHiddenNonMaterial(m) && (v === "uncategorized" ? isIngredientUncategorized(m) : (!viewBunrui || viewBunrui.includes(m.bunrui)))
     ).length;
     const el = document.getElementById("ingView" + v.charAt(0).toUpperCase() + v.slice(1) + "Count");
     if(el) el.textContent = `(${count})`;
@@ -7884,6 +7884,9 @@ function inlineSelectOptions(list, value){
    仕入れ管理の明細の資材紐づけだけを外す（金額・数量・按分は仕入れ管理の行にそのまま残る）。
    レシピ（原価計算）で使われている項目は、原価に影響するため消去せず、残して知らせる。 */
 const NON_MATERIAL_BUNRUI = ["コスト","割引","送料/その他","値引","設備","求人"];
+// 原料・資材・半製品マスタ（一覧・一括編集・CSV）と在庫・棚卸には、コスト・割引など原料・資材・備品に該当しない項目を表示しない。
+// （データ自体は消さずに残す。仕入れ管理の明細や、レシピでの使用には影響しない。）
+function isHiddenNonMaterial(m){ return !!m && NON_MATERIAL_BUNRUI.includes(m.bunrui); }
 function findNonMaterialMaterials(){
   const usedInRecipe = new Set();
   recipes.forEach(r=>{
@@ -7949,6 +7952,7 @@ function renderIngredients(){
   const q = (searchEl ? searchEl.value : "").toLowerCase();
   const viewBunrui = INGREDIENT_VIEW_BUNRUI[ingredientView];
   let list = materials.filter(m=>
+    !isHiddenNonMaterial(m) &&
     (ingredientView === "uncategorized" ? isIngredientUncategorized(m) : (!viewBunrui || viewBunrui.includes(m.bunrui))) &&
     (!q || (m.name||"").toLowerCase().includes(q) || (m.subCategory||"").toLowerCase().includes(q) || (m.maker||"").toLowerCase().includes(q))
   );
@@ -8097,7 +8101,7 @@ function blankIngredientBulkRow(){
 }
 
 function openIngredientsBulk(){
-  ingredientsBulkDraft = materials.map(m=>({
+  ingredientsBulkDraft = materials.filter(m=>!isHiddenNonMaterial(m)).map(m=>({
     id: m.id, name: m.name, department: m.department, bunrui: m.bunrui, subCategory: m.subCategory, status: m.status, maker: m.maker,
     supplier: m.supplier,
     packQty: m.packQty, unit: m.unit, packPrice: m.packPrice, lotQty: m.lotQty, lotUnit: m.lotUnit,
@@ -8214,7 +8218,9 @@ function saveIngredientsBulk(){
       recipeNote: (r.recipeNote||"").toString().trim()
     };
   });
-  materials = newMaterials;
+  // 一括編集の対象外（コスト・割引など原料・資材・備品に該当しない項目）は、そのまま残す
+  const hiddenKept = prevMaterials.filter(m=>isHiddenNonMaterial(m) && !newMaterials.some(n=>n.id===m.id));
+  materials = newMaterials.concat(hiddenKept);
   saveIngredients();
   closeIngredientsBulk();
   alert(`${newMaterials.length}件のデータを保存しました。`);
@@ -8225,7 +8231,7 @@ function exportIngredientsCSV(){
   const headers = ["名称","大分類","中分類","小分類","1P内容量","単位(1P)","1P価格税込","ロット入数","単位(ロット)","1ロット価格","1ロット合計金額","総額(按分込み)","うちその他経費按分","総数","ステータス","保管場所","在庫数(ロット入数×購入数)","単位(1P)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
-  const list = materials.slice().sort((a,b)=>{
+  const list = materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=>{
     const dep = optionSortIndex(OPTIONS.department, a.department) - optionSortIndex(OPTIONS.department, b.department);
     if(dep !== 0) return dep;
     const bun = optionSortIndex(OPTIONS.bunrui, a.bunrui) - optionSortIndex(OPTIONS.bunrui, b.bunrui);
@@ -18381,6 +18387,7 @@ function collectInventoryStocktakeItems(){
   const items = [];
   materials.forEach(m=>{
     if(!isMaterialStocktakeTarget(m)) return;
+    if(isHiddenNonMaterial(m)) return; // コスト・割引など原料・資材・備品に該当しない項目は棚卸の対象にしない
     const materialKey = "material:"+m.id;
     const theoretical = computeIngredientStockTotal(m);
     const packQty = parseFloat(m.packQty) || 0;
@@ -18729,7 +18736,7 @@ document.addEventListener("click", function(){
 
 function renderInventoryMaterialsView(){
   const body = document.getElementById("invMaterialsBody");
-  const list = materials.slice().sort((a,b)=> (a.name||"").localeCompare(b.name||"", "ja"));
+  const list = materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=> (a.name||"").localeCompare(b.name||"", "ja"));
   body.innerHTML = list.map(m=>`
     <tr>
       <td><input type="checkbox" ${isMaterialStocktakeTarget(m)?"checked":""} onchange="toggleMaterialStocktakeTarget('${m.id}', this.checked)"></td>
@@ -18810,8 +18817,9 @@ function printInventoryRecord(id){
 }
 
 function renderInventorySettingsView(){
-  const matTarget = materials.filter(isMaterialStocktakeTarget).length;
-  const matExcluded = materials.length - matTarget;
+  const invMaterials = materials.filter(m=>!isHiddenNonMaterial(m));
+  const matTarget = invMaterials.filter(isMaterialStocktakeTarget).length;
+  const matExcluded = invMaterials.length - matTarget;
   const prodTarget = products.filter(isProductStocktakeTarget).length;
   const prodExcluded = products.length - prodTarget;
   document.getElementById("invSettingsSummary").innerHTML =
