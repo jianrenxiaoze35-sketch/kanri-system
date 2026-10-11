@@ -5625,8 +5625,35 @@ function initSelects(){
 // 設定ページの選択肢編集（部門・カテゴリ・分類など）。以前は商品マスタ／原料マスタ／仕入れ管理の
 // 各ページに置かれた「選択肢を編集」ボタン→モーダルだったが、選択肢はもともとページ間で共有される
 // データ（OPTIONS）のため、編集操作自体もこの設定ページ1箇所に集約する。
+/* 分類ビュー（設定）での変更を、登録済みのデータ（商品・原料・資材・仕入れ・棚卸記録など）へ反映するための
+   追跡。draftOrigin[field] は draftOptions[field] と同じ並びで「その選択肢の元の名称（新規追加はnull）」を持つ。
+   保存時に、元の名称→新しい名称の変更（名称変更）と、リストから無くなった名称（削除）を割り出す。 */
+let draftOrigin = {};
+function resetDraftOrigin(){
+  draftOrigin = {};
+  Object.keys(FIELD_LABELS).forEach(f=>{ draftOrigin[f] = (Array.isArray(OPTIONS[f]) ? OPTIONS[f] : []).slice(); });
+}
+// リストを丸ごと置き換えたとき（一括編集・Excel取込）の追跡の作り直し。
+// 同じ名称は元の項目として引き継ぎ、allowPositional かつ項目数が同じ場合は、一致しなかった行を元の順序で
+// 一致しなかった元の項目と対応づけて「名称変更」とみなす。
+function rebuildDraftOrigin(field, oldList, newList, allowPositional){
+  const oldOrigins = draftOrigin[field] || [];
+  const used = new Set();
+  const res = newList.map(v=>{
+    const oi = oldList.findIndex((x, i)=> x === v && !used.has(i));
+    if(oi >= 0){ used.add(oi); return oldOrigins[oi] === undefined ? null : oldOrigins[oi]; }
+    return null;
+  });
+  if(allowPositional && newList.length === oldList.length){
+    const freeOld = oldList.map((_, i)=>i).filter(i=>!used.has(i));
+    let k = 0;
+    res.forEach((o, i)=>{ if(o === null && !oldList.includes(newList[i]) && k < freeOld.length){ res[i] = oldOrigins[freeOld[k]] === undefined ? null : oldOrigins[freeOld[k]]; k++; } });
+  }
+  draftOrigin[field] = res;
+}
 function renderSettingsOptions(){
   draftOptions = JSON.parse(JSON.stringify(OPTIONS));
+  resetDraftOrigin();
   ensureBunruiCategoryLinks();
   settingsLinkOpenIdx = null;
   settingsBulkEditField = null;
@@ -5779,6 +5806,7 @@ function updateOption(field, idx, value){
 function removeOption(field, idx){
   const removedValue = draftOptions[field][idx];
   draftOptions[field].splice(idx, 1);
+  if(draftOrigin[field]) draftOrigin[field].splice(idx, 1);
   if(field === "bunrui" || field === "category"){
     cascadeBunruiCategoryLinksOnValueChange(field, removedValue, null);
   }
@@ -5790,6 +5818,7 @@ function addOption(field){
   const value = input.value.trim();
   if(!value) return;
   draftOptions[field].push(value);
+  if(draftOrigin[field]) draftOrigin[field].push(null);
   input.value = "";
   renderSettingsOptionsBody();
 }
@@ -5802,6 +5831,8 @@ function moveOption(field, idx, dir){
   const tmp = list[idx];
   list[idx] = list[newIdx];
   list[newIdx] = tmp;
+  const og = draftOrigin[field];
+  if(og){ const t2 = og[idx]; og[idx] = og[newIdx]; og[newIdx] = t2; }
   renderSettingsOptionsBody();
 }
 
@@ -5841,6 +5872,7 @@ function deleteSelectedSettingsOptions(field){
   }
   if(!confirm(`選択した${set.size}件を削除しますか？この操作は取り消せません。`)) return;
   const removedValues = draftOptions[field].filter(v=>set.has(v));
+  if(draftOrigin[field]) draftOrigin[field] = draftOrigin[field].filter((o, i)=>!set.has(draftOptions[field][i]));
   draftOptions[field] = draftOptions[field].filter(v=>!set.has(v));
   if(field === "bunrui" || field === "category"){
     removedValues.forEach(v=>cascadeBunruiCategoryLinksOnValueChange(field, v, null));
@@ -5871,9 +5903,171 @@ function applySettingsBulkEditFromTextarea(field){
     const removed = oldList.filter(v=>!newList.includes(v));
     removed.forEach(v=>cascadeBunruiCategoryLinksOnValueChange(field, v, null));
   }
+  rebuildDraftOrigin(field, oldList, newList, true);
   draftOptions[field] = newList;
   settingsBulkEditField = null;
   renderSettingsOptionsBody();
+}
+
+/* ---- 分類ビューの変更を、登録済みデータへ反映する ----
+   名称変更：その名称を使っているデータを新しい名称に書き換える。
+   削除：その名称を使っているデータの項目を空欄にする（保管場所は、その保管場所を外す）。
+   設定ページの内容を優先するため、保存時に確認のうえ、全データへ反映する。 */
+const OPTION_DATA_TARGETS = {
+  department: [
+    { label:"商品", rows:()=>products, fields:["department"], key:()=>STORAGE_KEY, whole:()=>products },
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["department"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["department"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases },
+    { label:"福利厚生費", rows:()=>laborWelfareCosts, fields:["department"], key:()=>LABOR_WELFARE_KEY, whole:()=>laborWelfareCosts },
+    { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["department"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
+  ],
+  category: [
+    { label:"商品", rows:()=>products, fields:["category"], key:()=>STORAGE_KEY, whole:()=>products },
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["subCategory"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["category"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases },
+    { label:"予算管理の項目設定", rows:()=>Object.values(budgetCategoryMappings).flat().filter(x=>x && typeof x === "object"), fields:["category"], key:()=>BUDGET_CATEGORY_MAPPING_KEY, whole:()=>budgetCategoryMappings },
+    { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["category"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
+  ],
+  bunrui: [
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["bunrui"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["bunrui"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases },
+    { label:"予算管理の項目設定", rows:()=>Object.values(budgetCategoryMappings).flat().filter(x=>x && typeof x === "object"), fields:["bunrui"], key:()=>BUDGET_CATEGORY_MAPPING_KEY, whole:()=>budgetCategoryMappings },
+    { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["bunruiGroup"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
+  ],
+  accounting: [{ label:"商品", rows:()=>products, fields:["accounting"], key:()=>STORAGE_KEY, whole:()=>products }],
+  creditAccount: [{ label:"商品", rows:()=>products, fields:["creditAccount"], key:()=>STORAGE_KEY, whole:()=>products }],
+  customer: [{ label:"商品", rows:()=>products, fields:["customer"], key:()=>STORAGE_KEY, whole:()=>products }],
+  posSystem: [{ label:"商品", rows:()=>products, fields:["posSystem"], key:()=>STORAGE_KEY, whole:()=>products }],
+  unit: [
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["unit"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["unit","packUnit"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
+  ],
+  lotUnit: [
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["lotUnit"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["lotUnit"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
+  ],
+  status: [{ label:"原料・資材・半製品", rows:()=>materials, fields:["status"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials }],
+  storageLocation: [
+    { label:"原料・資材・半製品", rows:()=>materials, arrayFields:["storageLocations"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["storageGroup"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
+  ],
+  supplier: [
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["supplier"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["supplier"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
+  ],
+  purchaseStatus: [{ label:"仕入れ", rows:()=>purchases, fields:["status"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }]
+};
+// システムの動作（ビューの振り分け・按分計算・ステータスの自動判定など）が名称そのものを前提にしている値
+const OPTION_PROTECTED_VALUES = {
+  bunrui: ["原料","資材","半製品","仕込み","備品","消耗備品","送料/その他","イニシャルコスト","値引","コスト","割引"],
+  category: ["送料","イニシャルコスト","サービス料","割引"],
+  status: ["在庫〇","未取り扱い"],
+  purchaseStatus: ["発注済み","納品済み","納品ミス"]
+};
+// 保存前の変更内容（元の名称→新しい名称／削除）を、draftOptionsとdraftOriginから割り出す。
+function buildOptionChangePlan(){
+  const plan = { renames: {}, deletions: {} };
+  Object.keys(FIELD_LABELS).forEach(field=>{
+    const oldList = Array.isArray(OPTIONS[field]) ? OPTIONS[field] : [];
+    const list = (draftOptions[field] || []).map(v=>(v||"").trim());
+    const origins = draftOrigin[field] || [];
+    const finalValues = new Set(list.filter(Boolean));
+    const keptOrigins = new Set();
+    const renames = {};
+    list.forEach((v, i)=>{
+      const o = origins[i];
+      if(o === null || o === undefined) return;
+      if(v){
+        keptOrigins.add(o);
+        if(o !== v) renames[o] = v;
+      }
+    });
+    const deletions = oldList.filter(o=> !keptOrigins.has(o) && !finalValues.has(o));
+    if(Object.keys(renames).length) plan.renames[field] = renames;
+    if(deletions.length) plan.deletions[field] = deletions;
+  });
+  return plan;
+}
+function countOptionImpact(field, plan){
+  const result = []; // [{kind, from, to, counts:{label:n}, protected}]
+  const targets = OPTION_DATA_TARGETS[field] || [];
+  const count = (value)=>{
+    const counts = {};
+    targets.forEach(t=>{
+      let n = 0;
+      t.rows().forEach(r=>{
+        (t.fields || []).forEach(f=>{ if(r && r[f] === value) n++; });
+        (t.arrayFields || []).forEach(f=>{ if(r && Array.isArray(r[f]) && r[f].includes(value)) n++; });
+      });
+      if(n) counts[t.label] = n;
+    });
+    return counts;
+  };
+  const prot = OPTION_PROTECTED_VALUES[field] || [];
+  Object.keys(plan.renames[field] || {}).forEach(from=>{
+    result.push({ kind: "rename", from, to: plan.renames[field][from], counts: count(from), protected: prot.includes(from) });
+  });
+  (plan.deletions[field] || []).forEach(from=>{
+    result.push({ kind: "delete", from, to: "", counts: count(from), protected: prot.includes(from) });
+  });
+  return result;
+}
+// 保存前の確認メッセージ用に、影響のある変更だけを文章にする。影響が無ければ空配列。
+function summarizeOptionPlan(plan){
+  const lines = [];
+  Object.keys(FIELD_LABELS).forEach(field=>{
+    countOptionImpact(field, plan).forEach(c=>{
+      const total = Object.values(c.counts).reduce((a, b)=>a + b, 0);
+      if(!total && !c.protected) return;
+      const where = Object.keys(c.counts).map(k=>`${k}${c.counts[k]}件`).join("・");
+      const label = FIELD_LABELS[field].replace(/（.*）$/, "");
+      const act = c.kind === "rename" ? `「${c.from}」→「${c.to}」に名称変更` : `「${c.from}」を削除（使用中のデータは空欄になります）`;
+      lines.push(`・${label}：${act}${total ? `：${where}` : "：使用中のデータなし"}${c.protected ? "\n　⚠ システムの動作に使われている名称です。動作に影響する場合があります。" : ""}`);
+    });
+  });
+  return lines;
+}
+// 確認後に、実際にデータへ反映する。戻り値は書き換えた件数。
+function applyOptionChangePlan(plan){
+  let changed = 0;
+  const dirtyKeys = new Map(); // key → whole
+  Object.keys(OPTION_DATA_TARGETS).forEach(field=>{
+    const renames = plan.renames[field] || {};
+    const deletions = new Set(plan.deletions[field] || []);
+    if(!Object.keys(renames).length && !deletions.size) return;
+    const mapValue = (v)=> Object.prototype.hasOwnProperty.call(renames, v) ? renames[v] : (deletions.has(v) ? "" : v);
+    OPTION_DATA_TARGETS[field].forEach(t=>{
+      let touched = false;
+      t.rows().forEach(r=>{
+        if(!r) return;
+        (t.fields || []).forEach(f=>{
+          if(typeof r[f] !== "string" || r[f] === "") return;
+          const nv = mapValue(r[f]);
+          if(nv !== r[f]){ r[f] = nv; touched = true; changed++; }
+        });
+        (t.arrayFields || []).forEach(f=>{
+          if(!Array.isArray(r[f])) return;
+          const next = [];
+          let diff = false;
+          r[f].forEach(v=>{
+            const nv = mapValue(v);
+            if(nv !== v) diff = true;
+            if(nv !== "" && !next.includes(nv)) next.push(nv);
+          });
+          if(diff){ r[f] = next; touched = true; changed++; }
+        });
+      });
+      if(touched) dirtyKeys.set(t.key(), t.whole());
+    });
+  });
+  dirtyKeys.forEach((whole, key)=>{ appStore.setItem(key, JSON.stringify(whole)); });
+  return changed;
+}
+// 反映後に、開いている各ページの一覧を最新の内容で描き直す。
+function refreshAfterOptionChange(){
+  [render, renderIngredients, renderPurchases, renderRecipes].forEach(fn=>{ try{ fn(); }catch(e){ console.warn("refresh failed", e); } });
+  try{ if(typeof renderInventoryActiveView === "function") renderInventoryActiveView(); }catch(e){}
+  try{ if(typeof renderLaborWelfareView === "function") renderLaborWelfareView(); }catch(e){}
 }
 
 function saveSettingsOptions(){
@@ -5882,6 +6076,13 @@ function saveSettingsOptions(){
   // 「保存したのに元に戻る」ように見える不具合があったため、保存前に必ず反映させる。
   if(settingsBulkEditField){
     applySettingsBulkEditFromTextarea(settingsBulkEditField);
+  }
+  // 名称変更・削除を、登録済みのデータへ反映する（確認のうえ。設定ページの内容を優先する）
+  const optionPlan = buildOptionChangePlan();
+  const optionLines = summarizeOptionPlan(optionPlan);
+  if(optionLines.length){
+    const ok = confirm("次の変更を、登録済みのデータにも反映します。\n\n" + optionLines.join("\n") + "\n\nよろしいですか？（キャンセルすると保存せずに編集へ戻ります）");
+    if(!ok) return;
   }
   Object.keys(draftOptions).forEach(f=>{
     if(Array.isArray(draftOptions[f])){
@@ -5899,11 +6100,15 @@ function saveSettingsOptions(){
   });
   OPTIONS = draftOptions;
   appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+  const appliedCount = applyOptionChangePlan(optionPlan);
+  if(appliedCount) refreshAfterOptionChange();
   initSelects();
+  resetDraftOrigin(); // 保存後の内容を、次の編集の基準にする
   const status = document.getElementById("settingsSaveStatus");
   if(status){
-    status.textContent = "保存しました。";
-    setTimeout(()=>{ if(status.textContent === "保存しました。") status.textContent = ""; }, 3000);
+    const msg = appliedCount ? `保存しました。登録済みのデータ${appliedCount}件に反映しました。` : "保存しました。";
+    status.textContent = msg;
+    setTimeout(()=>{ if(status.textContent === msg) status.textContent = ""; }, 5000);
   }
 }
 
@@ -6826,6 +7031,7 @@ function importSettingsOptionsExcel(event){
           const removed = oldList.filter(v=>!values.includes(v));
           removed.forEach(v=>cascadeBunruiCategoryLinksOnValueChange(field, v, null));
         }
+        rebuildDraftOrigin(field, oldList, values, false); // Excel取込では名称変更は推測しない（同名のみ引き継ぐ）
         draftOptions[field] = values;
       });
 
