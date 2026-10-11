@@ -329,13 +329,39 @@
   button.secondary .count-badge{color:inherit;opacity:0.75;}
 
   /* 在庫・棚卸：棚卸表（大＝大分類／中＝保管場所／小＝中分類のグルーピング） */
-  .inv-dept-block{margin-bottom:16px;}
-  .inv-group-large{background:var(--main-dark);color:#fff;font-weight:700;padding:5px 10px;font-size:13px;border-radius:6px 6px 0 0;}
-  table.inv-sheet-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;margin-bottom:8px;}
-  table.inv-sheet-table th,table.inv-sheet-table td{border:1px solid var(--border);padding:3px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  table.inv-sheet-table th.inv-group-mid{background:#e8ecea;text-align:left;font-size:12px;}
-  table.inv-sheet-table th.inv-group-small{background:#f4f6f5;text-align:left;font-size:11px;}
-  table.inv-sheet-table input{border:none;background:transparent;text-align:right;width:100%;font-size:11px;padding:0;}
+  /* ===== 在庫・棚卸（画面表示。印刷用のスタイルは inventoryPrintHtml 内に別にある） ===== */
+  #page-inventory .topbar h2{font-size:17px;}
+  #page-inventory .hint{margin-bottom:8px;line-height:1.6;}
+  #page-inventory .card{box-shadow:0 1px 3px rgba(35,79,56,.06);border-radius:8px;margin-bottom:10px;}
+  #page-inventory .card > table{min-width:0;font-size:12px;}
+  #page-inventory .card > table th,#page-inventory .card > table td{padding:4px 10px;}
+  #page-inventory .card > table th{z-index:1;box-shadow:0 1px 0 var(--border);}
+  #page-inventory .card > table tbody tr:nth-child(even) td{background:#fbfcfb;}
+  #page-inventory .card > table tbody tr:hover td{background:#f0f6f2;}
+  #invProductsView .card,#invMaterialsView .card{max-height:72vh;}
+  #invProductsView input[type=checkbox],#invMaterialsView input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+  #page-inventory .toolbar.inv-tabs{margin-bottom:10px;}
+  .inv-dept-block{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--card);box-shadow:0 1px 3px rgba(35,79,56,.06);}
+  .inv-group-large{background:var(--main-dark);color:#fff;font-weight:700;padding:5px 12px;font-size:13px;letter-spacing:.5px;}
+  table.inv-sheet-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px;margin:0;min-width:0;}
+  table.inv-sheet-table + table.inv-sheet-table{border-top:3px solid #dfe7e2;}
+  table.inv-sheet-table th,table.inv-sheet-table td{border:1px solid #e3e8e5;padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.45;}
+  table.inv-sheet-table th{background:#eef2f0;color:#4d5a54;font-weight:600;font-size:10px;text-align:center;position:static;white-space:normal;line-height:1.25;word-break:keep-all;}
+  table.inv-sheet-table th.inv-group-mid{background:#dfeae3;color:var(--main-dark);text-align:left;font-size:12px;border-left:4px solid var(--main);padding:4px 10px;}
+  table.inv-sheet-table th.inv-group-small{background:#f4f7f5;color:#33413b;text-align:left;font-size:11px;font-weight:700;}
+  table.inv-sheet-table td{text-align:right;font-variant-numeric:tabular-nums;}
+  table.inv-sheet-table td.text{text-align:left;}
+  table.inv-sheet-table tbody tr:hover td{background:#f4f9f6;}
+  table.inv-sheet-table tr > *:nth-child(11),
+  table.inv-sheet-table tr > [colspan="10"]:nth-child(2),
+  table.inv-sheet-table tr > th[colspan="10"]:first-child + td{border-left:2px solid #aab8b0;}
+  table.inv-sheet-table td.inv-agg{font-weight:700;}
+  table.inv-sheet-table td.inv-diff-neg{color:#c0392b;font-weight:700;background:#fdf1ef;}
+  table.inv-sheet-table td.inv-diff-pos{color:#2c6fb0;font-weight:700;background:#eef4fb;}
+  table.inv-sheet-table input{border:1px solid transparent;border-bottom:1px dashed #b9c4be;background:#fffef7;border-radius:3px;text-align:right;width:100%;box-sizing:border-box;font-size:11.5px;padding:1px 3px;}
+  table.inv-sheet-table input:focus{outline:2px solid var(--main);background:#fff;border-color:transparent;}
+  table.inv-sheet-table input::-webkit-outer-spin-button,table.inv-sheet-table input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  table.inv-sheet-table input[type=number]{-moz-appearance:textfield;}
 
   /* Modal */
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:center;justify-content:center;z-index:50;}
@@ -1778,7 +1804,7 @@
       </div>
       <div class="hint" style="margin-bottom:12px;">商品マスタ・原料資材半製品マスタから在庫・棚卸の対象を選び、月末に棚卸表で実数を記録・確定します。確定すると記録タブに保存され、原料・資材・半製品マスタの「在庫数(棚卸)」に反映されます。棚卸表の理論値・原料マスタの「在庫数(計算)」は、仕入れ管理に登録された仕入れ数量が自動的に積み上がる形で計算されます。</div>
 
-      <div class="toolbar" style="margin-bottom:10px;">
+      <div class="seg-tabs">
         <button class="secondary" id="invViewProductsBtn" onclick="switchInventoryView('products')">商品</button>
         <button class="secondary" id="invViewMaterialsBtn" onclick="switchInventoryView('materials')">原料・資材</button>
         <button class="secondary active" id="invViewSheetBtn" onclick="switchInventoryView('sheet')">棚卸表</button>
@@ -1807,15 +1833,15 @@
       </div>
 
       <div id="invSheetView">
-        <div class="card" style="padding:12px 16px;">
-          <div class="toolbar" style="align-items:center;">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象月：
+        <div class="card" style="padding:8px 14px;">
+          <div class="toolbar" style="align-items:center;gap:8px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;">対象月：
               <input type="month" id="invTargetMonth" onchange="onInventoryTargetMonthChange()">
             </label>
             <button class="secondary" onclick="printInventorySheet()">🖨 印刷（A4）</button>
             <button onclick="confirmInventoryStocktake()">✔ この内容で棚卸を確定して記録に保存</button>
           </div>
-          <div class="hint" style="margin-top:6px;">グループ分け：大＝大分類、中＝保管場所、小＝中分類。保管場所が複数ある資材は場所ごとに行が分かれるので、それぞれの実数を入力してください（実数合計・差異は同じ資材の全保管場所ぶんを自動集計した値です）。</div>
+          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">グループ分け：大＝大分類、中＝保管場所、小＝中分類。保管場所が複数ある資材は場所ごとに行が分かれるので、それぞれの実数を入力してください（実数合計・差異は同じ資材の全保管場所ぶんを自動集計した値です）。</div>
         </div>
         <div id="invSheetContent"></div>
       </div>
@@ -17916,7 +17942,7 @@ function recomputeMaterialAggregateRows(materialKey){
     const aggEl = document.getElementById("invAgg_"+k);
     if(aggEl) aggEl.textContent = fmtNum(agg);
     const diffEl = document.getElementById("invDiff_"+k);
-    if(diffEl) diffEl.textContent = diff==null ? "" : fmtNum(diff);
+    if(diffEl){ diffEl.textContent = diff==null ? "" : fmtNum(diff); diffEl.className = invDiffClass(diff); }
   });
 }
 
@@ -17924,17 +17950,22 @@ function recomputeMaterialAggregateRows(materialKey){
 // falseの場合は確定済みの値を表示するだけの読み取り専用セル（記録タブの印刷・閲覧用）。
 // 「実数」「ロット実数」はこの行（保管場所）だけの入力値、「実数合計」「差異」は同じ資材の
 // 全保管場所ぶんを合算した値（資材単位での比較）。
+// 差異の色分け（不足＝赤、過剰＝青）。印刷用のスタイルには影響しない。
+function invDiffClass(diff){
+  if(diff == null || diff === 0) return "";
+  return diff < 0 ? "inv-diff-neg" : "inv-diff-pos";
+}
 function renderInventoryItemRowCells(item, editable){
   if(!editable){
     return `
-      <td class="text">${item.category||""}</td>
-      <td class="text">${item.maker||""}</td>
-      <td class="text">${item.name||""}</td>
+      <td class="text" title="${escAttr(item.category||"")}">${item.category||""}</td>
+      <td class="text" title="${escAttr(item.maker||"")}">${item.maker||""}</td>
+      <td class="text" title="${escAttr(item.name||"")}">${item.name||""}</td>
       <td>${item.theoretical==null?"":fmtNum(item.theoretical)}</td>
       <td>${fmtNum(item.actual)}</td>
       <td>${fmtNum(item.lotActual)}</td>
-      <td>${fmtNum(item.aggregateActual)}</td>
-      <td>${item.diff==null?"":fmtNum(item.diff)}</td>
+      <td class="inv-agg">${fmtNum(item.aggregateActual)}</td>
+      <td class="${invDiffClass(item.diff)}">${item.diff==null?"":fmtNum(item.diff)}</td>
       <td>${fmtNum(item.packQty)}</td>
       <td>${fmtNum(item.lotQty)}</td>
     `;
@@ -17943,14 +17974,14 @@ function renderInventoryItemRowCells(item, editable){
   const agg = computeMaterialAggregateActual(item.materialKey);
   const diff = item.theoretical == null ? null : (agg - item.theoretical);
   return `
-    <td class="text">${item.category||""}</td>
-    <td class="text">${item.maker||""}</td>
-    <td class="text">${item.name||""}</td>
+    <td class="text" title="${escAttr(item.category||"")}">${item.category||""}</td>
+    <td class="text" title="${escAttr(item.maker||"")}">${item.maker||""}</td>
+    <td class="text" title="${escAttr(item.name||"")}">${item.name||""}</td>
     <td>${item.theoretical==null?"":fmtNum(item.theoretical)}</td>
     <td><input type="number" value="${item.actual??""}" oninput="updateInventoryDraftEntry('${key}','actual',this.value)"></td>
     <td><input type="number" value="${item.lotActual??""}" oninput="updateInventoryDraftEntry('${key}','lotActual',this.value)"></td>
-    <td id="invAgg_${key}">${fmtNum(agg)}</td>
-    <td id="invDiff_${key}">${diff==null?"":fmtNum(diff)}</td>
+    <td id="invAgg_${key}" class="inv-agg">${fmtNum(agg)}</td>
+    <td id="invDiff_${key}" class="${invDiffClass(diff)}">${diff==null?"":fmtNum(diff)}</td>
     <td>${fmtNum(item.packQty)}</td>
     <td>${fmtNum(item.lotQty)}</td>
   `;
@@ -17962,6 +17993,8 @@ function renderInventoryColumnCell(rowDesc, editable){
   return renderInventoryItemRowCells(rowDesc.item, editable);
 }
 
+// 棚卸表1列ぶん（10列）の幅(%)：小分類・メーカー・名称・理論値・実数・ロット実数・実数合計・差異・1P入数・ロット入数
+const INV_SHEET_COL_WIDTHS = [5, 5.5, 10.5, 4, 5, 5, 4.5, 4, 3.5, 3.5];
 const INV_SHEET_HEADER_CELLS = "<th>小分類</th><th>メーカー</th><th>名称</th><th>理論値</th><th>実数</th><th>ロット実数</th><th>実数合計</th><th>差異</th><th>1P入数</th><th>ロット入数</th>";
 
 // 部門（大）→保管場所（中）→分類（小）の階層で、1列目・2列目に分けたA4向けの棚卸表テーブル群のHTMLを作る。
@@ -17989,7 +18022,7 @@ function buildInventorySheetTablesHtml(items, editable){
       }
       return `
         <table class="inv-sheet-table">
-          <colgroup>${'<col style="width:4%">'.repeat(20)}</colgroup>
+          <colgroup>${INV_SHEET_COL_WIDTHS.concat(INV_SHEET_COL_WIDTHS).map(w=>`<col style="width:${w}%">`).join("")}</colgroup>
           <tbody>
             <tr><th colspan="20" class="inv-group-mid">保管場所：${sg.storageGroup}</th></tr>
             <tr><th colspan="10">1列目</th><th colspan="10">2列目</th></tr>
