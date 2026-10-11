@@ -3356,7 +3356,8 @@ const INGREDIENT_SORT_COLUMNS = [
   { key: "lotPriceTax", label: "1ロット<br>価格", type: "num" },
   { key: "lotTotalAmount", label: "1ロット<br>合計金額", type: "num" },
   { key: "taxRate", label: "税率", type: "num" },
-  { key: "purchaseHistoryTotalAmount", label: "総額", type: "num" },
+  { key: "purchaseHistoryTotalAmount", label: "総額<br>(按分込み)", type: "num" },
+  { key: "purchaseHistoryAllocatedAmount", label: "うちその他<br>経費按分", type: "num" },
   { key: "purchaseHistoryTotalQty", label: "総数", type: "num" },
   { key: "status", label: "ステータス", type: "text" },
   { key: "storageLocationsText", label: "保管場所", type: "text" },
@@ -3796,6 +3797,16 @@ function purchaseHasUnlinkedItems(p){
 // 正規化しておくことで、ロット入り数を掛けたときに実態に見合った金額になる。
 // 原料・資材・半製品マスタページの「その他経費按分」列に使用する。
 function computeMaterialOtherExpenseAllocations(){
+  const d = computeMaterialOtherExpenseDetail();
+  const perUnit = {};
+  Object.keys(d.totals).forEach(id=>{
+    const qty = d.purchasedQty[id] || 0;
+    perUnit[id] = qty ? d.totals[id]/qty : 0;
+  });
+  return perUnit;
+}
+// 資材ごとの、その他経費按分の累計額（totals）と、按分の対象となった仕入れ数量の累計（purchasedQty）。
+function computeMaterialOtherExpenseDetail(){
   const totals = {};
   const purchasedQty = {};
   const groupsMap = new Map();
@@ -3830,26 +3841,27 @@ function computeMaterialOtherExpenseAllocations(){
       });
     });
   });
-  const perUnit = {};
-  Object.keys(totals).forEach(id=>{
-    const qty = purchasedQty[id] || 0;
-    perUnit[id] = qty ? totals[id]/qty : 0;
-  });
-  return perUnit;
+  return { totals, purchasedQty };
 }
 
 // 請求書／仕入れ管理にアップロードされた全ての仕入れデータから、資材ごとの過去の総額（累計仕入れ金額）と
-// 総数（累計仕入れ数量）を集計する。原料・資材・半製品マスタ一覧・CSV書き出しで表示するための参考値であり、
-// 期間を問わず全履歴を対象にする（その他経費按分は含めない、あくまで各明細行のamount/qtyの単純合計）。
+// 総数（累計仕入れ数量）を集計する。原料・資材・半製品マスタ一覧・CSV書き出しで表示する値で、期間を問わず
+// 全履歴を対象にする。総額には、仕入れ管理の「その他経費按分」（送料・値引など）の累計額も含める
+// （merchandiseAmount＝各明細のamountの合計、allocatedAmount＝その他経費按分の累計）。
 function computeMaterialPurchaseHistoryTotals(){
   const result = {};
   purchases.forEach(p=>{
     (p.items||[]).forEach(it=>{
       if(!it.materialId) return;
-      if(!result[it.materialId]) result[it.materialId] = { totalAmount: 0, totalQty: 0 };
-      result[it.materialId].totalAmount += parseFloat(it.amount) || 0;
+      if(!result[it.materialId]) result[it.materialId] = { totalAmount: 0, totalQty: 0, merchandiseAmount: 0, allocatedAmount: 0 };
+      result[it.materialId].merchandiseAmount += parseFloat(it.amount) || 0;
       result[it.materialId].totalQty += parseFloat(it.qty) || 0;
     });
+  });
+  const alloc = computeMaterialOtherExpenseDetail().totals;
+  Object.keys(result).forEach(id=>{
+    result[id].allocatedAmount = alloc[id] || 0;
+    result[id].totalAmount = result[id].merchandiseAmount + result[id].allocatedAmount;
   });
   return result;
 }
@@ -7629,6 +7641,11 @@ function inlineSelectOptions(list, value){
 }
 
 function renderIngredients(){
+  // 一覧を表示するたびに、単価（1P価格・1ロット価格）を最新の仕入れ実績に揃える。仕入れの保存を経由しない
+  // 変更（取込・クラウドからの読み込み・端末間の更新など）があっても、古い単価のまま表示されないようにする。
+  try{
+    if(syncMaterialPricesFromPurchases()) appStore.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
+  }catch(e){ console.warn("単価の同期に失敗", e); }
   renderIngredientTableHead();
   updateIngredientViewCounts();
   const searchEl = document.getElementById("ingredientSearchBox");
@@ -7685,6 +7702,7 @@ function renderIngredients(){
       m, unitPrice, lotPriceTax, otherExpenseAllocation, lotTotalAmount, packPriceTaxDisplay,
       stockTotal, usedProductNames, missing, stockFromLot,
       purchaseHistoryTotalAmount: purchaseHistory.totalAmount, purchaseHistoryTotalQty: purchaseHistory.totalQty,
+      purchaseHistoryAllocatedAmount: purchaseHistory.allocatedAmount || 0,
       name: m.name, department: m.department, bunrui: m.bunrui, subCategory: m.subCategory,
       packQty: parseFloat(m.packQty) || 0, unit: m.unit, lotQty: parseFloat(m.lotQty) || 0, lotUnit: m.lotUnit,
       taxRate: parseFloat(m.taxRate) || 0, status: m.status,
@@ -7745,6 +7763,7 @@ function renderIngredients(){
           </select>
         </td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalAmount*100)/100)}</td>
+        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryAllocatedAmount*100)/100)}</td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalQty*100)/100)}</td>
         <td${cls("status","text")}><select title="仕入れデータの有無により自動的に上書きされる場合があります" onchange="updateMaterialInline('${m.id}','status',this.value)">${inlineSelectOptions(OPTIONS.status, m.status)}</select></td>
         <td${cls("storageLocations","text")}><div style="cursor:pointer;min-height:16px;" onclick="event.stopPropagation();openIngredientStorageEditor('${m.id}',this)" title="クリックして保管場所を選択">${(m.storageLocations||[]).join("、") || '<span style="color:var(--muted);">（未選択・クリックして選択）</span>'}</div></td>
@@ -7913,7 +7932,7 @@ function saveIngredientsBulk(){
 
 /* ---------- 原料・資材・半製品マスタ CSV書き出し ---------- */
 function exportIngredientsCSV(){
-  const headers = ["名称","大分類","中分類","小分類","1P内容量","単位(1P)","1P価格税込","ロット入数","単位(ロット)","1ロット価格","1ロット合計金額","税率","総額","総数","ステータス","保管場所","在庫数(ロット入数×購入数)","単位(1P)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
+  const headers = ["名称","大分類","中分類","小分類","1P内容量","単位(1P)","1P価格税込","ロット入数","単位(ロット)","1ロット価格","1ロット合計金額","税率","総額(按分込み)","うちその他経費按分","総数","ステータス","保管場所","在庫数(ロット入数×購入数)","単位(1P)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
   const list = materials.slice().sort((a,b)=>{
@@ -7951,7 +7970,7 @@ function exportIngredientsCSV(){
       m.lotQty ?? "", m.lotUnit||"", lotPriceTax,
       Math.round(lotTotalAmount*100)/100,
       m.taxRate ? (m.taxRate*100)+"%" : "",
-      Math.round(purchaseHistory.totalAmount*100)/100, Math.round(purchaseHistory.totalQty*100)/100,
+      Math.round(purchaseHistory.totalAmount*100)/100, Math.round((purchaseHistory.allocatedAmount||0)*100)/100, Math.round(purchaseHistory.totalQty*100)/100,
       m.status||"", (m.storageLocations||[]).join("、"),
       Math.round(stockFromLot*100)/100, m.unit||"", m.stockCount ?? "", stockTotal,
       m.maker||"", m.supplier||"", usedProductNames.join("、")
