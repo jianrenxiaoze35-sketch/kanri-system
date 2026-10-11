@@ -3806,42 +3806,56 @@ function computeMaterialOtherExpenseAllocations(){
   return perUnit;
 }
 // 資材ごとの、その他経費按分の累計額（totals）と、按分の対象となった仕入れ数量の累計（purchasedQty）。
+// 仕入れ全体から、請求書グループ（請求書番号、無ければ請求日）ごとの「その他経費の合計」と、按分先となる通常行
+// （その他経費ではない行）の件数・1行あたりの按分額を求める。仕入れ管理の一覧の「その他経費按分」欄と、原料・資材・
+// 半製品マスタの按分額は、どちらもこの結果を使う（一覧の検索で絞り込んでいても、按分額が変わらないようにするため）。
+function computePurchaseAllocationContext(){
+  const groups = new Map();
+  purchases.forEach(p=>{
+    const { key, label } = purchaseGroupKey(p);
+    if(!groups.has(key)) groups.set(key, { key, label, items: [] });
+    groups.get(key).items.push(p);
+  });
+  const shareByPurchaseId = {};
+  groups.forEach(g=>{
+    g.other = g.items.filter(p=>isOtherExpensePurchase(p));
+    g.regular = g.items.filter(p=>!isOtherExpensePurchase(p));
+    g.otherTotal = g.other.reduce((sum, p)=>sum + purchaseItemsTotal(p), 0);
+    // 金額比例ではなく、同じ請求書グループ内の通常行へ均等に按分する。
+    g.share = (g.otherTotal !== 0 && g.regular.length) ? g.otherTotal / g.regular.length : 0;
+    g.regular.forEach(p=>{ shareByPurchaseId[p.id] = g.share; });
+  });
+  return { groups, shareByPurchaseId };
+}
+// 資材ごとの、その他経費按分の累計額（totals）と、按分の対象となった仕入れ数量の累計（purchasedQty）。
+// parts は、資材ごとの按分の内訳（どの請求書グループから、いくら按分されたか）。
 function computeMaterialOtherExpenseDetail(){
   const totals = {};
   const purchasedQty = {};
-  const groupsMap = new Map();
-  purchases.forEach(p=>{
-    const { key } = purchaseGroupKey(p);
-    if(!groupsMap.has(key)) groupsMap.set(key, []);
-    groupsMap.get(key).push(p);
-  });
-  groupsMap.forEach(items=>{
-    const otherExpenseItems = items.filter(p=>isOtherExpensePurchase(p));
-    const regularItems = items.filter(p=>!isOtherExpensePurchase(p));
-    regularItems.forEach(p=>{
+  const parts = {};
+  const ctx = computePurchaseAllocationContext();
+  ctx.groups.forEach(g=>{
+    g.regular.forEach(p=>{
       (p.items||[]).forEach(it=>{
         if(!it.materialId) return;
         purchasedQty[it.materialId] = (purchasedQty[it.materialId]||0) + (parseFloat(it.qty)||0);
       });
     });
-    const otherExpenseTotal = otherExpenseItems.reduce((s,p)=>s+purchaseItemsTotal(p), 0);
-    if(otherExpenseTotal === 0) return;
-    // その他経費按分(送料/その他・イニシャルコスト・値引・コスト・割引)は、金額比例ではなく
-    // 同じ請求書グループ内の対象行(regularItems)へ均等に按分する。
-    regularItems.forEach(p=>{
+    if(!g.share) return;
+    g.regular.forEach(p=>{
       const pAmount = purchaseItemsTotal(p);
-      const share = regularItems.length ? otherExpenseTotal / regularItems.length : 0;
-      if(!share) return;
       const materialItems = (p.items||[]).filter(it=>it.materialId);
       if(!materialItems.length) return;
       materialItems.forEach(it=>{
         const itAmount = parseFloat(it.amount)||0;
-        const itShare = pAmount !== 0 ? share * (itAmount/pAmount) : (share / materialItems.length);
+        const itShare = pAmount !== 0 ? g.share * (itAmount/pAmount) : (g.share / materialItems.length);
         totals[it.materialId] = (totals[it.materialId]||0) + itShare;
+        if(!parts[it.materialId]) parts[it.materialId] = [];
+        parts[it.materialId].push({ label: g.label, otherTotal: g.otherTotal, regularCount: g.regular.length, share: g.share, itemShare: itShare });
       });
     });
   });
-  return { totals, purchasedQty };
+  return { totals, purchasedQty, parts };
 }
 
 // 請求書／仕入れ管理にアップロードされた全ての仕入れデータから、資材ごとの過去の総額（累計仕入れ金額）と
@@ -4037,9 +4051,11 @@ function renderPurchases(){
   const groupsMap = new Map();
   list.forEach(p=>{
     const { key, label } = purchaseGroupKey(p);
-    if(!groupsMap.has(key)) groupsMap.set(key, { label, items: [] });
+    if(!groupsMap.has(key)) groupsMap.set(key, { key, label, items: [] });
     groupsMap.get(key).items.push(p);
   });
+  // その他経費按分は、検索で絞り込んだ一覧ではなく、仕入れ全体（同じ請求書グループの全行）から求める。
+  const allocCtx = computePurchaseAllocationContext();
   // 仕入れ日が未入力の明細（送料・値引など）は、並び替え用に納品日→請求日の順でフォールバックする
   const sortDate = p=> (p.date || p.billingDate || p.deliveryDate || "");
   const groups = Array.from(groupsMap.values());
@@ -4056,25 +4072,21 @@ function renderPurchases(){
     const groupTotal = g.items.reduce((s,p)=> s + purchaseItemsTotal(p), 0);
     // 分類「送料/その他」「イニシャルコスト」「値引」、および小分類が「送料」「イニシャルコスト」「サービス料」「割引」の
     // 仕入れは、同グループ内の他の資材・原料へ均等に按分する
-    const otherExpenseItems = g.items.filter(p=>isOtherExpensePurchase(p));
-    const regularItems = g.items.filter(p=>!isOtherExpensePurchase(p));
-    const otherExpenseTotal = otherExpenseItems.reduce((s,p)=> s + purchaseItemsTotal(p), 0);
+    const ag = allocCtx.groups.get(g.key) || { otherTotal: 0, regular: [], share: 0 };
+    const otherExpenseTotal = ag.otherTotal;
+    const regularItems = ag.regular;
     let otherExpenseNote = "";
     if(otherExpenseTotal !== 0 && !regularItems.length){
       otherExpenseNote = ` <span style="font-weight:400;color:var(--danger);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円は按分先の資材がないため未按分です）</span>`;
     }else if(otherExpenseTotal !== 0){
-      otherExpenseNote = ` <span style="font-weight:400;color:var(--muted);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円を資材・原料に按分）</span>`;
+      otherExpenseNote = ` <span style="font-weight:400;color:var(--muted);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円を、この請求書グループの通常行${regularItems.length}件へ均等に按分＝1行あたり${fmtNum(Math.round(ag.share*100)/100)}円）</span>`;
     }
     const headerRow = `<tr class="group-header"><td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(g.label)} <span style="font-weight:400;color:var(--muted);">（${g.items.length}件・合計${fmtNum(Math.round(groupTotal*100)/100)}円）</span>${otherExpenseNote}</td></tr>`;
     const rowsHtml = g.items.map(p=>{
       if(isOtherExpensePurchase(p)) return renderPurchaseRow(p, null);
       // その他経費按分(送料/その他・イニシャルコスト・値引・コスト・割引)は、金額比例ではなく
-      // 同じ請求書グループ内の対象行(regularItems)へ均等に按分する。
-      let share = 0;
-      if(otherExpenseTotal !== 0){
-        share = regularItems.length ? otherExpenseTotal / regularItems.length : 0;
-      }
-      return renderPurchaseRow(p, share);
+      // 同じ請求書グループ内の対象行(regularItems)へ均等に按分する（仕入れ全体から算出済み）。
+      return renderPurchaseRow(p, allocCtx.shareByPurchaseId[p.id] || 0);
     }).join("");
     return headerRow + rowsHtml;
   }).join("");
@@ -7671,6 +7683,7 @@ function renderIngredients(){
 
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
+  const allocationParts = computeMaterialOtherExpenseDetail().parts;
   // 一覧に表示する計算済みの値を、行ごとに1回だけまとめて算出しておく（並べ替えと描画の両方で使い回す）。
   let rows = list.map(m=>{
     const unitPrice = computeMaterialUnitPrice(m);
@@ -7706,6 +7719,7 @@ function renderIngredients(){
       stockTotal, usedProductNames, missing, stockFromLot,
       purchaseHistoryTotalAmount: purchaseHistory.totalAmount, purchaseHistoryTotalQty: purchaseHistory.totalQty,
       purchaseHistoryAllocatedAmount: purchaseHistory.allocatedAmount || 0,
+      allocatedTooltip: (allocationParts[m.id] || []).map(x=>`${x.label}：その他経費${fmtNum(Math.round(x.otherTotal*100)/100)}円 ÷ 通常行${x.regularCount}件 ＝ ${fmtNum(Math.round(x.share*100)/100)}円／行（この資材への按分 ${fmtNum(Math.round(x.itemShare*100)/100)}円）`).join("\n"),
       name: m.name, department: m.department, bunrui: m.bunrui, subCategory: m.subCategory,
       packQty: parseFloat(m.packQty) || 0, unit: m.unit, lotQty: parseFloat(m.lotQty) || 0, lotUnit: m.lotUnit,
       taxRate: parseFloat(m.taxRate) || 0, status: m.status,
@@ -7766,7 +7780,7 @@ function renderIngredients(){
           </select>
         </td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalAmount*100)/100)}</td>
-        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryAllocatedAmount*100)/100)}</td>
+        <td class="calc" title="${escAttr(r.allocatedTooltip || "その他経費の按分はありません")}">${fmtNum(Math.round(r.purchaseHistoryAllocatedAmount*100)/100)}</td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalQty*100)/100)}</td>
         <td${cls("status","text")}><select title="仕入れデータの有無により自動的に上書きされる場合があります" onchange="updateMaterialInline('${m.id}','status',this.value)">${inlineSelectOptions(OPTIONS.status, m.status)}</select></td>
         <td${cls("storageLocations","text")}><div style="cursor:pointer;min-height:16px;" onclick="event.stopPropagation();openIngredientStorageEditor('${m.id}',this)" title="クリックして保管場所を選択">${(m.storageLocations||[]).join("、") || '<span style="color:var(--muted);">（未選択・クリックして選択）</span>'}</div></td>
