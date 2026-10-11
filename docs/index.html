@@ -3182,6 +3182,8 @@ const FIELD_LABELS = {
 const OPTIONS_KEY = "product_master_options_v1";
 let OPTIONS = JSON.parse(JSON.stringify(DEFAULT_OPTIONS)); // 安全なデフォルト値。実際の内容はブート時に読み込む
 registerBootStep(function(){
+  // 保存済みの選択肢が既にあるか（＝初めて開く環境ではないか）。下の「新設項目を補う」処理の要否判断に使う。
+  const hadSavedOptions = appStore.getItem(OPTIONS_KEY) !== null;
   OPTIONS = JSON.parse(appStore.getItem(OPTIONS_KEY) || "null") || JSON.parse(JSON.stringify(DEFAULT_OPTIONS));
   // 旧データ移行：以前は商品の「カテゴリー」(category)と原料の「カテゴリ」(subCategory)が
   // 別々の選択肢リストだった。subCategoryが残っている場合はcategoryへ統合し、以後は
@@ -3204,6 +3206,12 @@ registerBootStep(function(){
   if(!OPTIONS.bunruiCategoryLinks || typeof OPTIONS.bunruiCategoryLinks !== "object" || Array.isArray(OPTIONS.bunruiCategoryLinks)){
     OPTIONS.bunruiCategoryLinks = {};
   }
+  // 以下の「新設した項目を補う」処理は、初めて開く環境で1回だけ行う（OPTIONS_SUPPLEMENTS_FLAG）。
+  // 以前は起動のたびに実行していたため、設定ページの分類ビューで削除・名称変更した項目（雑貨・CAN・コスト・割引など）が
+  // 再読み込みのたびに元に戻ってしまっていた。保存済みの選択肢がある環境では、補わずに設定の内容をそのまま使う。
+  const OPTIONS_SUPPLEMENTS_FLAG = "options_supplements_v1_done";
+  const runOptionSupplements = !appStore.getItem(OPTIONS_SUPPLEMENTS_FLAG) && !hadSavedOptions;
+  if(runOptionSupplements){
   // 分類（原料・資材）に新設した項目が既存データに無い場合は補う
   if(Array.isArray(OPTIONS.bunrui) && !OPTIONS.bunrui.includes("商品")) OPTIONS.bunrui.push("商品");
   if(Array.isArray(OPTIONS.bunrui) && !OPTIONS.bunrui.includes("備品")) OPTIONS.bunrui.push("備品");
@@ -3254,7 +3262,9 @@ registerBootStep(function(){
   ["クラフトビール", "日本酒", "日本酒カクテル", "ソフトドリンク", "フード", "ソフトクリーム", "酒類", "雑貨", "その他"].forEach(c=>{
     if(Array.isArray(OPTIONS.category) && !OPTIONS.category.includes(c)) OPTIONS.category.push(c);
   });
-  appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+  } // end runOptionSupplements
+  if(!appStore.getItem(OPTIONS_SUPPLEMENTS_FLAG)) appStore.setItem(OPTIONS_SUPPLEMENTS_FLAG, "1");
+  if(runOptionSupplements) appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
 });
 // 大分類（department）を「商品カテゴリ」的な意味合いから「事業チャネル」の固定7区分へ変更する移行。
 // 既存データ（商品・原料・仕入れに保存済みのdepartment文字列）はそのまま残し、選択肢リストのみ置き換える。
