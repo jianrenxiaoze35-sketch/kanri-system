@@ -1892,6 +1892,9 @@
               <input type="month" id="invTargetMonth" onchange="onInventoryTargetMonthChange()">
             </label>
             <button class="secondary" onclick="printInventorySheet()">🖨 印刷（A4）</button>
+            <button class="secondary" onclick="exportInventoryTemplateExcel()" title="棚卸の対象項目を一覧にしたExcelを出力します。実数を入力して、「Excel入力」で取り込めます">📄 テンプレートExcel出力</button>
+            <button class="secondary" onclick="document.getElementById('invExcelInput').click()" title="テンプレートExcelに入力した実数・ロット実数を、棚卸表に取り込みます">📥 Excel入力</button>
+            <input type="file" id="invExcelInput" accept=".xlsx,.xls" style="display:none" onchange="importInventoryExcel(event)">
             <button onclick="confirmInventoryStocktake()">✔ この内容で棚卸を確定して記録に保存</button>
           </div>
           <div class="hint" style="margin:6px 0 0;font-size:11.5px;">グループ分け：大＝大分類、中＝保管場所、小＝中分類。保管場所が複数ある資材は場所ごとに行が分かれるので、それぞれの実数を入力してください（実数合計・差異は同じ資材の全保管場所ぶんを自動集計した値です）。</div>
@@ -19008,6 +19011,104 @@ function renderInventorySheet(){
     _inventoryOccurrenceKeysByMaterialKey[it.materialKey].push(it.key);
   });
   document.getElementById("invSheetContent").innerHTML = buildInventorySheetTablesHtml(items, true);
+}
+
+/* ---- 棚卸表：テンプレートExcelの出力と、入力済みExcelの取り込み ----
+   出力：棚卸の対象項目を、大分類・保管場所・中分類・小分類の順に並べたExcelにする（実数・ロット実数は空欄）。
+   取り込み：Excelの「管理キー」で項目を特定し、「実数」「ロット実数」の入力内容を棚卸表の入力値として反映する
+   （空欄の項目は、いまの入力値のまま変更しない）。反映後は、画面で確認してから「確定」できる。 */
+const INV_EXCEL_HEADERS = ["管理キー","大分類","保管場所","中分類","小分類","名称","理論値","実数","ロット実数","1P入数","ロット入数"];
+function exportInventoryTemplateExcel(){
+  if(typeof XLSX === "undefined"){
+    alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。");
+    return;
+  }
+  const items = collectInventoryStocktakeItems();
+  if(!items.length){
+    alert("棚卸の対象項目がありません。「商品」「原料・資材」タブで対象を選択してください。");
+    return;
+  }
+  const month = (document.getElementById("invTargetMonth") || {}).value || inventoryDraft.month || currentYearMonthStr();
+  // 画面の棚卸表と同じ順序（大分類→保管場所→中分類→小分類→名称）に並べる
+  const grouped = groupInventoryItems(items);
+  const aoa = [INV_EXCEL_HEADERS];
+  grouped.forEach(dg=>{
+    dg.groups.forEach(sg=>{
+      sg.items.forEach(it=>{
+        const entry = inventoryDraft.entries[it.key] || {};
+        aoa.push([
+          it.key, dg.department, sg.storageGroup, it.bunruiGroup || "", it.category || "", it.name || "",
+          it.theoretical == null ? "" : Math.round(it.theoretical * 100) / 100,
+          entry.actual ?? "", entry.lotActual ?? "",
+          it.packQty || "", it.lotQty || ""
+        ]);
+      });
+    });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ hidden:true, wch:10 },{wch:14},{wch:18},{wch:14},{wch:14},{wch:40},{wch:10},{wch:10},{wch:12},{wch:8},{wch:10}];
+  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  const info = XLSX.utils.aoa_to_sheet([
+    ["棚卸表テンプレート"],
+    ["対象月", month],
+    ["使い方", "「実数」「ロット実数」の列に数量を入力して保存し、棚卸表の「Excel入力」で取り込みます。"],
+    ["注意", "1列目（管理キー）は項目の照合に使うため、変更・削除しないでください（列は非表示にしてあります）。行の並べ替えは問題ありません。"]
+  ]);
+  info["!cols"] = [{wch:10},{wch:90}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "棚卸表");
+  XLSX.utils.book_append_sheet(wb, info, "説明");
+  XLSX.writeFile(wb, `棚卸表テンプレート_${month}.xlsx`);
+}
+function importInventoryExcel(event){
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if(!file) return;
+  if(typeof XLSX === "undefined"){
+    alert("Excel読み込み機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。");
+    input.value = "";
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+      const ws = wb.Sheets["棚卸表"] || wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      if(!rows.length || !("管理キー" in rows[0]) || !("実数" in rows[0])){
+        alert("「テンプレートExcel出力」で出力したExcelの形式ではありません（「管理キー」「実数」の列が必要です）。");
+        input.value = "";
+        return;
+      }
+      const items = collectInventoryStocktakeItems();
+      const byKey = new Map(items.map(it=>[it.key, it]));
+      // 管理キーが無い・一致しない行は、大分類＋保管場所＋名称で照合する
+      const byLabel = new Map(items.map(it=>[`${it.department}|${it.storageGroup}|${it.name}`, it]));
+      let applied = 0, blank = 0;
+      const unmatched = [];
+      const num = v => { const n = parseFloat(String(v).replace(/,/g, "")); return isNaN(n) ? null : n; };
+      rows.forEach((r, i)=>{
+        const actual = num(r["実数"]), lot = num(r["ロット実数"]);
+        const it = byKey.get(String(r["管理キー"]).trim()) || byLabel.get(`${r["大分類"]}|${r["保管場所"]}|${r["名称"]}`);
+        if(actual === null && lot === null){ blank++; return; }
+        if(!it){ unmatched.push(`${i+2}行目：${r["名称"] || r["管理キー"]}`); return; }
+        if(!inventoryDraft.entries[it.key]) inventoryDraft.entries[it.key] = {};
+        if(actual !== null) inventoryDraft.entries[it.key].actual = String(actual);
+        if(lot !== null) inventoryDraft.entries[it.key].lotActual = String(lot);
+        applied++;
+      });
+      persistInventoryDraft();
+      renderInventorySheet();
+      let msg = `${applied}件の実数を棚卸表に反映しました（入力の無い行${blank}件は変更していません）。\n内容を確認してから、「この内容で棚卸を確定して記録に保存」を押してください。`;
+      if(unmatched.length) msg += `\n\n棚卸の対象に見つからず、反映しなかった行（${unmatched.length}件）：\n${unmatched.slice(0,10).join("\n")}${unmatched.length>10?"\n…":""}`;
+      alert(msg);
+    }catch(err){
+      console.error(err);
+      alert("Excelファイルの読み込みに失敗しました。ファイル形式をご確認ください。");
+    }
+    input.value = "";
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 function onInventoryTargetMonthChange(){
