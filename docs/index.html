@@ -2094,11 +2094,11 @@
       <div class="form-field"><label>ステータス</label><select id="f_pu_status"></select></div>
       <div class="form-field"><label>仕入れ日 *</label><input type="date" id="f_pu_date"></div>
       <div class="form-field"><label>納品日</label><input type="date" id="f_pu_deliveryDate"></div>
-      <div class="form-field"><label>請求日</label><input type="date" id="f_pu_billingDate"></div>
-      <div class="form-field"><label>請求書番号</label><input type="text" id="f_pu_invoiceNumber"></div>
+      <div class="form-field"><label>請求日</label><input type="date" id="f_pu_billingDate" onchange="refreshPurchaseAllocBox()"></div>
+      <div class="form-field"><label>請求書番号</label><input type="text" id="f_pu_invoiceNumber" oninput="refreshPurchaseAllocBox()"></div>
       <div class="form-field"><label>品名</label><input type="text" id="f_pu_itemName" placeholder="請求書・納品書に記載の品名など"></div>
       <div class="form-field"><label>大分類</label><select id="f_pu_department"></select></div>
-      <div class="form-field"><label>小分類</label><select id="f_pu_category"></select></div>
+      <div class="form-field"><label>小分類</label><select id="f_pu_category" onchange="refreshPurchaseAllocBox()"></select></div>
       <div class="form-field"><label>中分類</label><select id="f_pu_bunrui" onchange="refreshPurchaseCategoryOptions()"></select></div>
       <div class="form-field"><label>単位(ロット)</label><select id="f_pu_unit"></select></div>
       <div class="form-field"><label>仕入れ先</label><select id="f_pu_supplier"></select></div>
@@ -2108,6 +2108,13 @@
       <div class="form-field"><label>ロット入数</label><input type="number" id="f_pu_lotQty" step="0.01"></div>
       <div class="form-field"><label>単位(ロット)</label><select id="f_pu_lotUnit"></select></div>
       <div class="form-field"><label>メーカー</label><input type="text" id="f_pu_maker"></div>
+    </div>
+    <div id="f_pu_allocBox" style="display:none;margin:0 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#f7faf8;">
+      <div style="font-weight:700;margin-bottom:6px;">その他経費（イニシャルコスト・サービス料・割引・送料など）の按分先</div>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;"><input type="radio" name="f_pu_allocMode" value="all" onchange="onPurchaseAllocModeChange()"> 同じ請求書内の、全ての原料・資材・備品の行へ均等に按分する</label>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="f_pu_allocMode" value="select" onchange="onPurchaseAllocModeChange()"> 同じ請求書内の、選んだ原料・資材・備品の行だけに按分する</label>
+      <div id="f_pu_allocTargets" style="display:none;margin-left:22px;"></div>
+      <div class="hint" style="margin:6px 0 0;">「選んだ行だけ」の場合、この金額は選んだ行に均等に加算されます（他の行には按分されません）。請求書番号（無ければ請求日）が同じ行が候補になります。</div>
     </div>
     <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
       <div class="form-field">
@@ -3548,6 +3555,10 @@ function openPurchaseForm(purchase){
   currentPurchaseItems = purchase ? JSON.parse(JSON.stringify(purchase.items || [])) : [];
   if(!currentPurchaseItems.length) currentPurchaseItems.push({ materialId:"", qty:"", amount:"" });
   renderPurchaseItems();
+  currentAllocTargetIds = purchase && Array.isArray(purchase.allocTargetIds) ? purchase.allocTargetIds.slice() : [];
+  const modeVal = currentAllocTargetIds.length ? "select" : "all";
+  document.querySelectorAll('input[name="f_pu_allocMode"]').forEach(r=>{ r.checked = r.value === modeVal; });
+  refreshPurchaseAllocBox();
   document.getElementById("purchaseModalOverlay").classList.add("show");
 }
 
@@ -3731,6 +3742,8 @@ function savePurchase(){
     id, date, supplier, status, itemName, invoiceNumber, deliveryDate, billingDate, department, category, bunrui, unit, memo, packQty, packUnit, lotQty, lotUnit, maker, items,
     quotationFile: currentQuotationFile,
     invoiceFile: currentInvoiceFile,
+    // その他経費の按分先（空＝請求書内の全ての通常行へ均等に按分）。その他経費の行でのみ有効。
+    allocTargetIds: (isOtherExpense && getPurchaseAllocMode() === "select") ? currentAllocTargetIds.slice() : [],
     updatedAt: new Date().toISOString()
   };
   const idx = purchases.findIndex(p=>p.id===id);
@@ -3833,9 +3846,23 @@ function computePurchaseAllocationContext(){
     g.other = g.items.filter(p=>isOtherExpensePurchase(p));
     g.regular = g.items.filter(p=>!isOtherExpensePurchase(p));
     g.otherTotal = g.other.reduce((sum, p)=>sum + purchaseItemsTotal(p), 0);
-    // 金額比例ではなく、同じ請求書グループ内の通常行へ均等に按分する。
-    g.share = (g.otherTotal !== 0 && g.regular.length) ? g.otherTotal / g.regular.length : 0;
-    g.regular.forEach(p=>{ shareByPurchaseId[p.id] = g.share; });
+    const regularIds = new Set(g.regular.map(p=>p.id));
+    // 按分先を指定したその他経費（allocTargetIds。同じグループの通常行だけが有効）は、指定した行へ均等に加算する。
+    // 指定の無いその他経費は、同じ請求書グループ内の通常行へ均等に按分する（金額比例ではない）。
+    g.generalTotal = 0; g.targetedTotal = 0;
+    const targetedExtra = {};
+    g.other.forEach(p=>{
+      const amount = purchaseItemsTotal(p);
+      const targets = (Array.isArray(p.allocTargetIds) ? p.allocTargetIds : []).filter(id=>regularIds.has(id));
+      if(targets.length){
+        g.targetedTotal += amount;
+        targets.forEach(id=>{ targetedExtra[id] = (targetedExtra[id] || 0) + amount / targets.length; });
+      } else {
+        g.generalTotal += amount;
+      }
+    });
+    g.share = (g.generalTotal !== 0 && g.regular.length) ? g.generalTotal / g.regular.length : 0;
+    g.regular.forEach(p=>{ shareByPurchaseId[p.id] = g.share + (targetedExtra[p.id] || 0); });
   });
   return { groups, shareByPurchaseId };
 }
@@ -3853,17 +3880,18 @@ function computeMaterialOtherExpenseDetail(){
         purchasedQty[it.materialId] = (purchasedQty[it.materialId]||0) + (parseFloat(it.qty)||0);
       });
     });
-    if(!g.share) return;
     g.regular.forEach(p=>{
+      const recShare = ctx.shareByPurchaseId[p.id] || 0;
+      if(!recShare) return;
       const pAmount = purchaseItemsTotal(p);
       const materialItems = (p.items||[]).filter(it=>it.materialId);
       if(!materialItems.length) return;
       materialItems.forEach(it=>{
         const itAmount = parseFloat(it.amount)||0;
-        const itShare = pAmount !== 0 ? g.share * (itAmount/pAmount) : (g.share / materialItems.length);
+        const itShare = pAmount !== 0 ? recShare * (itAmount/pAmount) : (recShare / materialItems.length);
         totals[it.materialId] = (totals[it.materialId]||0) + itShare;
         if(!parts[it.materialId]) parts[it.materialId] = [];
-        parts[it.materialId].push({ label: g.label, otherTotal: g.otherTotal, regularCount: g.regular.length, share: g.share, itemShare: itShare });
+        parts[it.materialId].push({ label: g.label, otherTotal: g.otherTotal, generalTotal: g.generalTotal, targetedTotal: g.targetedTotal, regularCount: g.regular.length, generalShare: g.share, share: recShare, itemShare: itShare });
       });
     });
   });
@@ -4002,8 +4030,14 @@ function renderPurchaseRow(p, otherExpenseShare, extraRowStyle){
   const unitPrice = totalQty ? totalAmount / totalQty : 0;
   const statusColor = p.status==="納品ミス" ? "var(--danger)" : (p.status==="納品済み" ? "#2a8f4d" : "var(--muted)");
   const statusCell = p.status ? `<span style="color:${statusColor};font-weight:600;">${p.status}</span>` : "";
+  let targetText = "按分済み";
+  if(isOtherExpense){
+    const ids = Array.isArray(p.allocTargetIds) ? p.allocTargetIds : [];
+    const tp = ids.map(id=>purchases.find(x=>x.id===id)).filter(Boolean);
+    targetText = tp.length ? "→ " + tp.map(x=>purchaseRowLabel(x).replace(/（[\d,]+円）$/, "")).join("、") : "→ 請求書内全体";
+  }
   const allocatedCell = isOtherExpense
-    ? `<span style="color:var(--muted);">－（按分済み）</span>`
+    ? `<span style="color:var(--muted);" title="${escAttr(targetText)}">－（${escAttr(targetText)}）</span>`
     : fmtNum(Math.round((otherExpenseShare||0)*100)/100);
   // 資材が未紐付けの明細がある場合、行全体に色を付けて一目でわかるようにする（原料・資材・半製品マスタの
   // 「在庫数(計算)」にこの明細の数量が反映されていない原因になっている）。
@@ -4089,7 +4123,8 @@ function renderPurchases(){
     if(otherExpenseTotal !== 0 && !regularItems.length){
       otherExpenseNote = ` <span style="font-weight:400;color:var(--danger);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円は按分先の資材がないため未按分です）</span>`;
     }else if(otherExpenseTotal !== 0){
-      otherExpenseNote = ` <span style="font-weight:400;color:var(--muted);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円を、この請求書グループの通常行${regularItems.length}件へ均等に按分＝1行あたり${fmtNum(Math.round(ag.share*100)/100)}円）</span>`;
+      const targetedNote = ag.targetedTotal ? `／個別指定 ${fmtNum(Math.round(ag.targetedTotal*100)/100)}円は指定した行へ` : "";
+      otherExpenseNote = ` <span style="font-weight:400;color:var(--muted);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円：全体按分 ${fmtNum(Math.round(ag.generalTotal*100)/100)}円を通常行${regularItems.length}件へ均等に＝1行あたり${fmtNum(Math.round(ag.share*100)/100)}円${targetedNote}）</span>`;
     }
     const headerRow = `<tr class="group-header"><td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(g.label)} <span style="font-weight:400;color:var(--muted);">（${g.items.length}件・合計${fmtNum(Math.round(groupTotal*100)/100)}円）</span>${otherExpenseNote}</td></tr>`;
     const rowsHtml = g.items.map(p=>{
@@ -4457,6 +4492,7 @@ function savePurchasesBulk(){
       items,
       quotationFile: r.quotationFile || null,
       invoiceFile: r.invoiceFile || null,
+      allocTargetIds: (()=>{ const orig = purchases.find(x=>x.id===id); return orig && Array.isArray(orig.allocTargetIds) ? orig.allocTargetIds : []; })(),
       updatedAt: new Date().toISOString()
     };
   });
@@ -5644,6 +5680,60 @@ function refreshPurchaseCategoryOptions(preserveValue){
   const keepValue = preserveValue !== undefined ? preserveValue : categorySel.value;
   fillSelect("f_pu_category", filteredCategoryListForBunrui(bunruiSel.value, keepValue));
   categorySel.value = keepValue || "";
+  refreshPurchaseAllocBox();
+}
+
+/* ---- その他経費の按分先（請求書内全体／選んだ行だけ） ----
+   その他経費の行（分類が送料/その他・イニシャルコスト・値引・コスト・割引、または小分類が送料・イニシャルコスト・
+   サービス料・割引）に、按分先の行を指定できる。未指定（＝全体）は、同じ請求書内の通常行へ均等に按分する。 */
+let currentAllocTargetIds = [];
+function getPurchaseAllocMode(){
+  const r = document.querySelector('input[name="f_pu_allocMode"]:checked');
+  return r ? r.value : "all";
+}
+function purchaseRowLabel(p){
+  const names = (p.items||[]).map(it=>{ const m = materials.find(x=>x.id===it.materialId); return m ? m.name : ""; }).filter(Boolean);
+  const base = names.length ? names.join("、") : (p.itemName || "（品名なし）");
+  return `${base}（${fmtNum(Math.round(purchaseItemsTotal(p)))}円）`;
+}
+function refreshPurchaseAllocBox(){
+  const box = document.getElementById("f_pu_allocBox");
+  const list = document.getElementById("f_pu_allocTargets");
+  if(!box || !list) return;
+  const bunrui = document.getElementById("f_pu_bunrui").value;
+  const category = document.getElementById("f_pu_category").value;
+  const isOther = isOtherExpenseByBunruiCategory(bunrui, category);
+  box.style.display = isOther ? "" : "none";
+  if(!isOther) return;
+  const mode = getPurchaseAllocMode();
+  const showList = mode === "select";
+  list.style.display = showList ? "" : "none";
+  if(!showList) return;
+  // 同じ請求書グループ（請求書番号、無ければ請求日）の通常行を候補にする
+  const draft = {
+    invoiceNumber: document.getElementById("f_pu_invoiceNumber").value,
+    billingDate: document.getElementById("f_pu_billingDate").value
+  };
+  const myKey = purchaseGroupKey(draft).key;
+  const myId = document.getElementById("f_pu_id").value;
+  const candidates = purchases.filter(p=> p.id !== myId && !isOtherExpensePurchase(p) && purchaseGroupKey(p).key === myKey);
+  if(!candidates.length){
+    list.innerHTML = '<div class="hint" style="margin:0;color:var(--danger);">同じ請求書番号（無ければ請求日）の原料・資材・備品の行がまだありません。先にその行を登録するか、請求書番号・請求日を入力してください。</div>';
+    return;
+  }
+  list.innerHTML = candidates.map(c=>`
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:3px;cursor:pointer;">
+      <input type="checkbox" value="${escAttr(c.id)}" ${currentAllocTargetIds.includes(c.id) ? "checked" : ""} onchange="onPurchaseAllocTargetToggle(this.value,this.checked)">
+      <span>${escAttr(purchaseRowLabel(c))}</span>
+    </label>`).join("");
+}
+function onPurchaseAllocModeChange(){
+  refreshPurchaseAllocBox();
+}
+function onPurchaseAllocTargetToggle(id, checked){
+  const set = new Set(currentAllocTargetIds);
+  if(checked) set.add(id); else set.delete(id);
+  currentAllocTargetIds = Array.from(set);
 }
 
 function initSelects(){
@@ -7726,7 +7816,11 @@ function renderIngredients(){
       stockTotal, usedProductNames, missing, stockFromLot,
       purchaseHistoryTotalAmount: purchaseHistory.totalAmount, purchaseHistoryTotalQty: purchaseHistory.totalQty,
       purchaseHistoryAllocatedAmount: purchaseHistory.allocatedAmount || 0,
-      allocatedTooltip: (allocationParts[m.id] || []).map(x=>`${x.label}：その他経費${fmtNum(Math.round(x.otherTotal*100)/100)}円 ÷ 通常行${x.regularCount}件 ＝ ${fmtNum(Math.round(x.share*100)/100)}円／行（この資材への按分 ${fmtNum(Math.round(x.itemShare*100)/100)}円）`).join("\n"),
+      allocatedTooltip: (allocationParts[m.id] || []).map(x=>{
+        const gen = `全体按分 ${fmtNum(Math.round(x.generalTotal*100)/100)}円 ÷ 通常行${x.regularCount}件 ＝ ${fmtNum(Math.round(x.generalShare*100)/100)}円／行`;
+        const tgt = x.targetedTotal ? `＋個別指定 ${fmtNum(Math.round((x.share - x.generalShare)*100)/100)}円` : "";
+        return `${x.label}：${gen}${tgt}（この資材への按分 ${fmtNum(Math.round(x.itemShare*100)/100)}円）`;
+      }).join("\n"),
       name: m.name, department: m.department, bunrui: m.bunrui, subCategory: m.subCategory,
       packQty: parseFloat(m.packQty) || 0, unit: m.unit, lotQty: parseFloat(m.lotQty) || 0, lotUnit: m.lotUnit,
       taxRate: parseFloat(m.taxRate) || 0, status: m.status,
