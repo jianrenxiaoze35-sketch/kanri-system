@@ -407,10 +407,30 @@
   .recipe-total-bar{display:flex;gap:20px;justify-content:flex-end;font-size:13px;padding:8px 4px;border-top:1px solid var(--border);margin-top:4px;}
   .recipe-total-bar b{color:var(--accent);}
   /* レシピを新規追加/編集モーダル：資材・原料が探しやすいよう、選択欄をやや大きめに、行間にもゆとりを持たせる */
-  .recipe-items-table select,.recipe-items-table input{font-size:13.5px;padding:6px 8px;}
-  .recipe-items-table td{padding:5px 4px;}
   .recipe-items-table select{cursor:pointer;}
   .recipe-modal .form-field select{font-size:13.5px;padding:6px 8px;}
+  /* ===== 原価・レシピ管理（一覧）：コンパクト表示。共通の幅広テーブル(min-width)は継承しない ===== */
+  #page-recipes .topbar h2{font-size:17px;}
+  #page-recipes .hint{margin-bottom:8px;line-height:1.55;font-size:12px;}
+  #page-recipes .toolbar button{padding:5px 10px;font-size:12px;}
+  #page-recipes .search-box{min-width:170px;padding:4px 8px;font-size:12px;}
+  #page-recipes .card{box-shadow:0 1px 3px rgba(35,79,56,.06);border-radius:8px;margin-bottom:10px;}
+  #page-recipes table{min-width:0;font-size:12.5px;}
+  #page-recipes th,#page-recipes td{padding:4px 8px;line-height:1.4;}
+  #page-recipes th{z-index:1;box-shadow:0 1px 0 var(--border);}
+  #page-recipes tbody tr:nth-child(even) td{background:#fbfcfb;}
+  #page-recipes tbody tr:hover td{background:#f0f6f2;}
+  #page-recipes td.text{white-space:nowrap;}
+  #page-recipes td.rcp-target{min-width:160px;}
+  #page-recipes .actions-col button{padding:2px 8px;font-size:11.5px;}
+  .rcp-type{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#e8f1fa;color:#2c6fb0;white-space:nowrap;}
+  .rcp-type.sub{background:#f2eee6;color:#8a6d1d;}
+  .rcp-items{color:var(--muted);font-size:11.5px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rcp-alt{color:#2a8f4d;font-weight:700;margin-left:4px;}
+  #recipeMissingAlertCard{padding:8px 12px !important;}
+  #recipeMissingAlertCard h3{font-size:13px;}
+  .recipe-items-table select,.recipe-items-table input{font-size:13px;padding:4px 6px;}
+  .recipe-items-table td{padding:3px 4px;}
 
   /* レジ締め・売上集計ページ：商品マスタ等の幅広テーブル(min-width:1900px)を継承しないよう上書きし、
      横スクロールが基本発生しない、コンパクトなレイアウトにする */
@@ -594,17 +614,17 @@
 
       <div class="hint" style="margin-bottom:10px;">Excel一括登録は「商品コード・商品名・資材/原料名・使用量」の列を持つ表形式のファイルに対応しています（1行＝レシピの資材/原料1品目、同じ商品コードの行をまとめて1つのレシピとして登録します）。詳しい形式は「📄 一括登録テンプレート」からダウンロードできるひな形をご覧ください。※ Excel一括登録は「商品」向けレシピのみに対応しています。半製品・仕込み自体のレシピは「＋ 新規追加」から個別に登録してください。</div>
 
-      <div class="card" id="recipeMissingAlertCard" style="display:none;border-color:var(--danger);background:#fdf1ef;margin-bottom:10px;padding:12px 16px;">
+      <div class="card" id="recipeMissingAlertCard" style="display:none;border-color:var(--danger);background:#fdf1ef;margin-bottom:10px;padding:8px 12px;">
         <h3 style="margin:0 0 6px;color:var(--danger);">⚠ レシピ未登録の商品 <span id="recipeMissingCount"></span></h3>
         <div class="hint">これらの商品はレシピが未登録のため、原価が0円で計算され、売上管理で販売されても原料・資材・半製品マスタの「在庫数(計算)」が減算されません。登録漏れがないか確認してください。</div>
-        <div id="recipeMissingList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+        <div id="recipeMissingList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
       </div>
 
       <div class="card">
         <table>
           <thead>
             <tr>
-              <th>種別</th><th>対象</th><th>品目数</th><th>資材費</th><th>原料費</th>
+              <th>種別</th><th>対象</th><th>主な資材・原料</th><th>品目数</th><th>資材費</th><th>原料費</th><th>原価合計</th>
               <th class="actions-col">操作</th>
             </tr>
           </thead>
@@ -2115,7 +2135,7 @@
 
 <!-- Recipe Modal -->
 <div class="modal-overlay" id="recipeModalOverlay">
-  <div class="modal compact-modal recipe-modal" style="width:820px;">
+  <div class="modal compact-modal recipe-modal" style="width:780px;">
     <h3 id="recipeModalTitle">レシピを新規追加</h3>
     <input type="hidden" id="f_r_id">
     <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
@@ -9098,21 +9118,36 @@ function renderRecipes(){
   const searchEl = document.getElementById("recipeSearchBox");
   const q = (searchEl ? searchEl.value : "").toLowerCase();
   const visibleRecipes = recipes;
+  // 商品（商品コード順）→半製品・仕込み（名称順）の順に並べる
   const list = visibleRecipes.filter(r=>{
     const info = getRecipeTargetInfo(r);
     return !q || info.searchText.toLowerCase().includes(q);
+  }).sort((a,b)=>{
+    const ia = getRecipeTargetInfo(a), ib = getRecipeTargetInfo(b);
+    const ta = a.targetType === "product" ? 0 : 1, tb = b.targetType === "product" ? 0 : 1;
+    if(ta !== tb) return ta - tb;
+    return String(ia.name).localeCompare(String(ib.name), "ja", { numeric: true });
   });
   const body = document.getElementById("recipeTableBody");
   body.innerHTML = list.map(r=>{
     const info = getRecipeTargetInfo(r);
     const { materialsCost, rawMaterialCost } = computeRecipeCosts(r);
+    const items = r.items || [];
+    const names = items.map(it=>{
+      const m = materials.find(x=>x.id===it.materialId);
+      return m ? `${m.name||""}${Array.isArray(it.alternatives) && it.alternatives.length ? '<span class="rcp-alt" title="代替できる資材・原料が設定されています">⇄</span>' : ""}` : "";
+    }).filter(Boolean);
+    const itemsText = names.slice(0, 3).join("、") + (names.length > 3 ? ` ほか${names.length - 3}件` : "");
+    const plainNames = items.map(it=>{ const m = materials.find(x=>x.id===it.materialId); return m ? m.name : ""; }).filter(Boolean).join("、");
     return `
       <tr>
-        <td class="text">${info.typeLabel}</td>
-        <td class="text">${info.name}</td>
-        <td>${(r.items||[]).length}</td>
+        <td><span class="rcp-type ${r.targetType === "product" ? "" : "sub"}">${info.typeLabel}</span></td>
+        <td class="text rcp-target">${info.name}</td>
+        <td class="text"><div class="rcp-items" title="${escAttr(plainNames)}">${itemsText}</div></td>
+        <td>${items.length}</td>
         <td class="calc">${fmtNum(Math.round(materialsCost*100)/100)}</td>
         <td class="calc">${fmtNum(Math.round(rawMaterialCost*100)/100)}</td>
+        <td class="calc" style="font-weight:700;">${fmtNum(Math.round((materialsCost+rawMaterialCost)*100)/100)}</td>
         <td class="actions-col">
           <button class="secondary" onclick='editRecipeById("${r.id}")'>編集</button>
           <button class="danger" onclick='deleteRecipe("${r.id}")'>削除</button>
@@ -9142,9 +9177,9 @@ function renderRecipeMissingAlert(){
   card.style.display = "block";
   countEl.textContent = `(${missing.length}件)`;
   listEl.innerHTML = missing.map(p=>`
-    <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--danger);border-radius:4px;padding:4px 8px;font-size:12.5px;">
+    <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--danger);border-radius:4px;padding:2px 6px;font-size:12px;">
       <span class="text">${escAttr(p.name) || "(名称未設定)"}</span>
-      <button class="secondary" style="padding:2px 8px;font-size:11.5px;" onclick='openRecipeForm(null, "${p.id}", "product")'>＋レシピを追加</button>
+      <button class="secondary" style="padding:1px 6px;font-size:11px;" onclick='openRecipeForm(null, "${p.id}", "product")'>＋レシピ</button>
     </span>
   `).join("");
 }
