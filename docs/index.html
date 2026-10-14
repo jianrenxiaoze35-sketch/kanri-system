@@ -1870,6 +1870,7 @@
       <div class="seg-tabs">
         <button class="secondary" id="invViewProductsBtn" onclick="switchInventoryView('products')">商品</button>
         <button class="secondary" id="invViewMaterialsBtn" onclick="switchInventoryView('materials')">原料・資材</button>
+        <button class="secondary" id="invViewStockBtn" onclick="switchInventoryView('stock')">在庫一覧</button>
         <button class="secondary active" id="invViewSheetBtn" onclick="switchInventoryView('sheet')">棚卸表</button>
         <button class="secondary" id="invViewRecordsBtn" onclick="switchInventoryView('records')">記録</button>
         <button class="secondary" id="invViewSettingsBtn" onclick="switchInventoryView('settings')">設定</button>
@@ -1892,6 +1893,30 @@
             <thead><tr><th style="width:60px;">在庫〇</th><th>名称</th><th>大分類</th><th>中分類</th><th>保管場所</th></tr></thead>
             <tbody id="invMaterialsBody"></tbody>
           </table>
+        </div>
+      </div>
+
+      <div id="invStockView" style="display:none;">
+        <div class="card" style="padding:8px 14px;">
+          <div class="toolbar" style="align-items:center;gap:8px;flex-wrap:wrap;">
+            <input type="text" id="invStockSearch" class="search-box" placeholder="名称・分類・保管場所で検索" oninput="renderInventoryStockView()" style="min-width:200px;">
+            <select id="invStockCategory" onchange="renderInventoryStockView()">
+              <option value="all">全ての区分</option><option value="raw">原料</option><option value="material">資材</option><option value="other">その他（半製品・備品など）</option>
+            </select>
+            <select id="invStockLevel" onchange="renderInventoryStockView()">
+              <option value="all">在庫数：すべて</option><option value="low">在庫ゼロ以下のみ</option><option value="positive">在庫ありのみ</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" id="invStockTargetOnly" checked onchange="renderInventoryStockView()">棚卸の対象（在庫〇）のみ</label>
+            <button class="secondary" style="margin-left:auto;" onclick="exportInventoryStockCSV()">CSV出力</button>
+          </div>
+          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">現在の在庫数(計算)＝直近の棚卸の数量＋その後の仕入れ数量－その後の売上での消費数量です（レシピ管理のレシピ・代替資材の設定に基づく）。見出しをクリックすると並べ替えられます。</div>
+        </div>
+        <div class="card">
+          <table style="min-width:0;">
+            <thead><tr id="invStockHead"></tr></thead>
+            <tbody id="invStockBody"></tbody>
+          </table>
+          <div class="empty" id="invStockEmpty" style="display:none;">該当する原料・資材・半製品がありません。</div>
         </div>
       </div>
 
@@ -5587,7 +5612,7 @@ const APP_ACCESS_REGISTRY = [
   { page:"purchases", label:"請求書／仕入れ管理", cur:()=>purchaseView, go:v=>switchPurchaseView(v),
     views:[["invoice","請求書","purchaseViewInvoiceBtn"],["supplier","仕入れ先","purchaseViewSupplierBtn"],["bunrui","中分類","purchaseViewBunruiBtn"],["delivery","納品確認","purchaseViewDeliveryBtn"]] },
   { page:"inventory", label:"在庫・棚卸", cur:()=>inventoryView, go:v=>switchInventoryView(v),
-    views:[["products","商品","invViewProductsBtn"],["materials","原料・資材","invViewMaterialsBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
+    views:[["products","商品","invViewProductsBtn"],["materials","原料・資材","invViewMaterialsBtn"],["stock","在庫一覧","invViewStockBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
   { page:"sales", label:"売上管理", cur:()=>salesView, go:v=>switchSalesView(v),
     views:[["list","リストビュー","salesViewListBtn"],["table","テーブルビュー","salesViewTableBtn"],["hourly","時間帯別ビュー","salesViewHourlyBtn"]] },
   { page:"labor", label:"人件費管理", cur:()=>laborView, go:v=>switchLaborView(v),
@@ -19626,6 +19651,96 @@ function renderInventoryMaterialsView(){
   `).join("");
 }
 
+/* ---- 在庫一覧：原料・資材・半製品の、現在の在庫数(計算)の一覧 ---- */
+let invStockSortKey = "stock", invStockSortDir = 1; // 既定は在庫数の少ない順
+const INV_STOCK_COLUMNS = [
+  { key: "category", label: "区分", text: true },
+  { key: "department", label: "大分類", text: true },
+  { key: "bunrui", label: "中分類", text: true },
+  { key: "subCategory", label: "小分類", text: true },
+  { key: "name", label: "名称", text: true },
+  { key: "storage", label: "保管場所", text: true },
+  { key: "stock", label: "在庫数(計算)", strong: true },
+  { key: "unit", label: "単位", text: true },
+  { key: "baseline", label: "棚卸の数量" },
+  { key: "asOf", label: "棚卸の基準日", text: true },
+  { key: "purchased", label: "その後の仕入れ" },
+  { key: "sold", label: "その後の消費" }
+];
+function inventoryStockRows(){
+  const catLabel = { raw: "原料", material: "資材", other: "その他" };
+  return materials.filter(m=>!isHiddenNonMaterial(m)).map(m=>{
+    const asOf = m.stockCountAsOfDate || "";
+    const baseline = parseFloat(m.stockCount) || 0;
+    const purchased = sumPurchasedQtySinceDate(m.id, asOf);
+    const sold = sumSoldMaterialQtySinceDate(m.id, asOf);
+    const cat = m.bunrui === "原料" ? "raw" : (m.bunrui === "資材" ? "material" : "other");
+    return {
+      m, catKey: cat, category: catLabel[cat], department: m.department || "", bunrui: m.bunrui || "", subCategory: m.subCategory || "",
+      name: m.name || "", storage: (m.storageLocations || []).join("、"), unit: m.unit || "",
+      baseline, asOf, purchased, sold, stock: baseline + purchased - sold
+    };
+  });
+}
+function sortInventoryStock(key){
+  if(invStockSortKey === key) invStockSortDir = -invStockSortDir; else { invStockSortKey = key; invStockSortDir = 1; }
+  renderInventoryStockView();
+}
+function renderInventoryStockView(){
+  const head = document.getElementById("invStockHead"), body = document.getElementById("invStockBody");
+  if(!head || !body) return;
+  head.innerHTML = INV_STOCK_COLUMNS.map(c=>`<th style="cursor:pointer;user-select:none;" onclick="sortInventoryStock('${c.key}')" title="クリックで並べ替え">${c.label}${invStockSortKey === c.key ? (invStockSortDir === 1 ? " ▲" : " ▼") : ""}</th>`).join("");
+  const q = (document.getElementById("invStockSearch").value || "").toLowerCase();
+  const cat = document.getElementById("invStockCategory").value;
+  const level = document.getElementById("invStockLevel").value;
+  const targetOnly = document.getElementById("invStockTargetOnly").checked;
+  let rows = inventoryStockRows().filter(r=>
+    (!targetOnly || isMaterialStocktakeTarget(r.m)) &&
+    (cat === "all" || r.catKey === cat) &&
+    (level === "all" || (level === "low" ? r.stock <= 0 : r.stock > 0)) &&
+    (!q || `${r.name} ${r.department} ${r.bunrui} ${r.subCategory} ${r.storage}`.toLowerCase().includes(q)));
+  const k = invStockSortKey, d = invStockSortDir;
+  rows.sort((a,b)=>{
+    const av = a[k], bv = b[k];
+    const c = (typeof av === "number" && typeof bv === "number") ? av - bv : String(av).localeCompare(String(bv), "ja", { numeric: true });
+    return (c || a.name.localeCompare(b.name, "ja")) * d;
+  });
+  const num = v=> fmtNum(Math.round(v * 100) / 100);
+  body.innerHTML = rows.map(r=>{
+    const low = r.stock <= 0;
+    return `<tr${low ? ' style="background:#fdf1ef;"' : ""}>
+      <td class="text">${r.category}</td>
+      <td class="text">${escAttr(r.department)}</td>
+      <td class="text">${escAttr(r.bunrui)}</td>
+      <td class="text">${escAttr(r.subCategory)}</td>
+      <td class="text" style="font-weight:600;">${escAttr(r.name)}</td>
+      <td class="text">${escAttr(r.storage)}</td>
+      <td style="font-weight:700;${low ? "color:var(--danger);" : "color:var(--main-dark);"}">${num(r.stock)}</td>
+      <td class="text">${escAttr(r.unit)}</td>
+      <td>${num(r.baseline)}</td>
+      <td class="text">${r.asOf || "－"}</td>
+      <td>${num(r.purchased)}</td>
+      <td>${num(r.sold)}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("invStockEmpty").style.display = rows.length ? "none" : "block";
+  document.getElementById("invStockView").dataset.count = String(rows.length);
+}
+function exportInventoryStockCSV(){
+  const rows = inventoryStockRows().filter(r=>isMaterialStocktakeTarget(r.m));
+  const header = INV_STOCK_COLUMNS.map(c=>c.label);
+  const lines = [header].concat(rows.map(r=>INV_STOCK_COLUMNS.map(c=>{
+    const v = r[c.key];
+    return typeof v === "number" ? Math.round(v * 100) / 100 : v;
+  })));
+  const csv = "﻿" + lines.map(l=>l.map(v=>`"${String(v ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  a.download = `在庫一覧_${todayStr()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function renderInventoryRecords(){
   const body = document.getElementById("invRecordsBody");
   const list = inventoryStocktakeRecords.slice().sort((a,b)=> b.month.localeCompare(a.month) || String(b.confirmedAt).localeCompare(String(a.confirmedAt)));
@@ -19707,7 +19822,7 @@ function renderInventorySettingsView(){
 
 function switchInventoryView(view){
   inventoryView = view;
-  ["products","materials","sheet","records","settings"].forEach(v=>{
+  ["products","materials","stock","sheet","records","settings"].forEach(v=>{
     document.getElementById("invView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
     document.getElementById("inv"+v.charAt(0).toUpperCase()+v.slice(1)+"View").style.display = v===view ? "" : "none";
   });
@@ -19717,6 +19832,7 @@ function switchInventoryView(view){
 function renderInventoryActiveView(){
   if(inventoryView==="products") renderInventoryProductsView();
   else if(inventoryView==="materials") renderInventoryMaterialsView();
+  else if(inventoryView==="stock") renderInventoryStockView();
   else if(inventoryView==="sheet") renderInventorySheet();
   else if(inventoryView==="records") renderInventoryRecords();
   else if(inventoryView==="settings") renderInventorySettingsView();
