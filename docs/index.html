@@ -1907,6 +1907,13 @@
             <input type="file" id="invExcelInput" accept=".xlsx,.xls" style="display:none" onchange="importInventoryExcel(event)">
             <button onclick="confirmInventoryStocktake()">✔ この内容で棚卸を確定して記録に保存</button>
           </div>
+          <div class="seg-tabs" id="invSheetFilterTabs" style="margin:8px 0 0;">
+            <button class="secondary active" data-f="all" onclick="setInvSheetFilter('all')">全て <span class="count-badge" id="invFilterCount_all"></span></button>
+            <button class="secondary" data-f="product" onclick="setInvSheetFilter('product')">商品 <span class="count-badge" id="invFilterCount_product"></span></button>
+            <button class="secondary" data-f="raw" onclick="setInvSheetFilter('raw')">原料 <span class="count-badge" id="invFilterCount_raw"></span></button>
+            <button class="secondary" data-f="material" onclick="setInvSheetFilter('material')">資材 <span class="count-badge" id="invFilterCount_material"></span></button>
+            <button class="secondary" data-f="other" onclick="setInvSheetFilter('other')">その他 <span class="count-badge" id="invFilterCount_other"></span></button>
+          </div>
           <div class="hint" style="margin:6px 0 0;font-size:11.5px;">グループ分け：大＝大分類、中＝保管場所、小＝中分類。保管場所が複数ある資材は場所ごとに行が分かれるので、それぞれの実数を入力してください（実数合計・差異は同じ資材の全保管場所ぶんを自動集計した値です）。</div>
         </div>
         <div id="invSheetContent"></div>
@@ -19333,6 +19340,26 @@ function buildInventorySheetTablesHtml(items, editable){
   }).join("");
 }
 
+/* ---- 棚卸表の表示の切り替え（全て／商品／原料／資材／その他） ----
+   商品＝商品マスタの商品（および中分類が「商品」の資材）、原料＝中分類が「原料」、資材＝中分類が「資材」、
+   その他＝半製品・仕込み・備品・消耗備品・イニシャルコストなど。切り替えは表示（と、印刷・Excelテンプレート出力）の
+   対象を絞るだけで、入力済みの実数は保持される。「確定」は、絞り込みに関わらず棚卸の対象全体に対して行う。 */
+let invSheetFilter = "all";
+function invItemCategory(it){
+  if(it.sourceType === "product") return "product";
+  const b = it.bunruiGroup;
+  if(b === "商品") return "product";
+  if(b === "原料") return "raw";
+  if(b === "資材") return "material";
+  return "other";
+}
+function filterInventoryItemsForSheet(items){
+  return invSheetFilter === "all" ? items : items.filter(it=>invItemCategory(it) === invSheetFilter);
+}
+function setInvSheetFilter(f){
+  invSheetFilter = f;
+  renderInventorySheet();
+}
 function renderInventorySheet(){
   const monthInput = document.getElementById("invTargetMonth");
   if(monthInput && !monthInput.value) monthInput.value = inventoryDraft.month || currentYearMonthStr();
@@ -19347,7 +19374,18 @@ function renderInventorySheet(){
     if(!_inventoryOccurrenceKeysByMaterialKey[it.materialKey]) _inventoryOccurrenceKeysByMaterialKey[it.materialKey] = [];
     _inventoryOccurrenceKeysByMaterialKey[it.materialKey].push(it.key);
   });
-  document.getElementById("invSheetContent").innerHTML = buildInventorySheetTablesHtml(items, true);
+  // 区分ごとの件数と、選択中の区分のボタン表示を更新する
+  const counts = { all: items.length, product: 0, raw: 0, material: 0, other: 0 };
+  items.forEach(it=>{ counts[invItemCategory(it)]++; });
+  Object.keys(counts).forEach(k=>{
+    const el = document.getElementById("invFilterCount_" + k);
+    if(el) el.textContent = `(${counts[k]})`;
+  });
+  document.querySelectorAll("#invSheetFilterTabs button").forEach(b=>b.classList.toggle("active", b.dataset.f === invSheetFilter));
+  const shown = filterInventoryItemsForSheet(items);
+  document.getElementById("invSheetContent").innerHTML = shown.length
+    ? buildInventorySheetTablesHtml(shown, true)
+    : `<div class="hint" style="padding:12px;">この区分に該当する棚卸の対象項目がありません。</div>`;
 }
 
 /* ---- 棚卸表：テンプレートExcelの出力と、入力済みExcelの取り込み ----
@@ -19360,7 +19398,7 @@ function exportInventoryTemplateExcel(){
     alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。");
     return;
   }
-  const items = collectInventoryStocktakeItems();
+  const items = filterInventoryItemsForSheet(collectInventoryStocktakeItems()); // 表示中の区分（全て／商品／原料／資材／その他）
   if(!items.length){
     alert("棚卸の対象項目がありません。「商品」「原料・資材」タブで対象を選択してください。");
     return;
@@ -19639,7 +19677,8 @@ function printInventorySheet(){
   const month = document.getElementById("invTargetMonth").value || inventoryDraft.month || currentYearMonthStr();
   const content = document.getElementById("invSheetContent").innerHTML;
   const win = window.open("", "_blank", "width=1000,height=900");
-  win.document.write(inventoryPrintHtml(`棚卸表　対象月：${month}`, content));
+  const filterLabel = { all: "", product: "（商品）", raw: "（原料）", material: "（資材）", other: "（その他）" }[invSheetFilter] || "";
+  win.document.write(inventoryPrintHtml(`棚卸表${filterLabel}　対象月：${month}`, content));
   win.document.close();
   win.focus();
   setTimeout(()=>{ win.print(); win.close(); }, 400);
