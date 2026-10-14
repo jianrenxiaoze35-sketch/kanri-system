@@ -4073,8 +4073,8 @@ function computeMaterialPurchaseStats(){
 //   税込の1パック相当額をpackPriceとして保存する（マスタの価格は全て税込。税率の計算は行わない）。taxRateは資材ごとに既に設定されている値を
 //   尊重し、ここでは変更しない（税込換算・その他経費按分・原価計算用単価は、この値をもとに
 //   一覧表示・CSV書き出し側で従来通り自動計算される）。
-// - ロット入り数・入数単位は1P入り数・単位に揃え、1ロット価格もpackPriceと同じ値にする
-//   （仕入れ実績には「ロット」という別概念のまとまりが無いため）。
+// - ロット入数・単位(ロット)は、設定済みの値を尊重し（未設定のときだけ1P内容量・単位に揃える）、
+//   1ロット価格は「実質仕入単価×ロット入数」で求める。
 // - 既に手入力されている単価も含め、仕入れ実績があれば常に計算値で上書きする。
 // - 仕入れ実績が無い資材（一度も仕入れ登録されていない資材）は変更しない。
 function syncMaterialPricesFromPurchases(){
@@ -4084,7 +4084,7 @@ function syncMaterialPricesFromPurchases(){
     const s = stats[m.id];
     if(!s || !s.totalQty) return;
     // 仕入れ管理に入力する金額は全て税込で、マスタのpackPrice・lotPriceも税込で持つため、税率の計算は行わない。
-    let packQty, packPricePretax;
+    let packQty, packPrice, lotQty, lotUnit, lotPrice;
     if(m.bunrui === "イニシャルコスト"){
       // イニシャルコストは「1パックあたりの購入単価×入り数」という通常資材の考え方に当てはまらない。
       // 版代・プリント代のような一度きりの費用を、対象商品の仕入れ数が増えるたびに薄めていきたい
@@ -4093,19 +4093,27 @@ function syncMaterialPricesFromPurchases(){
       // このイニシャルコスト資材の仕入れ数だけを追加登録するたびに、原価計算用単価（税込累計金額÷
       // 累計仕入れ数量）が自動的に下がっていく。
       packQty = Math.round(s.totalQty * 100) / 100;
-      packPricePretax = Math.round(s.totalAmount * 100) / 100;
+      packPrice = Math.round(s.totalAmount * 100) / 100;
+      lotQty = packQty;
+      lotUnit = m.unit || "";
+      lotPrice = packPrice;
     } else {
-      const avgUnitPriceTaxIncl = s.totalAmount / s.totalQty;
+      const avgUnitPrice = s.totalAmount / s.totalQty; // 税込の実質仕入単価（1単位あたり）
+      // Excel取込や手入力で設定した1P内容量・単位・ロット入数・単位(ロット)は、そのまま尊重する
+      // （未設定のときだけ、1P内容量＝1、ロット入数＝1P内容量、単位(ロット)＝単位 で補う）。
       packQty = parseFloat(m.packQty) || 1;
-      packPricePretax = Math.round(avgUnitPriceTaxIncl * packQty * 100) / 100;
+      lotQty = parseFloat(m.lotQty) || packQty;
+      lotUnit = m.lotUnit || m.unit || "";
+      packPrice = Math.round(avgUnitPrice * packQty * 100) / 100;
+      lotPrice = Math.round(avgUnitPrice * lotQty * 100) / 100;
     }
-    if(m.packQty !== packQty || m.packPrice !== packPricePretax ||
-       m.lotQty !== packQty || m.lotUnit !== (m.unit||"") || m.lotPrice !== packPricePretax){
+    if(m.packQty !== packQty || m.packPrice !== packPrice ||
+       m.lotQty !== lotQty || m.lotUnit !== lotUnit || m.lotPrice !== lotPrice){
       m.packQty = packQty;
-      m.packPrice = packPricePretax;
-      m.lotQty = packQty;
-      m.lotUnit = m.unit || "";
-      m.lotPrice = packPricePretax;
+      m.packPrice = packPrice;
+      m.lotQty = lotQty;
+      m.lotUnit = lotUnit;
+      m.lotPrice = lotPrice;
       changed = true;
     }
   });
@@ -8483,6 +8491,21 @@ function exportIngredientsCSV(){
 /* ---------- Excel取込 ---------- */
 // 取込元Excelの列見出しの表記ゆれ（CSV書き出しの見出しと、フォーム上のラベルとで全角/半角括弧や
 // 呼び方が異なる列がある）を吸収するため、複数の見出し候補から最初に見つかった値を返す。
+// 見出し名の表記ゆれ（全角・半角の括弧、空白、大文字小文字）を無視して、列の値を取り出す。
+// 該当する見出しの列が無い場合は null、あっても空欄の場合は "" を返す（「列が無い」と「空欄」を区別するため）。
+function pickIngRowValueNorm(row, names){
+  const norm = t=>String(t||"").normalize("NFKC").replace(/\s+/g,"").toLowerCase();
+  const wanted = names.map(norm);
+  const keys = Object.keys(row);
+  for(const w of wanted){
+    const k = keys.find(x=>norm(x) === w);
+    if(k !== undefined){
+      const v = row[k];
+      return (v === undefined || v === null) ? "" : v;
+    }
+  }
+  return null;
+}
 function pickIngRowValue(row, names){
   for(const n of names){
     if(Object.prototype.hasOwnProperty.call(row, n) && row[n] !== "" && row[n] !== undefined && row[n] !== null) return row[n];
@@ -8569,17 +8592,26 @@ function importIngredientsExcel(event){
         };
       }
       const taxRateParsed = parseIngTaxRateImport(pickIngRowValue(row, ["税率区分", "税率"]));
+      // 項目名は画面・CSV書き出しでは「1P内容量」「単位(1P)」「ロット入数」「単位(ロット)」だが、旧い見出し名
+      // （1P入り数・単位・ロット入り数・入り数単位）のExcelも取り込めるよう、どちらの見出しも受け付ける。
+      // 見出しの列がファイルに無い場合は、既存の値をそのまま残す（空欄・0で上書きしない）。
+      const ing = (names, kind, fallback)=>{
+        const v = pickIngRowValueNorm(row, names);
+        if(v === null) return fallback;
+        if(kind === "num") return parseFloat(String(v).replace(/,/g,"")) || 0;
+        return String(v).trim();
+      };
       const record = {
         name,
         department,
         bunrui: (row["中分類"]||"").toString().trim(),
         subCategory: (row["小分類"]||"").toString().trim(),
-        packQty: parseFloat(row["1P入り数"])||0,
-        unit: (row["単位"]||"").toString().trim(),
-        packPrice: parseFloat(row["1P価格税込"])||0,
-        lotQty: parseFloat(row["ロット入り数"])||0,
-        lotUnit: (pickIngRowValue(row, ["入り数単位（在庫単位）", "入数単位"])||"").toString().trim(),
-        lotPrice: parseFloat(row["1ロット価格"])||0,
+        packQty: ing(["1P内容量","1P入り数","1P入数","内容量"], "num", existing ? existing.packQty : 0),
+        unit: ing(["単位(1P)","単位(1P入り数)","単位","1P単位"], "str", existing ? existing.unit : ""),
+        packPrice: ing(["1P価格税込","1P価格"], "num", existing ? existing.packPrice : 0),
+        lotQty: ing(["ロット入数","ロット入り数"], "num", existing ? existing.lotQty : 0),
+        lotUnit: ing(["単位(ロット)","単位(ロット入数)","入り数単位（在庫単位）","入り数単位","入数単位"], "str", existing ? existing.lotUnit : ""),
+        lotPrice: ing(["1ロット価格"], "num", existing ? existing.lotPrice : 0),
         status: (row["ステータス"]||"").toString().trim(),
         storageLocations,
         supplier,
