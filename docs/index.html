@@ -1777,6 +1777,14 @@
         <div class="hint">クラウド版に切り替える前のデータや、クラウドに接続できないあいだにこのブラウザで変更したデータは、ここに控えとして残ります。</div>
         <div id="cloudSnapshotInfo" style="margin-top:6px;"></div>
       </div>
+      <div class="card" style="margin-bottom:16px;padding:14px 18px;">
+        <h3 style="margin-top:0;">🔍 部門別データの診断・コピー</h3>
+        <div class="hint" style="margin-bottom:10px;">この端末が持っている全データを、部門ごとに集計して表示します。売上データなどが見えないときに、どの部門に保存されているかを確認できます。保存されている部門のデータを別の部門へ<b>コピー</b>することもできます（コピー元のデータは残ります）。</div>
+        <div class="toolbar" style="margin-bottom:8px;">
+          <button class="secondary" onclick="renderDeptDataDiagnosis()">🔄 診断する</button>
+        </div>
+        <div id="deptDiagnosisBody" style="overflow-x:auto;"></div>
+      </div>
       <div class="card" style="margin-bottom:16px;">
         <h3 style="margin-top:0;">アプリ全データのバックアップ／復元</h3>
         <div class="hint">商品マスタ・原料・資材・半製品マスタ・レシピ・仕入れ管理・在庫・棚卸・売上管理・人件費管理・レジ締め・設定など、このブラウザに保存されているアプリの全データを1つのファイルにまとめてバックアップ・復元します。定期的にバックアップを取り、わかりやすい場所（クラウドストレージなど）に保存しておくことをおすすめします。</div>
@@ -5739,6 +5747,7 @@ function switchSettingsView(view){
   if(view === "account") renderAccountView();
   const views = { classify: "Classify", display: "Display", budget: "Budget", account: "Account", data: "Data" };
   if(view === "display") renderDisplaySettings();
+  if(view === "data") renderDeptDataDiagnosis();
   Object.keys(views).forEach(v=>{
     const K = views[v];
     document.getElementById("settingsView"+K+"Btn").classList.toggle("active", v===view);
@@ -17737,6 +17746,100 @@ function sendRegiToManagement(resultElId){
    資材・半製品マスタ・レシピ・仕入れ管理・在庫棚卸・売上管理・人件費管理・レジ締め・設定を含む）を
    キーを問わず丸ごとバックアップ・復元する。appStore.keys()はどのページのデータかによらず、
    このブラウザに保存されている全キーを返すため、キーの追加・変更があっても自動的に対象に含まれる。 */
+/* ---- 部門別データの診断・コピー ---- */
+const DEPT_DIAG_GROUPS = [
+  { id: "sales",    label: "📈 売上管理（日別）", match: k=>k === "sales_master_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "日分" },
+  { id: "regiSales",label: "🧮 レジ締め・売上集計（日別の売上データ）", match: k=>/^regi_sales_v1_\d{4}-\d{2}-\d{2}$/.test(k), count: ()=>1, unit: "日分" },
+  { id: "regiClose",label: "🧮 レジ締め（日別の締めデータ）", match: k=>/^regi_close_v1_\d{4}-\d{2}-\d{2}$/.test(k), count: ()=>1, unit: "日分" },
+  { id: "regiOther",label: "レジ締めの設定・その他決済", match: k=>/^regi_(?!sales_v1_|close_v1_)/.test(k), count: ()=>1, unit: "件" },
+  { id: "products", label: "📦 商品マスタ", match: k=>k === "product_master_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "件" },
+  { id: "materials",label: "🥕 原料・資材・半製品マスタ", match: k=>k === "material_master_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "件" },
+  { id: "recipes",  label: "🧪 レシピ", match: k=>k === "recipe_master_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "件" },
+  { id: "purchases",label: "🧾 仕入れ", match: k=>k === "purchase_master_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "件" },
+  { id: "labor",    label: "👥 人件費（勤怠）", match: k=>k === "labor_attendance_data_v1", count: v=>{ try{ return JSON.parse(v).length; }catch(e){ return 0; } }, unit: "件" }
+];
+function deptDiagRealKey(deptId, logicalKey){
+  return (deptId === DEFAULT_DEPT_ID || isDeptSharedKey(logicalKey)) ? logicalKey : `dept:${deptId}:${logicalKey}`;
+}
+// 全データ（_regiDailyCache）を、部門ごと・データの種類ごとに集計する
+function collectDeptDiagnosis(){
+  const table = {}; // deptId -> groupId -> { count, keys:[logicalKey], dates:[] }
+  DEPARTMENTS.forEach(d=>{ table[d.id] = {}; });
+  _regiDailyCache.forEach((v, real)=>{
+    let dept = DEFAULT_DEPT_ID, logical = real;
+    const m = /^dept:([^:]+):(.*)$/.exec(real);
+    if(m){ dept = m[1]; logical = m[2]; }
+    if(!table[dept]) return;
+    DEPT_DIAG_GROUPS.forEach(g=>{
+      if(!g.match(logical)) return;
+      const cell = table[dept][g.id] = table[dept][g.id] || { count: 0, keys: [], dates: [] };
+      cell.count += g.count(v);
+      cell.keys.push(logical);
+      const dm = /(\d{4}-\d{2}-\d{2})$/.exec(logical);
+      if(dm) cell.dates.push(dm[1]);
+    });
+  });
+  return table;
+}
+function renderDeptDataDiagnosis(){
+  const box = document.getElementById("deptDiagnosisBody");
+  if(!box) return;
+  const table = collectDeptDiagnosis();
+  const cellText = (c, g)=>{
+    if(!c || !c.count) return '<span style="color:var(--muted);">なし</span>';
+    let range = "";
+    if(c.dates.length){ const ds = c.dates.slice().sort(); range = `<div class="hint" style="margin:0;">${ds[0]}〜${ds[ds.length-1]}</div>`; }
+    return `<b>${fmtNum(c.count)}</b>${g.unit}${range}`;
+  };
+  const head = `<tr><th style="text-align:left;">データ</th>${DEPARTMENTS.map(d=>`<th>${escAttr(d.name)}${d.id === currentDeptId ? '<br><span class="count-badge">表示中</span>' : ""}</th>`).join("")}</tr>`;
+  const rows = DEPT_DIAG_GROUPS.map(g=>`<tr><td class="text" style="text-align:left;white-space:nowrap;">${g.label}</td>${DEPARTMENTS.map(d=>`<td>${cellText(table[d.id][g.id], g)}</td>`).join("")}</tr>`).join("");
+  const opts = DEPARTMENTS.map(d=>`<option value="${d.id}">${escAttr(d.name)}</option>`).join("");
+  box.innerHTML = `
+    <table style="min-width:0;font-size:12.5px;"><thead>${head}</thead><tbody>${rows}</tbody></table>
+    <div class="toolbar" style="margin-top:10px;align-items:center;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:12.5px;font-weight:700;">コピー：</span>
+      <select id="deptCopyFrom">${opts}</select> の
+      <select id="deptCopyGroup">
+        <option value="all">すべてのデータ</option>
+        ${DEPT_DIAG_GROUPS.map(g=>`<option value="${g.id}">${g.label}</option>`).join("")}
+      </select> を
+      <select id="deptCopyTo">${opts}</select> へ
+      <button class="secondary" onclick="copyDeptData()">コピーする</button>
+    </div>
+    <div class="hint" style="margin-top:6px;">コピー先に同じデータがある場合は、コピー元の内容で上書きされます。コピー後は、画面を読み込み直します。</div>`;
+  const toSel = document.getElementById("deptCopyTo");
+  if(toSel) toSel.value = DEFAULT_DEPT_ID;
+}
+function copyDeptData(){
+  const from = document.getElementById("deptCopyFrom").value;
+  const to = document.getElementById("deptCopyTo").value;
+  const groupId = document.getElementById("deptCopyGroup").value;
+  if(from === to){ alert("コピー元とコピー先が同じです。"); return; }
+  const groups = groupId === "all" ? DEPT_DIAG_GROUPS : DEPT_DIAG_GROUPS.filter(g=>g.id === groupId);
+  const plan = []; // {logical, value}
+  _regiDailyCache.forEach((v, real)=>{
+    let dept = DEFAULT_DEPT_ID, logical = real;
+    const m = /^dept:([^:]+):(.*)$/.exec(real);
+    if(m){ dept = m[1]; logical = m[2]; }
+    if(dept !== from) return;
+    if(isDeptSharedKey(logical)) return; // アカウントなど、部門共通のデータは対象外
+    if(groups.some(g=>g.match(logical))) plan.push({ logical, value: v });
+  });
+  if(!plan.length){ alert("コピー元に、該当のデータがありません。"); return; }
+  const fromName = DEPARTMENTS.find(d=>d.id===from).name, toName = DEPARTMENTS.find(d=>d.id===to).name;
+  const overwrite = plan.filter(x=>_regiDailyCache.has(deptDiagRealKey(to, x.logical))).length;
+  if(!confirm(`「${fromName}」のデータ${plan.length}件を、「${toName}」へコピーします。\n${overwrite ? `うち${overwrite}件は、コピー先の同じデータを上書きします。\n` : ""}コピー元のデータは、そのまま残ります。\n\nよろしいですか？`)) return;
+  plan.forEach(x=>{
+    const real = deptDiagRealKey(to, x.logical);
+    if(_regiDailyCache.get(real) === x.value) return;
+    _regiDailyCache.set(real, x.value);
+    cloudOnChange(real);
+    regiIdbPut(real, x.value).catch(err=>console.error("コピーの保存に失敗", real, err));
+  });
+  alert(`${plan.length}件をコピーしました。画面を読み込み直します。`);
+  appReloadAfterSync();
+}
+
 function exportFullAppBackup(){
   const data = {};
   appStore.keys().forEach(k=>{
