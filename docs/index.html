@@ -529,6 +529,7 @@
   </div>
 
   <div class="main">
+    <div id="deptBanner" style="display:none;margin-bottom:12px;padding:10px 14px;border:1px solid #e0c36a;background:#fff8e1;border-radius:8px;font-size:13px;line-height:1.7;"></div>
     <div id="cloudLocalBanner" style="display:none;background:#fff4d6;border:1px solid #f0d58a;color:#6b5210;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;"></div>
     <div id="cloudRemoteUpdateBanner" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#e8f1fb;border:1px solid #b9d3ef;color:#1f4f7a;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;"><span></span><button class="secondary" onclick="appReloadAfterSync()">再読み込み</button></div>
     <div class="page-content active" id="page-products">
@@ -5701,7 +5702,22 @@ function applyDeptMenu(){
   }
   renderAccountChip();
   applyAccountViewRestrictions();
+  renderDeptBanner();
   document.title = `商品管理システム（${getCurrentDept().name}）`;
+}
+// クラフトビール事業部以外の部門を表示しているときは、データが部門ごとに別であることを、画面の上部に表示する
+// （他の部門では、クラフトビール事業部の売上・商品などのデータが見えないため、「データが消えた」と
+// 誤解しやすいことへの対策）。
+function renderDeptBanner(){
+  const box = document.getElementById("deptBanner");
+  if(!box) return;
+  if(currentDeptId === DEFAULT_DEPT_ID){ box.style.display = "none"; box.innerHTML = ""; return; }
+  const craft = DEPARTMENTS.find(d=>d.id === DEFAULT_DEPT_ID);
+  const canSwitch = accountAllowedDepts().includes(DEFAULT_DEPT_ID);
+  box.style.display = "";
+  box.innerHTML = `<b>現在の部門：${escAttr(getCurrentDept().name)}</b>　データは部門ごとに別々に保存されています。
+    ${escAttr(craft.name)}の売上・商品などのデータは、この部門では表示されません（消えたわけではありません）。
+    ${canSwitch ? `<button type="button" style="margin-left:8px;" onclick="switchDepartment('${DEFAULT_DEPT_ID}')">${escAttr(craft.name)}に切り替える</button>` : ""}`;
 }
 function switchDepartment(id){
   if(!DEPARTMENTS.some(d=>d.id===id) || id === currentDeptId) return;
