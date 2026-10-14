@@ -3870,6 +3870,7 @@ function savePurchase(){
   };
   const idx = purchases.findIndex(p=>p.id===id);
   if(idx>=0) purchases[idx] = record; else purchases.push(record);
+  reflectPurchasePackFieldsToMaster([record]); // 1P内容量・単位・ロット入数・単位(ロット)は、マスタにも反映する
   absorbNewSupplierNames(supplier);
   if(savePurchases()) closePurchaseForm();
 }
@@ -4064,6 +4065,57 @@ function computeMaterialPurchaseStats(){
     });
   });
   return stats;
+}
+
+/* ---- 1P内容量・単位(1P)・ロット入数・単位(ロット)：原料・資材・半製品マスタと仕入れ管理で同じ項目 ----
+   マスタ側の編集・Excel取込は、その資材に紐づく仕入れ明細へ反映し、仕入れ管理側の編集・取込は、
+   その資材のマスタへ反映する（どちらも、入力のある項目だけ。空欄・0では上書きしない）。
+   仕入れ明細は、紐づく資材が1種類だけのものが対象（複数の資材が混在する明細は対象外）。
+   仕入れ側からの反映は、同じ資材に複数の明細がある場合、仕入れ日の新しいものを優先する。 */
+const PACK_FIELD_MAP = [["packQty","packQty"],["unit","packUnit"],["lotQty","lotQty"],["lotUnit","lotUnit"]]; // [マスタの項目, 仕入れ明細の項目]
+function singleMaterialIdOfPurchase(p){
+  const ids = new Set((p.items||[]).map(it=>it.materialId).filter(Boolean));
+  return ids.size === 1 ? Array.from(ids)[0] : null;
+}
+function packFieldHasValue(v){ return !(v === undefined || v === null || v === "" || v === 0); }
+function pushPackFieldsToPurchases(materialIds){
+  const set = new Set(materialIds);
+  if(!set.size) return 0;
+  let n = 0;
+  purchases.forEach(p=>{
+    const mid = singleMaterialIdOfPurchase(p);
+    if(!mid || !set.has(mid)) return;
+    const m = materials.find(x=>x.id === mid);
+    if(!m) return;
+    PACK_FIELD_MAP.forEach(([mf, pf])=>{
+      const v = m[mf];
+      if(!packFieldHasValue(v)) return;
+      if(p[pf] !== v){ p[pf] = v; n++; }
+    });
+  });
+  if(n) appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
+  return n;
+}
+function reflectPurchasePackFieldsToMaster(records){
+  const sorted = records.slice().sort((a,b)=> purchaseEffectiveDate(a).localeCompare(purchaseEffectiveDate(b)));
+  let n = 0;
+  sorted.forEach(p=>{
+    const mid = singleMaterialIdOfPurchase(p);
+    if(!mid) return;
+    const m = materials.find(x=>x.id === mid);
+    if(!m) return;
+    PACK_FIELD_MAP.forEach(([mf, pf])=>{
+      const v = p[pf];
+      if(!packFieldHasValue(v)) return;
+      const cur = (mf === "packQty" || mf === "lotQty") ? parseFloat(v) : v;
+      if(m[mf] !== cur){ m[mf] = cur; n++; }
+    });
+  });
+  if(n){ appStore.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials)); invalidateSalesMaterialConsumptionCache(); }
+  return n;
+}
+function packFieldsChanged(a, b, map){
+  return map.some(([x, y])=> (a ? a[x] : undefined) !== (b ? b[y] : undefined));
 }
 
 // 仕入れ管理の仕入れ実績をもとに、原料・資材・半製品マスタの単価（packPrice/lotPrice、
@@ -4664,7 +4716,14 @@ function savePurchasesBulk(){
       updatedAt: new Date().toISOString()
     };
   });
+  // 内容が変わった（または新規の）明細の1P内容量・単位・ロット入数・単位(ロット)を、マスタにも反映する
+  const prevById = new Map(purchases.map(p=>[p.id, p]));
+  const changedRecords = newPurchases.filter(n=>{
+    const prev = prevById.get(n.id);
+    return !prev || PACK_FIELD_MAP.some(([mf, pf])=> (prev[pf] || "") !== (n[pf] || ""));
+  });
   purchases = newPurchases;
+  reflectPurchasePackFieldsToMaster(changedRecords);
   absorbNewSupplierNames(newPurchases.map(p=>p.supplier));
   if(savePurchases()) closePurchasesBulk();
 }
@@ -7865,6 +7924,7 @@ function saveIngredient(){
 
   const idx = materials.findIndex(m=>m.id===id);
   if(idx>=0) materials[idx] = record; else materials.push(record);
+  pushPackFieldsToPurchases([record.id]); // 1P内容量・単位・ロット入数・単位(ロット)は、紐づく仕入れ明細にも反映する
   saveIngredients();
   closeIngredientForm();
 }
@@ -7993,6 +8053,7 @@ function updateMaterialInline(id, field, value){
   } else {
     m[field] = value;
   }
+  if(["packQty","unit","lotQty","lotUnit"].includes(field)) pushPackFieldsToPurchases([m.id]);
   saveIngredients();
 }
 
@@ -8430,6 +8491,11 @@ function saveIngredientsBulk(){
   // 一括編集の対象外（コスト・割引など原料・資材・備品に該当しない項目）は、そのまま残す
   const hiddenKept = prevMaterials.filter(m=>isHiddenNonMaterial(m) && !newMaterials.some(n=>n.id===m.id));
   materials = newMaterials.concat(hiddenKept);
+  // 一括編集で変更した1P内容量・単位・ロット入数・単位(ロット)は、紐づく仕入れ明細にも反映する
+  pushPackFieldsToPurchases(newMaterials.filter(n=>{
+    const prev = prevMaterials.find(x=>x.id===n.id);
+    return !prev || ["packQty","unit","lotQty","lotUnit"].some(f=>prev[f] !== n[f]);
+  }).map(n=>n.id));
   saveIngredients();
   closeIngredientsBulk();
   alert(`${newMaterials.length}件のデータを保存しました。`);
@@ -8547,6 +8613,7 @@ function importIngredientsExcel(event){
     }
 
     let count = 0;
+    const importedIds = [];
     rows.forEach(row=>{
       const name = (row["名称"]||"").toString().trim();
       if(!name) return;
@@ -8635,9 +8702,12 @@ function importIngredientsExcel(event){
         record.id = String(Date.now()) + Math.random().toString(36).slice(2,7);
         materials.push(record);
       }
+      importedIds.push(record.id);
       count++;
     });
 
+    // 取り込んだ1P内容量・単位(1P)・ロット入数・単位(ロット)を、紐づく仕入れ明細にも反映する
+    pushPackFieldsToPurchases(importedIds);
     saveIngredients();
     event.target.value = "";
     alert(`${count}件のデータを取り込みました（名称が一致する既存データは上書きされます）。`);
