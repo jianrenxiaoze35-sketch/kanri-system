@@ -529,6 +529,7 @@
   </div>
 
   <div class="main">
+    <div id="cloudUnreadableBanner" style="display:none;margin-bottom:12px;padding:10px 14px;border:1px solid #e0a8a0;background:#fdecea;color:#c0392b;border-radius:8px;font-size:13px;line-height:1.7;"></div>
     <div id="deptBanner" style="display:none;margin-bottom:12px;padding:10px 14px;border:1px solid #e0c36a;background:#fff8e1;border-radius:8px;font-size:13px;line-height:1.7;"></div>
     <div id="cloudLocalBanner" style="display:none;background:#fff4d6;border:1px solid #f0d58a;color:#6b5210;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;"></div>
     <div id="cloudRemoteUpdateBanner" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#e8f1fb;border:1px solid #b9d3ef;color:#1f4f7a;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;"><span></span><button class="secondary" onclick="appReloadAfterSync()">再読み込み</button></div>
@@ -2757,6 +2758,8 @@ let _cloudMode = "pending";          // pending | cloud | local
 let _cloudLocalReason = "";
 let _cloudPending = new Set();
 let _cloudRemote = new Map();        // key -> ver（この端末が把握しているクラウド上の版）
+let _cloudUnreadableKeys = new Set(); // クラウドにあるが、読み込めなかったデータ（一部が欠けている等）。上書きしないよう、保存を止める
+let _cloudBlockedWrites = new Set();  // 上のデータへの変更のうち、上書きを避けるために、保存しなかったもの
 let _cloudTimer = null;
 let _cloudFlushing = null;
 let _cloudLoadedAt = 0;
@@ -2864,6 +2867,12 @@ async function cloudSendItems(items, force){
   await cloudSendItems(conflicts.map(c=>c.item), true);
 }
 function cloudOnChange(key){
+  if(_cloudMode === "cloud" && _cloudUnreadableKeys.has(key)){
+    // クラウド上に読み込めなかったデータがある項目は、上書きしない（データを守るため、保存を止める）
+    _cloudBlockedWrites.add(key);
+    cloudRenderStatus();
+    return;
+  }
   if(_cloudMode === "cloud"){
     _cloudPending.add(key);
     clearTimeout(_cloudTimer);
@@ -3065,6 +3074,9 @@ async function cloudInit(){
     loaded.forEach((v, k)=>_regiDailyCache.set(k, v));
     keep.forEach((v, k)=>_regiDailyCache.set(k, v));
     _cloudRemote = remote;
+    // 読み込めなかったデータ（端末にも無いもの）は、クラウド上のデータを空の内容で上書きしてしまわないよう、
+    // 変更しても保存しない（画面上部と設定のデータ保存タブに表示する）。
+    _cloudUnreadableKeys = new Set(broken.filter(k=>!keep.has(k)));
     try{ await regiIdbReplaceAll([..._regiDailyCache.entries()]); }catch(e){ console.warn("cloud: 端末内の控えの更新に失敗", e); }
     try{ localStorage.setItem(CLOUD_SYNCED_ONCE_KEY, "1"); localStorage.removeItem(CLOUD_LOCAL_DIRTY_KEY); }catch(e){}
     _cloudMode = "cloud";
@@ -3130,6 +3142,13 @@ function cloudRenderStatus(){
     banner.style.display = _cloudMode === "local" ? "block" : "none";
     if(_cloudMode === "local") banner.textContent = "💻 " + _cloudLocalReason + "。いまの変更はこのブラウザ内にだけ保存され、他の端末には反映されません。";
   }
+  const ub = document.getElementById("cloudUnreadableBanner");
+  if(ub){
+    if(_cloudUnreadableKeys.size){
+      ub.style.display = "block";
+      ub.innerHTML = `<b>⚠ クラウドから読み込めなかったデータが${_cloudUnreadableKeys.size}件あります。</b>売上などが一部表示されない原因の可能性があります。これらは、上書きして失わないよう、保存を止めています。「設定」→「データ保存」で、内容を確認できます。`;
+    } else { ub.style.display = "none"; ub.innerHTML = ""; }
+  }
   const panel = document.getElementById("cloudSettingsStatus");
   if(panel){
     const lines = [`状態：${text}`];
@@ -3140,7 +3159,16 @@ function cloudRenderStatus(){
     }
     if(_cloudMode === "local") lines.push(`理由：${_cloudLocalReason}`);
     if(_cloudLastError) lines.push(`直近のエラー：${(_cloudLastError.code || "") + " " + (_cloudLastError.message || "")}`);
-    panel.innerHTML = lines.map(l=>`<div>${cloudEsc(l)}</div>`).join("");
+    let html = lines.map(l=>`<div>${cloudEsc(l)}</div>`).join("");
+    if(_cloudUnreadableKeys.size){
+      const names = [..._cloudUnreadableKeys].slice(0, 12).map(k=>cloudKeyLabel(k));
+      html += `<div style="margin-top:8px;padding:8px 10px;border:1px solid #e0a8a0;background:#fdecea;border-radius:6px;color:#c0392b;">
+        <b>⚠ クラウドから読み込めなかったデータが${_cloudUnreadableKeys.size}件あります。</b>（一部が欠けている可能性があります）<br>
+        これらのデータは、上書きして失わないよう、変更しても保存していません${_cloudBlockedWrites.size ? `（保存を止めた変更：${_cloudBlockedWrites.size}件）` : ""}。<br>
+        <span style="color:var(--text);">${names.map(cloudEsc).join("、")}${_cloudUnreadableKeys.size > 12 ? " ほか" : ""}</span>
+      </div>`;
+    }
+    panel.innerHTML = html;
   }
 }
 async function cloudRenderSnapshotInfo(){
@@ -17806,7 +17834,12 @@ function renderDeptDataDiagnosis(){
       <select id="deptCopyTo">${opts}</select> へ
       <button class="secondary" onclick="copyDeptData()">コピーする</button>
     </div>
-    <div class="hint" style="margin-top:6px;">コピー先に同じデータがある場合は、コピー元の内容で上書きされます。コピー後は、画面を読み込み直します。</div>`;
+    <div class="hint" style="margin-top:6px;">コピー先に同じデータがある場合は、コピー元の内容で上書きされます。コピー後は、画面を読み込み直します。</div>
+    ${_cloudUnreadableKeys.size ? `<div style="margin-top:10px;padding:8px 10px;border:1px solid #e0a8a0;background:#fdecea;border-radius:6px;font-size:12.5px;">
+      <b style="color:#c0392b;">⚠ クラウドから読み込めなかったデータ：${_cloudUnreadableKeys.size}件</b>
+      <div style="margin-top:4px;">${[..._cloudUnreadableKeys].slice(0,40).map(k=>cloudEsc(cloudKeyLabel(k))).join("、")}${_cloudUnreadableKeys.size > 40 ? " ほか" : ""}</div>
+      <div class="hint" style="margin:4px 0 0;">売上などが表示されない場合の原因の可能性があります。Googleスプレッドシート「商品管理システム データ」の「版の履歴」から、以前の状態を確認できます。</div>
+    </div>` : ""}`;
   const toSel = document.getElementById("deptCopyTo");
   if(toSel) toSel.value = DEFAULT_DEPT_ID;
 }
