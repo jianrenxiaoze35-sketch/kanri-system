@@ -1946,6 +1946,10 @@
 
       <div id="invRecordsView" style="display:none;">
         <div class="card">
+          <div class="toolbar" style="margin-bottom:8px;">
+            <button class="secondary" onclick="exportLatestInventoryRecordExcel()">📥 最新の棚卸をExcel出力</button>
+            <span class="hint">確定済みの棚卸記録を、保管場所ごとの明細と品目別の集計の2シートにまとめたExcelで書き出します。各行の「Excel」で過去の記録も出力できます。</span>
+          </div>
           <table>
             <thead><tr><th>対象月</th><th>確定日時</th><th>対象品目数</th><th>差異あり件数</th><th class="actions-col">操作</th></tr></thead>
             <tbody id="invRecordsBody"></tbody>
@@ -19752,11 +19756,87 @@ function renderInventoryRecords(){
       <td>${r.diffCount}</td>
       <td class="actions-col">
         <button class="secondary" onclick="printInventoryRecord('${r.id}')">印刷</button>
+        <button class="secondary" onclick="exportInventoryRecordExcel('${r.id}')">Excel</button>
         <button class="danger" onclick="deleteInventoryRecord('${r.id}')">削除</button>
       </td>
     </tr>
   `).join("");
   document.getElementById("invRecordsEmptyMsg").style.display = list.length ? "none" : "block";
+}
+
+/* ---- 記録：確定済みの棚卸をExcelに出力する ----
+   シート「棚卸明細」＝保管場所ごとの行（棚卸表と同じ並び）、シート「品目別集計」＝同じ資材の保管場所を合算した1品目1行、
+   シート「情報」＝対象月・確定日時など。単位は記録に持っていないため、いまの原料・資材・半製品マスタから引く。 */
+function latestInventoryRecord(){
+  return inventoryStocktakeRecords.slice().sort((a,b)=> b.month.localeCompare(a.month) || String(b.confirmedAt).localeCompare(String(a.confirmedAt)))[0] || null;
+}
+function exportLatestInventoryRecordExcel(){
+  const r = latestInventoryRecord();
+  if(!r){ alert("確定済みの棚卸記録がありません。「棚卸表」タブで実数を入力し、確定してください。"); return; }
+  exportInventoryRecordExcel(r.id);
+}
+function exportInventoryRecordExcel(id){
+  if(typeof XLSX === "undefined"){
+    alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。");
+    return;
+  }
+  const record = inventoryStocktakeRecords.find(r=>r.id===id);
+  if(!record) return;
+  const round = v => (v == null || v === "") ? "" : Math.round(v * 100) / 100;
+  const unitOf = it => {
+    if(it.sourceType !== "material") return "";
+    const m = materials.find(x=>x.id===it.sourceId);
+    return (m && m.unit) || "";
+  };
+  const ordered = [];
+  groupInventoryItems(record.items || []).forEach(dg=>dg.groups.forEach(sg=>sg.items.forEach(it=>ordered.push(it))));
+
+  const detail = [["大分類","保管場所","中分類","小分類","メーカー","名称","単位","理論値","実数","ロット実数","ロット入数","この場所の数量","品目の実数合計","差異","1P入数"]];
+  ordered.forEach(it=>{
+    detail.push([
+      it.department, it.storageGroup, it.bunruiGroup || "", it.category || "", it.maker || "", it.name || "", unitOf(it),
+      round(it.theoretical), round(it.actual), round(it.lotActual), it.lotQty || "",
+      round((parseFloat(it.actual)||0) + (parseFloat(it.lotActual)||0) * (it.lotQty||0)),
+      round(it.aggregateActual), round(it.diff), it.packQty || ""
+    ]);
+  });
+
+  // 同じ資材（materialKey）の保管場所をまとめて1行にする。並びは明細で最初に出てきた順。
+  const byMaterial = new Map();
+  ordered.forEach(it=>{
+    if(!byMaterial.has(it.materialKey)) byMaterial.set(it.materialKey, { it, places: [] });
+    byMaterial.get(it.materialKey).places.push(it.storageGroup);
+  });
+  const summary = [["大分類","中分類","小分類","メーカー","名称","単位","保管場所","理論値","実数合計","差異"]];
+  byMaterial.forEach(({ it, places })=>{
+    summary.push([
+      it.department, it.bunruiGroup || "", it.category || "", it.maker || "", it.name || "", unitOf(it),
+      places.join("、"), round(it.theoretical), round(it.aggregateActual), round(it.diff)
+    ]);
+  });
+
+  const wsDetail = XLSX.utils.aoa_to_sheet(detail);
+  wsDetail["!cols"] = [{wch:12},{wch:16},{wch:10},{wch:14},{wch:12},{wch:40},{wch:6},{wch:9},{wch:8},{wch:9},{wch:9},{wch:12},{wch:13},{wch:8},{wch:7}];
+  wsDetail["!autofilter"] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:detail.length-1, c:detail[0].length-1} }) };
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+  wsSummary["!cols"] = [{wch:12},{wch:10},{wch:14},{wch:12},{wch:40},{wch:6},{wch:24},{wch:9},{wch:10},{wch:8}];
+  wsSummary["!autofilter"] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:summary.length-1, c:summary[0].length-1} }) };
+  const info = XLSX.utils.aoa_to_sheet([
+    ["棚卸記録（確定済み）"],
+    ["対象月", record.month],
+    ["確定日時", (record.confirmedAt||"").slice(0,16).replace("T"," ")],
+    ["対象品目数", record.itemCount],
+    ["差異あり件数", record.diffCount],
+    ["出力日", todayStr()],
+    ["見方", "「棚卸明細」は保管場所ごとの行。「品目の実数合計」「差異」は同じ品目の全保管場所を合算した値で、各行に同じ値が入ります。品目ごとの数量は「品目別集計」を見てください。"],
+    ["単位", "単位は出力時点の原料・資材・半製品マスタの値です（棚卸の確定時には保存していません）。"]
+  ]);
+  info["!cols"] = [{wch:12},{wch:90}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsSummary, "品目別集計");
+  XLSX.utils.book_append_sheet(wb, wsDetail, "棚卸明細");
+  XLSX.utils.book_append_sheet(wb, info, "情報");
+  XLSX.writeFile(wb, `棚卸記録_${record.month}.xlsx`);
 }
 
 function deleteInventoryRecord(id){
