@@ -1451,7 +1451,11 @@
         </div>
 
         <div class="card">
-          <div class="topbar" style="margin-bottom:8px;"><h3 style="margin:0;">📅 PAYGATE日別内訳（消し込み用・任意）</h3></div>
+          <div class="topbar" style="margin-bottom:8px;cursor:pointer;" onclick="toggleOtherPayCard('paygateDetail')" title="クリックで開閉">
+            <h3 style="margin:0;"><span id="otherPayPaygateDetailChevron">▼</span> 📅 PAYGATE日別内訳（消し込み用・任意） <span id="otherPayPaygateDetailSummary" class="hint" style="font-weight:400;margin:0 0 0 6px;"></span></h3>
+            <button type="button" class="secondary" id="otherPayPaygateDetailToggleBtn" style="padding:2px 10px;font-size:12px;" onclick="event.stopPropagation();toggleOtherPayCard('paygateDetail')">しまう</button>
+          </div>
+          <div id="otherPayPaygateDetailBody">
           <div class="hint">PAYGATEの精算明細CSVには実際の取引日が無く、支払日（数週間分の入金日）でしかまとまりません。PAYGATE管理画面からダウンロードできる「電子マネー取引履歴」「バーコード決済（QRコード決済）取引履歴」「クレジットカード（都度決済）処理結果」の3つのCSVを取り込むと、日別決済金額ビューでPAYGATEも実際の取引日ごとの金額で表示されます。これらのCSVには決済手数料が含まれないため、精算明細の期間・決済方法ごとの手数料を、取引金額の割合に応じて日割り配分した概算値を表示します（期間合計は精算明細と一致します）。</div>
           <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px;">
             <div class="form-field">
@@ -1483,6 +1487,7 @@
               <div class="hint" style="font-weight:600;margin-bottom:4px;">クレジット処理結果 <button class="secondary" style="padding:1px 6px;font-size:11px;" onclick="otherPayClearSource('paygateCredit')">🗑 クリア</button></div>
               <div id="otherPayArchive_paygateCredit"></div>
             </div>
+          </div>
           </div>
         </div>
 
@@ -17105,28 +17110,45 @@ function otherPayArchiveSortKey(src, a){
 function sortOtherPayArchivesByPayDate(src, list){
   return list.slice().sort((x, y) => otherPayArchiveSortKey(src, x).localeCompare(otherPayArchiveSortKey(src, y)) || String(x.name).localeCompare(String(y.name)));
 }
-// 「取込済みファイル」の開閉（開閉状態は、この端末に保存する）。閉じているときは、見出しに取込件数を表示する。
-const OTHERPAY_ARCHIVE_COLLAPSED_KEY = "otherpay_archive_card_collapsed_v1";
-function isOtherPayArchiveCollapsed(){
-  try{ return localStorage.getItem(OTHERPAY_ARCHIVE_COLLAPSED_KEY) === "1"; }catch(e){ return false; }
+// 「取込済みファイル」「PAYGATE日別内訳」カードの開閉（開閉状態は、この端末に保存する）。閉じているときは、見出しに取込件数を表示する。
+const OTHERPAY_COLLAPSE_CARDS = {
+  archive: {
+    storageKey: "otherpay_archive_card_collapsed_v1", bodyId: "otherPayArchiveCardBody", chevId: "otherPayArchiveChevron",
+    btnId: "otherPayArchiveToggleBtn", sumId: "otherPayArchiveSummary",
+    summary: n=>`（funfo ${n("funfo")}件・Square ${n("square")}件・PAYGATE ${n("paygate")}件）`
+  },
+  paygateDetail: {
+    storageKey: "otherpay_paygate_detail_card_collapsed_v1", bodyId: "otherPayPaygateDetailBody", chevId: "otherPayPaygateDetailChevron",
+    btnId: "otherPayPaygateDetailToggleBtn", sumId: "otherPayPaygateDetailSummary",
+    summary: n=>`（電子マネー ${n("paygateEmoney")}件・バーコード決済 ${n("paygateBarcode")}件・クレジット ${n("paygateCredit")}件）`
+  }
+};
+function isOtherPayCardCollapsed(kind){
+  try{ return localStorage.getItem(OTHERPAY_COLLAPSE_CARDS[kind].storageKey) === "1"; }catch(e){ return false; }
 }
-function applyOtherPayArchiveCollapse(){
-  const collapsed = isOtherPayArchiveCollapsed();
-  const body = document.getElementById("otherPayArchiveCardBody");
+function applyOtherPayCardCollapse(kind){
+  const c = OTHERPAY_COLLAPSE_CARDS[kind];
+  const collapsed = isOtherPayCardCollapsed(kind);
+  const body = document.getElementById(c.bodyId);
   if(body) body.style.display = collapsed ? "none" : "";
-  const chev = document.getElementById("otherPayArchiveChevron");
+  const chev = document.getElementById(c.chevId);
   if(chev) chev.textContent = collapsed ? "▶" : "▼";
-  const btn = document.getElementById("otherPayArchiveToggleBtn");
+  const btn = document.getElementById(c.btnId);
   if(btn) btn.textContent = collapsed ? "開く" : "しまう";
-  const sum = document.getElementById("otherPayArchiveSummary");
+  const sum = document.getElementById(c.sumId);
   if(sum){
     const n = k=>(otherPayArchives[k] || []).length;
-    sum.textContent = collapsed ? `（funfo ${n("funfo")}件・Square ${n("square")}件・PAYGATE ${n("paygate")}件）` : "";
+    sum.textContent = collapsed ? c.summary(n) : "";
   }
 }
-function toggleOtherPayArchiveCard(){
-  try{ localStorage.setItem(OTHERPAY_ARCHIVE_COLLAPSED_KEY, isOtherPayArchiveCollapsed() ? "0" : "1"); }catch(e){}
-  applyOtherPayArchiveCollapse();
+function toggleOtherPayCard(kind){
+  try{ localStorage.setItem(OTHERPAY_COLLAPSE_CARDS[kind].storageKey, isOtherPayCardCollapsed(kind) ? "0" : "1"); }catch(e){}
+  applyOtherPayCardCollapse(kind);
+}
+function toggleOtherPayArchiveCard(){ toggleOtherPayCard("archive"); }
+function applyOtherPayArchiveCollapse(){
+  applyOtherPayCardCollapse("archive");
+  applyOtherPayCardCollapse("paygateDetail");
 }
 function renderOtherPayArchives(){
   ["funfo", "square", "paygate", "paygateEmoney", "paygateBarcode", "paygateCredit"].forEach(src => {
