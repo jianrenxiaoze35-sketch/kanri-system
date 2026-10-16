@@ -1715,6 +1715,14 @@
           <button class="secondary" onclick="cloudChangePass()">🔑 合言葉を変更</button>
           <button class="secondary" onclick="cloudForgetPass()">🚪 この端末からログアウト</button>
         </div>
+        <h4 style="margin:14px 0 4px;font-size:13px;">ブルワリー台帳の読み取りキー</h4>
+        <div class="hint">在庫・棚卸の「施設の在庫（自動取得）」で、ブルワリーアプリの台帳（醸造原料・包装資材）を読むためのキーです。ブルワリーアプリの持ち主が発行します。合言葉と同じく<b>この端末にだけ</b>覚え、クラウドには保存しません（端末ごとに1回入れてください）。</div>
+        <div class="toolbar" style="margin-top:6px;align-items:center;">
+          <input type="password" id="breweryKeyInput" autocomplete="off" placeholder="読み取りキー" style="width:260px;">
+          <button class="secondary" onclick="breweryKeySave()">保存</button>
+          <button class="secondary" onclick="breweryKeyClear()">この端末から消す</button>
+          <span id="breweryKeyStatus" style="font-size:12.5px;"></span>
+        </div>
         <h4 style="margin:14px 0 4px;font-size:13px;">このブラウザ内の控え</h4>
         <div class="hint">クラウド版に切り替える前のデータや、クラウドに接続できないあいだにこのブラウザで変更したデータは、ここに控えとして残ります。</div>
         <div id="cloudSnapshotInfo" style="margin-top:6px;"></div>
@@ -1847,19 +1855,19 @@
             <button class="secondary" onclick="recordFacilityStocktake()">最新の棚卸を記録に保存</button>
             <button class="secondary" onclick="exportFacilityCodesCSV()">Notion用の品目コード一覧（CSV）</button>
           </div>
-          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">飲食（ビアホール）の在庫数と最新の棚卸を、在庫入力アプリ（Notion）から自動で読みます。数はここでは入力しません（数の正は Notion）。原料・資材マスタとは「紐づけ → 品目コード → 正式名称 → 名称」の順に照合し、合わないものは下の「未照合」で手で紐づけます。金額は Notion の「1ロット価格 ÷ ロット入り数 × 在庫数」の参考値です。</div>
+          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">飲食（ビアホール）の在庫数と最新の棚卸を在庫入力アプリ（Notion）から、醸造原料・包装資材（M／P）の在庫をブルワリーアプリの台帳から、自動で読みます。数はここでは入力しません（数の正は Notion と台帳）。原料・資材マスタとは「紐づけ → 品目コード → 正式名称 → 名称」の順に照合し、合わないものは下の「未照合」で手で紐づけます。金額は Notion の「1ロット価格 ÷ ロット入り数 × 在庫数」、台帳の「単価 × 在庫」の参考値です。台帳を読むには、設定 › データ保存 に読み取りキーを入れます。</div>
         </div>
         <div class="card" style="padding:10px 14px;"><div id="facSum" style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;"></div></div>
         <div class="card" id="facUnmatchedCard" style="display:none;">
-          <h3 style="margin:0 0 6px;font-size:14px;">未照合（Notion にあって、このシステムの原料・資材マスタと対応が取れていない品目）</h3>
+          <h3 style="margin:0 0 6px;font-size:14px;">未照合（Notion・台帳にあって、このシステムの原料・資材マスタと対応が取れていない品目）</h3>
           <table style="min-width:0;">
-            <thead><tr><th>Notion の名称</th><th>正式名称（Notion）</th><th>カテゴリ</th><th>在庫</th><th style="min-width:280px;">原料・資材マスタの品目と紐づけ</th></tr></thead>
+            <thead><tr><th>読み先</th><th>読み先の名称</th><th>正式名称（Notion）</th><th>カテゴリ</th><th>在庫</th><th style="min-width:280px;">原料・資材マスタの品目と紐づけ</th></tr></thead>
             <tbody id="facUnmatchedBody"></tbody>
           </table>
         </div>
         <div class="card">
           <table style="min-width:0;">
-            <thead><tr><th>品目コード</th><th>Notion の名称</th><th>このシステムの名称</th><th>カテゴリ</th><th>在庫</th><th>単位</th><th>最新の棚卸</th><th>棚卸の差異</th><th>単価（参考）</th><th>金額（参考）</th><th>照合</th></tr></thead>
+            <thead><tr><th>品目コード</th><th>読み先</th><th>読み先の名称</th><th>このシステムの名称</th><th>カテゴリ</th><th>在庫</th><th>単位</th><th>最新の棚卸</th><th>棚卸の差異</th><th>単価（参考）</th><th>金額（参考）</th><th>照合</th></tr></thead>
             <tbody id="facBody"></tbody>
           </table>
           <div class="empty" id="facEmpty" style="display:none;">照合済みの品目がまだありません。</div>
@@ -5943,7 +5951,7 @@ function switchSettingsView(view){
   if(view === "account") renderAccountView();
   const views = { classify: "Classify", display: "Display", budget: "Budget", account: "Account", data: "Data" };
   if(view === "display") renderDisplaySettings();
-  if(view === "data") renderDeptDataDiagnosis();
+  if(view === "data"){ renderDeptDataDiagnosis(); renderBreweryKeySetting(); }
   Object.keys(views).forEach(v=>{
     const K = views[v];
     document.getElementById("settingsView"+K+"Btn").classList.toggle("active", v===view);
@@ -19501,14 +19509,41 @@ function exportInventoryRecordExcel(id){
   XLSX.writeFile(wb, `棚卸記録_${record.month}.xlsx`);
 }
 
-/* ---- 施設の在庫（自動取得）：在庫入力アプリ（Notion）の在庫と最新の棚卸を読む ----
-   設計：Obsidian「施設全体の資材・原料管理 構造設計（2026-10-16）」§8。数の正は Notion、ここは読むだけ。
+/* ---- 施設の在庫（自動取得）：在庫入力アプリ（Notion）の在庫と最新の棚卸、ブルワリー台帳の在庫を読む ----
+   設計：Obsidian「施設全体の資材・原料管理 構造設計（2026-10-16）」§8・§10・§11-h。数の正は Notion とブルワリー台帳（M_原料）、ここは読むだけ。
    在庫入力アプリの読み取りAPI（GAS）は他サイトから読める（Access-Control-Allow-Origin: *）ので、画面から直接 GET する。
-   照合：紐づけ（material.notionId）→ 品目コード → 正式名称 → 名称。手で紐づけたものは material.notionId に保存する。 */
+   ブルワリー台帳は ?api=stock&key=… で読む。キーは合言葉と同じく端末の localStorage にだけ置く（リポジトリ・クラウドには置かない）。
+   照合：紐づけ（Notion は material.notionId、台帳は material.ledgerId）→ 品目コード → 正式名称 → 名称。手で紐づけたものはその列に保存する。 */
 const FACILITY_STOCK_API = "https://script.google.com/macros/s/AKfycbx8GXJDXfLEkH46eWEjvzKwM9OQf8zICrD1ueovjV8lwaPdu5ul4i5YbVrx27W3Fj1CkA/exec";
-let facilityStock = null;       // { items, tana, loadedAt }
+const BREWERY_STOCK_API = "https://script.google.com/macros/s/AKfycbwmQ5dCFgB2Kjp2XW3Abs4s3zZ_fDi_8qnyJ2h4vdQbMb682V2P5c9sKGwyxB-cR4bosA/exec";
+const BREWERY_KEY_STORE = "kanri_brewery_read_key_v1";
+const FACILITY_SOURCES = { notion: { label: "Notion", link: "notionId" }, ledger: { label: "台帳", link: "ledgerId" } };
+let facilityStock = null;       // { items, tana, notionError, ledger:{items, at, name}|null, ledgerError, ledgerNoKey, loadedAt }
 let facilityStockError = "";
 let facilityStockLoading = false;
+
+function breweryKeyGet(){ try{ return localStorage.getItem(BREWERY_KEY_STORE) || ""; }catch(e){ return ""; } }
+function renderBreweryKeySetting(){
+  const st = document.getElementById("breweryKeyStatus");
+  if(st) st.innerHTML = breweryKeyGet() ? '<b style="color:var(--main);">● この端末に設定済み</b>' : '<span style="color:var(--muted);">未設定</span>';
+}
+function breweryKeySave(){
+  const input = document.getElementById("breweryKeyInput");
+  const v = (input && input.value || "").trim();
+  if(!v){ alert("読み取りキーを入力してください。"); return; }
+  try{ localStorage.setItem(BREWERY_KEY_STORE, v); }catch(e){ alert("この端末に保存できませんでした。"); return; }
+  input.value = "";
+  renderBreweryKeySetting();
+  facilityStock = null;   // 次に「施設の在庫」を開いたときに読み直す
+  alert("読み取りキーをこの端末に保存しました。");
+}
+function breweryKeyClear(){
+  if(!breweryKeyGet()){ alert("この端末には読み取りキーが設定されていません。"); return; }
+  if(!confirm("この端末に覚えているブルワリー台帳の読み取りキーを消しますか？")) return;
+  try{ localStorage.removeItem(BREWERY_KEY_STORE); }catch(e){}
+  renderBreweryKeySetting();
+  facilityStock = null;
+}
 
 function normalizeItemCode(v){
   return String(v||"").normalize("NFKC").trim().toUpperCase().replace(/\s+/g, "");
@@ -19522,135 +19557,213 @@ async function loadFacilityStock(force){
   if(facilityStock && !force){ renderFacilityView(); return; }
   facilityStockLoading = true; facilityStockError = "";
   renderFacilityView();
+  const getJson = async url=>{
+    const res = await fetch(url, { method: "GET" });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    if(!j || !j.ok) throw new Error((j && j.error) || "応答の形式が違います");
+    return j;
+  };
+  const next = { items: [], tana: null, notionError: "", ledger: null, ledgerError: "", ledgerNoKey: false, loadedAt: new Date() };
+  const key = breweryKeyGet();
+  const notionJob = Promise.all([getJson(`${FACILITY_STOCK_API}?action=list`), getJson(`${FACILITY_STOCK_API}?action=tanaList`)])
+    .then(([list, tana])=>{ next.items = list.items || []; next.tana = tana; })
+    .catch(e=>{ next.notionError = (e && e.message) || String(e); });
+  const ledgerJob = !key ? Promise.resolve(next.ledgerNoKey = true)
+    : getJson(`${BREWERY_STOCK_API}?api=stock&key=${encodeURIComponent(key)}`)
+      .then(j=>{ next.ledger = { items: j.items || [], at: j.at || "", name: j.ledger || "" }; })
+      .catch(e=>{ next.ledgerError = (e && e.message) || String(e); });
   try{
-    const get = async action=>{
-      const res = await fetch(`${FACILITY_STOCK_API}?action=${action}`, { method: "GET" });
-      if(!res.ok) throw new Error("HTTP " + res.status);
-      const j = await res.json();
-      if(!j || !j.ok) throw new Error((j && j.error) || "応答の形式が違います");
-      return j;
-    };
-    const [list, tana] = await Promise.all([get("list"), get("tanaList")]);
-    facilityStock = { items: list.items || [], tana, loadedAt: new Date() };
-  }catch(e){
-    facilityStockError = (e && e.message) || String(e);
+    await Promise.all([notionJob, ledgerJob]);
+    facilityStock = next;
+    if(next.notionError && (next.ledgerNoKey || next.ledgerError)) facilityStockError = next.notionError;
   }finally{
     facilityStockLoading = false;
     renderFacilityView();
   }
 }
 
-// Notion の1品目に、原料・資材マスタの1品目を当てる。戻り値 { m, how }（見つからなければ m=null）
-function buildFacilityMatcher(){
+// 読み先（notion／ledger）の1品目に、原料・資材マスタの1品目を当てる。戻り値 { m, how }（見つからなければ m=null）
+// 台帳は醸造の品目なので、名称の照合は大分類「製造」を先に見る（飲食に同じ名前があっても取り違えない）。
+function buildFacilityMatcher(source){
+  const link = FACILITY_SOURCES[source || "notion"].link;
   const usable = materials.filter(m=>!isHiddenNonMaterial(m));
-  const byNotion = new Map(), byCode = new Map(), byName = new Map(), dupName = new Set();
+  const byLink = new Map(), byCode = new Map();
   usable.forEach(m=>{
-    if(m.notionId) byNotion.set(m.notionId, m);
+    if(m[link]) byLink.set(m[link], m);
     if(m.itemCode) byCode.set(m.itemCode, m);
-    const k = facilityNameKey(m.name);
-    if(!k) return;
-    if(byName.has(k)) dupName.add(k); else byName.set(k, m);
   });
+  const nameIndex = list=>{
+    const byName = new Map(), dup = new Set();
+    list.forEach(m=>{
+      const k = facilityNameKey(m.name);
+      if(!k) return;
+      if(byName.has(k)) dup.add(k); else byName.set(k, m);
+    });
+    return k=> k && byName.has(k) && !dup.has(k) ? byName.get(k) : null;
+  };
+  const lookups = source === "ledger" ? [nameIndex(usable.filter(m=>m.department === "製造")), nameIndex(usable)] : [nameIndex(usable)];
+  const byName = k=>{ for(const f of lookups){ const m = f(k); if(m) return m; } return null; };
   return item=>{
-    if(byNotion.has(item.id)) return { m: byNotion.get(item.id), how: "紐づけ" };
+    if(byLink.has(item.id)) return { m: byLink.get(item.id), how: "紐づけ" };
     const code = normalizeItemCode(item.code);
     if(code && byCode.has(code)) return { m: byCode.get(code), how: "品目コード" };
-    const fk = facilityNameKey(item.formal);
-    if(fk && byName.has(fk) && !dupName.has(fk)) return { m: byName.get(fk), how: "正式名称" };
-    const nk = facilityNameKey(item.name);
-    if(nk && byName.has(nk) && !dupName.has(nk)) return { m: byName.get(nk), how: "名称" };
+    const fm = byName(facilityNameKey(item.formal));
+    if(fm) return { m: fm, how: "正式名称" };
+    const nm = byName(facilityNameKey(item.name));
+    if(nm) return { m: nm, how: "名称" };
     return { m: null, how: "" };
   };
 }
 
+// 区分の小計（構造設計 §11-f）：飲食（F／C）・醸造原料・包装資材（M／P）・備品（E）を分け、物販・その他（G／S）は別に出す
+const FACILITY_GROUPS = [
+  { key: "food", label: "飲食（F／C）", prefixes: ["F","C"] },
+  { key: "brew", label: "醸造原料・包装資材（M／P）", prefixes: ["M","P"] },
+  { key: "equip", label: "備品（E）", prefixes: ["E"] },
+  { key: "other", label: "物販・その他（G／S）", prefixes: ["G","S"] }
+];
+function facilityRowPrefix(r){
+  const mt = /^([A-Z])-/.exec(r.code || "");
+  if(mt) return mt[1];
+  if(r.m) return itemCodePrefix(r.m);
+  if(r.src === "ledger") return /資材|包装|ラベル|缶|箱|容器|王冠|キャップ|瓶/.test(r.it.cat || r.it.name || "") ? "P" : "M";
+  return "F";
+}
+function facilityRowGroup(r){
+  const p = facilityRowPrefix(r);
+  return (FACILITY_GROUPS.find(g=>g.prefixes.includes(p)) || FACILITY_GROUPS[3]).key;
+}
+
 function facilityRows(){
   if(!facilityStock) return [];
-  const match = buildFacilityMatcher();
+  const rows = [];
+  const notionMatch = buildFacilityMatcher("notion");
   const tanaByName = new Map(((facilityStock.tana && facilityStock.tana.rows) || []).map(r=>[r.name, r]));
-  return facilityStock.items.map(it=>{
-    const { m, how } = match(it);
+  facilityStock.items.forEach(it=>{
+    const { m, how } = notionMatch(it);
     const t = tanaByName.get(it.name) || null;
     const unitPrice = (it.price != null && it.lotQty) ? it.price / it.lotQty : null;
     const amount = (unitPrice != null && it.stock != null) ? Math.round(unitPrice * it.stock) : null;
-    return { it, m, how, t, unitPrice, amount, code: (m && m.itemCode) || normalizeItemCode(it.code) || "" };
+    rows.push({ src: "notion", it, m, how, t, unitPrice, amount, code: (m && m.itemCode) || normalizeItemCode(it.code) || "" });
   });
+  if(facilityStock.ledger){
+    const ledgerMatch = buildFacilityMatcher("ledger");
+    facilityStock.ledger.items.forEach(raw=>{
+      // 台帳の形 {id,name,cat,unit,price,code,in,out,stock,short} を Notion の行と同じ見た目に寄せる
+      const it = Object.assign({}, raw, { category: raw.cat || "" });
+      const { m, how } = ledgerMatch(it);
+      const price = Number(raw.price), stock = Number(raw.stock);
+      const unitPrice = raw.price != null && raw.price !== "" && isFinite(price) ? price : null;
+      const amount = unitPrice != null && raw.stock != null && isFinite(stock) ? Math.round(unitPrice * stock) : null;
+      rows.push({ src: "ledger", it, m, how, t: null, unitPrice, amount, code: (m && m.itemCode) || normalizeItemCode(raw.code) || "" });
+    });
+  }
+  rows.forEach(r=>{ r.group = facilityRowGroup(r); });
+  return rows;
 }
 
 function renderFacilityView(){
   const src = document.getElementById("facSrc");
   if(!src) return;
   if(!facilityStock && !facilityStockLoading && !facilityStockError){ loadFacilityStock(false); return; }
-  const tanaDate = facilityStock && facilityStock.tana && facilityStock.tana.date;
+  const fs = facilityStock;
+  const tanaDate = fs && fs.tana && fs.tana.date;
+  const err = msg=>`<span style="color:var(--danger);font-weight:700;">読み込めませんでした（${escAttr(msg)}）</span>`;
+  const ledgerLine = !fs ? "" : fs.ledgerNoKey
+    ? `ブルワリー台帳：<b style="color:var(--muted);">キー未設定</b>（設定 › データ保存 で読み取りキーを入れると読みます）`
+    : fs.ledgerError ? `ブルワリー台帳：${err(fs.ledgerError)}`
+    : `ブルワリー台帳${fs.ledger.name ? `「${escAttr(fs.ledger.name)}」` : ""} ${fs.ledger.items.length}品目${fs.ledger.at ? `（${escAttr(String(fs.ledger.at).slice(0,16).replace("T"," "))} 時点）` : ""}`;
   src.innerHTML = facilityStockLoading
-    ? "在庫入力アプリ（Notion）から読み込み中…"
+    ? "在庫入力アプリ（Notion）とブルワリー台帳から読み込み中…"
     : facilityStockError
-      ? `<span style="color:var(--danger);font-weight:700;">読み込めませんでした（${escAttr(facilityStockError)}）</span>　通信を確認して「更新」を押してください。`
-      : `<b style="color:var(--main);">● 取得済み</b>　${facilityStock.loadedAt.toLocaleString("ja-JP")}　／　在庫入力アプリ（Notion）${facilityStock.items.length}品目　／　最新の棚卸 ${tanaDate || "なし"}`;
+      ? `${err(facilityStockError)}　通信を確認して「更新」を押してください。${fs ? `<br>${ledgerLine}` : ""}`
+      : `<b style="color:var(--main);">● 取得済み</b>　${fs.loadedAt.toLocaleString("ja-JP")}　／　${fs.notionError ? `在庫入力アプリ（Notion）：${err(fs.notionError)}` : `在庫入力アプリ（Notion）${fs.items.length}品目　／　最新の棚卸 ${tanaDate || "なし"}`}<br>${ledgerLine}`;
   const rows = facilityRows();
   const matched = rows.filter(r=>r.m), unmatched = rows.filter(r=>!r.m);
-  const total = matched.concat(unmatched).reduce((s,r)=>s+(r.amount||0), 0);
+  const total = rows.reduce((s,r)=>s+(r.amount||0), 0);
   const uncoded = matched.filter(r=>!r.m.itemCode).length;
-  document.getElementById("facSum").innerHTML = facilityStock ? `
+  const sumOf = list=>list.reduce((s,r)=>s+(r.amount||0), 0);
+  const groupCells = FACILITY_GROUPS.map(g=>{
+    const gr = rows.filter(r=>r.group === g.key);
+    if(g.key === "other" && !gr.length) return "";
+    let detail = "";
+    if(g.key === "brew"){
+      const mm = gr.filter(r=>facilityRowPrefix(r) === "M"), pp = gr.filter(r=>facilityRowPrefix(r) === "P");
+      detail = `<br><span style="font-size:11.5px;color:var(--muted);">M ${fmtNum(sumOf(mm))} 円（${mm.length}）／P ${fmtNum(sumOf(pp))} 円（${pp.length}）${fs && fs.ledgerNoKey ? "　台帳：キー未設定" : fs && fs.ledgerError ? "　台帳：読めず" : ""}</span>`;
+    }
+    return `<span>${g.label}<br><b style="font-size:18px;">${fmtNum(sumOf(gr))}</b> 円 <span style="font-size:11.5px;color:var(--muted);">${gr.length}品目</span>${detail}</span>`;
+  }).join("");
+  document.getElementById("facSum").innerHTML = fs ? `
     <span>照合済み<br><b style="font-size:18px;">${matched.length}</b> 品目</span>
     <span>未照合<br><b style="font-size:18px;color:${unmatched.length?"var(--danger)":"inherit"};">${unmatched.length}</b> 品目</span>
     <span>照合済みで品目コード未付番<br><b style="font-size:18px;">${uncoded}</b> 品目</span>
+    ${groupCells}
     <span>在庫金額（参考・全品目）<br><b style="font-size:18px;">${fmtNum(total)}</b> 円</span>` : "";
 
   const num = v=> v==null || v==="" ? "" : fmtNum(Math.round(v*100)/100);
+  const srcLabel = r=>FACILITY_SOURCES[r.src].label;
+  const shortMark = r=> r.src === "ledger" && r.it.short ? ' <span style="color:var(--danger);font-size:11px;font-weight:700;">不足</span>' : "";
   const body = document.getElementById("facBody");
   body.innerHTML = matched.map(r=>`
     <tr>
       <td class="text" style="font-family:ui-monospace,Menlo,monospace;">${escAttr(r.code) || '<span style="color:var(--muted);">未付番</span>'}</td>
+      <td class="text" style="font-size:11.5px;">${srcLabel(r)}</td>
       <td class="text">${escAttr(r.it.name)}</td>
       <td class="text">${escAttr(r.m.name)}</td>
       <td class="text">${escAttr(r.it.category||"")}</td>
-      <td style="font-weight:700;">${num(r.it.stock)}</td>
+      <td style="font-weight:700;">${num(r.it.stock)}${shortMark(r)}</td>
       <td class="text">${escAttr(r.it.unit||"")}</td>
       <td class="text">${r.t ? `${escAttr(r.t.at.slice(5,10).replace("-","/"))}　${num(r.t.value)}` : ""}</td>
       <td style="${r.t && r.t.diff<0?"color:var(--danger);":""}">${r.t && r.t.diff!=null ? num(r.t.diff) : ""}</td>
       <td>${r.unitPrice==null?"":num(r.unitPrice)}</td>
       <td>${r.amount==null?"":fmtNum(r.amount)}</td>
-      <td class="text" style="font-size:11.5px;">${r.how}${r.how==="紐づけ"?` <button class="secondary" style="padding:1px 6px;font-size:11px;" onclick="unlinkFacilityItem('${r.m.id}')">外す</button>`:""}</td>
+      <td class="text" style="font-size:11.5px;">${r.how}${r.how==="紐づけ"?` <button class="secondary" style="padding:1px 6px;font-size:11px;" onclick="unlinkFacilityItem('${r.m.id}', '${r.src}')">外す</button>`:""}</td>
     </tr>`).join("");
-  document.getElementById("facEmpty").style.display = matched.length || !facilityStock ? "none" : "block";
+  document.getElementById("facEmpty").style.display = matched.length || !fs ? "none" : "block";
 
   const card = document.getElementById("facUnmatchedCard");
   card.style.display = unmatched.length ? "" : "none";
   if(unmatched.length){
-    const linked = new Set(materials.filter(m=>m.notionId).map(m=>m.notionId));
     const byDept = new Map();
     materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=>(a.name||"").localeCompare(b.name||"", "ja")).forEach(m=>{
       const d = m.department || "（大分類未設定）";
       if(!byDept.has(d)) byDept.set(d, []);
       byDept.get(d).push(m);
     });
-    const depts = [...byDept.keys()].sort((a,b)=>(a==="レストラン"?-1:b==="レストラン"?1:a.localeCompare(b,"ja")));
-    const options = '<option value="">選ぶ…</option>' + depts.map(d=>`<optgroup label="${escAttr(d)}">${byDept.get(d).map(m=>`<option value="${m.id}">${escAttr(m.name)}${m.notionId?"（紐づけ済み）":""}</option>`).join("")}</optgroup>`).join("");
+    const options = (first, link)=>{
+      const depts = [...byDept.keys()].sort((a,b)=>(a===first?-1:b===first?1:a.localeCompare(b,"ja")));
+      return '<option value="">選ぶ…</option>' + depts.map(d=>`<optgroup label="${escAttr(d)}">${byDept.get(d).map(m=>`<option value="${m.id}">${escAttr(m.name)}${m[link]?"（紐づけ済み）":""}</option>`).join("")}</optgroup>`).join("");
+    };
+    const opt = { notion: options("レストラン", "notionId"), ledger: options("製造", "ledgerId") };
     document.getElementById("facUnmatchedBody").innerHTML = unmatched.map(r=>`
       <tr>
-        <td class="text">${escAttr(r.it.name)}</td>
+        <td class="text" style="font-size:11.5px;">${srcLabel(r)}</td>
+        <td class="text">${escAttr(r.it.name)}${r.src === "ledger" && r.it.code ? ` <span style="color:var(--muted);font-family:ui-monospace,Menlo,monospace;">${escAttr(r.it.code)}</span>` : ""}</td>
         <td class="text" style="color:var(--muted);">${escAttr(r.it.formal||"")}</td>
         <td class="text">${escAttr(r.it.category||"")}</td>
         <td>${num(r.it.stock)} ${escAttr(r.it.unit||"")}</td>
-        <td><select style="max-width:360px;" onchange="linkFacilityItem('${r.it.id}', this.value)">${options}</select></td>
+        <td><select style="max-width:360px;" onchange="linkFacilityItem('${escAttr(r.it.id)}', this.value, '${r.src}')">${opt[r.src]}</select></td>
       </tr>`).join("");
   }
 }
 
-function linkFacilityItem(notionId, materialId){
+function linkFacilityItem(itemId, materialId, source){
   if(!materialId) return;
+  const s = FACILITY_SOURCES[source || "notion"], link = s.link;
   const m = materials.find(x=>x.id===materialId);
   if(!m) return;
-  if(m.notionId && m.notionId !== notionId && !confirm(`「${m.name}」は別の Notion の品目と紐づいています。付け替えますか？`)){ renderFacilityView(); return; }
-  materials.forEach(x=>{ if(x.notionId === notionId) delete x.notionId; });
-  m.notionId = notionId;
+  if(m[link] && m[link] !== itemId && !confirm(`「${m.name}」は別の${s.label}の品目と紐づいています。付け替えますか？`)){ renderFacilityView(); return; }
+  materials.forEach(x=>{ if(x[link] === itemId) delete x[link]; });
+  m[link] = itemId;
   saveIngredients();
   renderFacilityView();
 }
-function unlinkFacilityItem(materialId){
+function unlinkFacilityItem(materialId, source){
+  const s = FACILITY_SOURCES[source || "notion"];
   const m = materials.find(x=>x.id===materialId);
-  if(!m || !confirm(`「${m.name}」と Notion の品目の紐づけを外しますか？`)) return;
-  delete m.notionId;
+  if(!m || !confirm(`「${m.name}」と${s.label}の品目の紐づけを外しますか？`)) return;
+  delete m[s.link];
   saveIngredients();
   renderFacilityView();
 }
@@ -19698,7 +19811,7 @@ function assignItemCodes(){
 
 // 照合済みの品目について、Notion の「品目コード」列に入れる内容を CSV で出す（Notion へはここからは書かない）
 function exportFacilityCodesCSV(){
-  const rows = facilityRows().filter(r=>r.m && r.m.itemCode && normalizeItemCode(r.it.code) !== r.m.itemCode);
+  const rows = facilityRows().filter(r=>r.src === "notion" && r.m && r.m.itemCode && normalizeItemCode(r.it.code) !== r.m.itemCode);
   if(!rows.length){ alert("Notion に反映が必要な品目コードはありません（照合済みの品目がすべて同じコードです）。"); return; }
   const lines = [["NotionページID","Notionの名称","品目コード","このシステムの名称"]].concat(rows.map(r=>[r.it.id, r.it.name, r.m.itemCode, r.m.name]));
   const csv = "﻿" + lines.map(l=>l.map(v=>`"${String(v ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
@@ -19717,7 +19830,7 @@ function recordFacilityStocktake(){
   const existing = inventoryStocktakeRecords.find(r=>r.source === sourceKey);
   if(existing && !confirm(`${tana.date} の棚卸はすでに記録に保存されています。最新の内容で置き換えますか？`)) return;
   if(!existing && !confirm(`在庫入力アプリの ${tana.date} の棚卸（${tana.rows.length}品目）を、記録に保存しますか？\n原料・資材マスタの在庫数は変わりません。`)) return;
-  const match = buildFacilityMatcher();
+  const match = buildFacilityMatcher("notion");
   const items = tana.rows.map(r=>{
     const { m } = match({ id: r.itemId, code: r.code, formal: r.formal, name: r.name });
     const key = "notion:" + (r.itemId || r.name);
