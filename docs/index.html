@@ -1430,10 +1430,11 @@
         </div>
 
         <div class="card">
-          <div class="topbar" style="margin-bottom:8px;">
-            <h3 style="margin:0;">📂 取込済みファイル</h3>
+          <div class="topbar" style="margin-bottom:8px;cursor:pointer;" onclick="toggleOtherPayArchiveCard()" title="クリックで開閉">
+            <h3 style="margin:0;"><span id="otherPayArchiveChevron">▼</span> 📂 取込済みファイル <span id="otherPayArchiveSummary" class="hint" style="font-weight:400;margin:0 0 0 6px;"></span></h3>
+            <button type="button" class="secondary" id="otherPayArchiveToggleBtn" style="padding:2px 10px;font-size:12px;" onclick="event.stopPropagation();toggleOtherPayArchiveCard()">しまう</button>
           </div>
-          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+          <div id="otherPayArchiveCardBody" class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
             <div>
               <div class="hint" style="font-weight:600;margin-bottom:4px;">funfo <button class="secondary" style="padding:1px 6px;font-size:11px;" onclick="otherPayClearSource('funfo')">🗑 クリア</button></div>
               <div id="otherPayArchive_funfo"></div>
@@ -17104,6 +17105,29 @@ function otherPayArchiveSortKey(src, a){
 function sortOtherPayArchivesByPayDate(src, list){
   return list.slice().sort((x, y) => otherPayArchiveSortKey(src, x).localeCompare(otherPayArchiveSortKey(src, y)) || String(x.name).localeCompare(String(y.name)));
 }
+// 「取込済みファイル」の開閉（開閉状態は、この端末に保存する）。閉じているときは、見出しに取込件数を表示する。
+const OTHERPAY_ARCHIVE_COLLAPSED_KEY = "otherpay_archive_card_collapsed_v1";
+function isOtherPayArchiveCollapsed(){
+  try{ return localStorage.getItem(OTHERPAY_ARCHIVE_COLLAPSED_KEY) === "1"; }catch(e){ return false; }
+}
+function applyOtherPayArchiveCollapse(){
+  const collapsed = isOtherPayArchiveCollapsed();
+  const body = document.getElementById("otherPayArchiveCardBody");
+  if(body) body.style.display = collapsed ? "none" : "";
+  const chev = document.getElementById("otherPayArchiveChevron");
+  if(chev) chev.textContent = collapsed ? "▶" : "▼";
+  const btn = document.getElementById("otherPayArchiveToggleBtn");
+  if(btn) btn.textContent = collapsed ? "開く" : "しまう";
+  const sum = document.getElementById("otherPayArchiveSummary");
+  if(sum){
+    const n = k=>(otherPayArchives[k] || []).length;
+    sum.textContent = collapsed ? `（funfo ${n("funfo")}件・Square ${n("square")}件・PAYGATE ${n("paygate")}件）` : "";
+  }
+}
+function toggleOtherPayArchiveCard(){
+  try{ localStorage.setItem(OTHERPAY_ARCHIVE_COLLAPSED_KEY, isOtherPayArchiveCollapsed() ? "0" : "1"); }catch(e){}
+  applyOtherPayArchiveCollapse();
+}
 function renderOtherPayArchives(){
   ["funfo", "square", "paygate", "paygateEmoney", "paygateBarcode", "paygateCredit"].forEach(src => {
     const box = document.getElementById("otherPayArchive_" + src);
@@ -17117,6 +17141,7 @@ function renderOtherPayArchives(){
       <button class="danger" style="padding:1px 6px;" onclick="deleteOtherPayArchive('${src}','${a.id}')">削除</button>
     </div>`).join("");
   });
+  applyOtherPayArchiveCollapse();
 }
 
 // 決済方法を判別できなかった明細（ブランド名がOTHERPAY_*_BRANDSのいずれにも一致しない）を警告表示する。
