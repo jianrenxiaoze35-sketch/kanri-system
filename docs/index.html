@@ -1456,7 +1456,7 @@
             <button type="button" class="secondary" id="otherPayPaygateDetailToggleBtn" style="padding:2px 10px;font-size:12px;" onclick="event.stopPropagation();toggleOtherPayCard('paygateDetail')">しまう</button>
           </div>
           <div id="otherPayPaygateDetailBody">
-          <div class="hint">PAYGATEの精算明細CSVには実際の取引日が無く、支払日（数週間分の入金日）でしかまとまりません。PAYGATE管理画面からダウンロードできる「電子マネー取引履歴」「バーコード決済（QRコード決済）取引履歴」「クレジットカード（都度決済）処理結果」の3つのCSVを取り込むと、日別決済金額ビューでPAYGATEも実際の取引日ごとの金額で表示されます。これらのCSVには決済手数料が含まれないため、精算明細の期間・決済方法ごとの手数料を、取引金額の割合に応じて日割り配分した概算値を表示します（期間合計は精算明細と一致します）。</div>
+          <div class="hint">PAYGATEの精算明細CSVには実際の取引日が無く、支払日（数週間分の入金日）でしかまとまりません。PAYGATE管理画面からダウンロードできる「電子マネー取引履歴」「バーコード決済（QRコード決済）取引履歴」「クレジットカード（都度決済）処理結果」の3つのCSVを取り込むと、「その他決済確認」でPAYGATEも取引単位で、②売上集計（レジ）のデータと照合できます。</div>
           <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px;">
             <div class="form-field">
               <label>電子マネー取引履歴</label>
@@ -1497,8 +1497,7 @@
           <div class="toolbar" style="margin-bottom:12px;">
             <button class="secondary active" id="otherPayTabMethodBtn" onclick="switchOtherPaySubView('method')">決済方法別集計</button>
             <button class="secondary" id="otherPayTabCompanyBtn" onclick="switchOtherPaySubView('company')">決済会社別集計</button>
-            <button class="secondary" id="otherPayTabDailyBtn" onclick="switchOtherPaySubView('daily')">日別決済金額</button>
-            <button class="secondary" id="otherPayTabReconcileBtn" onclick="switchOtherPaySubView('reconcile')">入金消し込み</button>
+            <button class="secondary" id="otherPayTabCheckBtn" onclick="switchOtherPaySubView('check')">その他決済確認</button>
             <button class="secondary" id="otherPayTabSubmitBtn" onclick="switchOtherPaySubView('submit')">提出データ</button>
           </div>
 
@@ -1535,96 +1534,32 @@
             <div id="otherPayCompanyEmpty" class="hint" style="display:none;margin-top:8px;">まだデータがありません。上でCSVを取り込んでください。</div>
           </div>
 
-          <div id="otherPayPanelDaily" style="display:none;">
-            <div class="toolbar" style="margin-bottom:10px;">
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">対象月：
-                <input type="month" id="otherPayDailyMonth" onchange="renderOtherPayDailyView()">
-              </label>
-              <button class="secondary" style="margin-left:auto;" onclick="exportOtherPayDailyToExcel()">📥 Excel出力</button>
+          <div id="otherPayPanelCheck" style="display:none;">
+            <div class="toolbar" style="margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap;">
+              <label style="font-size:12.5px;font-weight:700;">対象月（決済日）：<input type="month" id="otherPayCheckMonth" onchange="renderOtherPayCheckView()"></label>
+              <span id="otherPayCheckCompanyChips" style="display:flex;gap:6px;flex-wrap:wrap;"></span>
+              <button class="secondary" style="margin-left:auto;" onclick="exportOtherPayCheckToExcel()">📥 Excel出力</button>
             </div>
-            <div class="hint" style="margin-bottom:8px;">消し込み作業用に、1か月分の決済金額・決済手数料を日付×決済方法（クレジットカード／電子マネー／QRコード決済）で表示します。PAYGATEは、上の「PAYGATE日別内訳」に電子マネー／バーコード決済／クレジットの取引履歴CSVを取り込むと実際の取引日ごとの金額（手数料は精算明細からの日割り概算値）で表示されます。未取込の場合は精算明細CSVの「支払日」単位でまとめて表示されます。</div>
+            <div class="hint" style="margin-bottom:8px;">指定した月・決済会社の、②売上集計（レジ）のその他決済と、⑤その他決済集計（決済端末）のデータを、日付・金額で突き合わせて、横に並べて表示します。どちらか一方にしかないデータは、アラートで示します（レジと決済端末のデータの食い違いを防ぐための確認です）。</div>
+            <div id="otherPayCheckAlert" style="margin-bottom:8px;"></div>
+            <div id="otherPayCheckNote" class="hint" style="margin-bottom:8px;"></div>
             <div style="overflow-x:auto;">
-            <table style="border-collapse:collapse;font-size:12.5px;width:100%;">
-              <thead>
-                <tr style="background:var(--bg);">
-                  <th rowspan="2" style="padding:5px 8px;border:1px solid var(--border);">日付</th>
-                  <th rowspan="2" style="padding:5px 8px;border:1px solid var(--border);">曜日</th>
-                  <th colspan="2" style="padding:5px 8px;border:1px solid var(--border);text-align:center;">クレジットカード</th>
-                  <th colspan="2" style="padding:5px 8px;border:1px solid var(--border);text-align:center;">電子マネー</th>
-                  <th colspan="2" style="padding:5px 8px;border:1px solid var(--border);text-align:center;">QRコード決済</th>
-                  <th colspan="2" style="padding:5px 8px;border:1px solid var(--border);text-align:center;">合計</th>
-                </tr>
-                <tr style="background:var(--bg);">
-                  <th style="padding:5px 8px;border:1px solid var(--border);">金額</th><th style="padding:5px 8px;border:1px solid var(--border);">手数料</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">金額</th><th style="padding:5px 8px;border:1px solid var(--border);">手数料</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">金額</th><th style="padding:5px 8px;border:1px solid var(--border);">手数料</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">金額</th><th style="padding:5px 8px;border:1px solid var(--border);">手数料</th>
-                </tr>
-              </thead>
-              <tbody id="otherPayDailyBody"></tbody>
-            </table>
-            </div>
-            <div id="otherPayDailyEmpty" class="hint" style="display:none;margin-top:8px;">選択した月のデータがありません。</div>
-          </div>
-
-          <div id="otherPayPanelReconcile" style="display:none;">
-            <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-              <label style="font-size:12.5px;"><span id="otherPayReconcileMonthLabel">対象月</span>：<input type="month" id="otherPayReconcileMonth" onchange="renderOtherPayReconcileView()"></label>
-              <label style="font-size:12.5px;">決済会社：
-                <select id="otherPayReconcileCompany" onchange="renderOtherPayReconcileView()">
-                  <option value="funfo">funfo</option>
-                  <option value="square">Square</option>
-                  <option value="paygate">PAYGATE</option>
-                </select>
-              </label>
-              <button class="secondary" style="margin-left:auto;" onclick="exportOtherPayReconcileToExcel()">📥 Excel出力</button>
-            </div>
-            <div class="toolbar" style="margin-bottom:10px;gap:6px;">
-              <button class="secondary active" id="otherPayReconcileModeSideBtn" onclick="setOtherPayReconcileMode('side')">振込と決済を並べて照合</button>
-              <button class="secondary" id="otherPayReconcileModeDetailBtn" onclick="setOtherPayReconcileMode('detail')">明細一覧</button>
-            </div>
-            <div id="otherPayReconcileSide"></div>
-            <div id="otherPayReconcileDetailWrap" style="display:none;">
-            <div class="hint" style="margin-bottom:8px;">選択した決済会社・月について、取り込んだCSV（funfoは支払履歴CSV、Squareはお取引CSV、PAYGATEは日別内訳CSV〈任意〉または精算明細CSV）の1決済ごとの明細を日にち・時間順にそのまま一覧表示します（決済方法は取り込んだブランド名をそのまま表示）。「振込予定金額」はCSVに記載された受取額（無い場合は販売金額－決済手数料で計算）を1決済ごとにそのまま表示します。日付が変わるごとに、その日の合計行を挟みます。該当するCSVデータが無い場合は「－（データなし）」と表示されます。</div>
-            <div style="overflow-x:auto;">
-            <table style="border-collapse:collapse;font-size:12.5px;width:100%;">
-              <thead>
-                <tr style="background:var(--bg);">
-                  <th style="padding:5px 8px;border:1px solid var(--border);">日付</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">曜日</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">時間</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">決済方法</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">販売金額</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">決済手数料</th>
-                  <th style="padding:5px 8px;border:1px solid var(--border);">振込予定金額（自動）</th>
-                </tr>
-              </thead>
-              <tbody id="otherPayReconcileBody"></tbody>
-            </table>
-            </div>
-            <div id="otherPayReconcileEmpty" class="hint" style="display:none;margin-top:8px;">選択した月・決済会社のデータがありません。</div>
-            </div>
-
-            <div style="margin-top:18px;padding-top:12px;border-top:1px dashed var(--border);">
-              <h4 id="otherPayRegiCrossCheckTitle" style="margin:0 0 6px;">②売上集計データとの照合（参考）</h4>
-              <div id="otherPayRegiCrossCheckHint" class="hint" style="margin-bottom:8px;"></div>
-              <div id="otherPayRegiCrossCheckSummary" class="hint" style="margin-bottom:8px;font-weight:700;"></div>
-              <div style="overflow-x:auto;max-height:320px;overflow-y:auto;">
-              <table style="border-collapse:collapse;font-size:12px;width:100%;">
+              <table style="border-collapse:collapse;font-size:12.5px;width:100%;min-width:900px;">
                 <thead>
                   <tr style="background:var(--bg);">
-                    <th style="padding:4px 8px;border:1px solid var(--border);">日付</th>
-                    <th style="padding:4px 8px;border:1px solid var(--border);">時間</th>
-                    <th style="padding:4px 8px;border:1px solid var(--border);">記録元</th>
-                    <th style="padding:4px 8px;border:1px solid var(--border);">決済方法</th>
-                    <th style="padding:4px 8px;border:1px solid var(--border);">金額</th>
+                    <th rowspan="2" style="padding:5px 8px;border:1px solid var(--border);">状態</th>
+                    <th colspan="4" style="padding:5px 8px;border:1px solid var(--border);background:#e8f1ea;">②売上集計（レジのデータ）</th>
+                    <th colspan="5" style="padding:5px 8px;border:1px solid var(--border);background:#e6ecf6;">⑤その他決済集計（決済端末のデータ）</th>
+                  </tr>
+                  <tr style="background:var(--bg);">
+                    <th style="padding:4px 8px;border:1px solid var(--border);">日付</th><th style="padding:4px 8px;border:1px solid var(--border);">時間</th><th style="padding:4px 8px;border:1px solid var(--border);">決済方法</th><th style="padding:4px 8px;border:1px solid var(--border);">金額</th>
+                    <th style="padding:4px 8px;border:1px solid var(--border);">日付</th><th style="padding:4px 8px;border:1px solid var(--border);">時間</th><th style="padding:4px 8px;border:1px solid var(--border);">決済方法</th><th style="padding:4px 8px;border:1px solid var(--border);">金額</th><th style="padding:4px 8px;border:1px solid var(--border);">振込日</th>
                   </tr>
                 </thead>
-                <tbody id="otherPayRegiCrossCheckBody"></tbody>
+                <tbody id="otherPayCheckBody"></tbody>
               </table>
-              </div>
-              <div id="otherPayRegiCrossCheckEmpty" class="hint" style="display:none;margin-top:8px;">選択した月の②データが見つかりません。</div>
             </div>
+            <div id="otherPayCheckEmpty" class="hint" style="display:none;margin-top:8px;">選択した月・決済会社のデータがありません。</div>
           </div>
 
           <div id="otherPayPanelSubmit" style="display:none;">
@@ -16653,18 +16588,6 @@ function persistOtherPayArchives(){
   catch(e){ console.warn("その他決済アーカイブ保存失敗:", e); }
 }
 
-// 月末消し込み用：決済会社ごとに、実際に口座へ振り込まれた金額を月単位で手入力・保存する。
-// 構造：{ "2026-08": { funfo: 106076, square: 266434, paygate: 292816 }, ... }
-const OTHERPAY_DEPOSITS_KEY = "regi_otherpay_deposits_v1";
-let otherPayDeposits = {}; // 安全なデフォルト値。実際の内容はブート時に読み込む
-registerBootStep(function(){
-  otherPayDeposits = JSON.parse(appStore.getItem(OTHERPAY_DEPOSITS_KEY) || "null") || {};
-});
-function persistOtherPayDeposits(){
-  try{ appStore.setItem(OTHERPAY_DEPOSITS_KEY, JSON.stringify(otherPayDeposits)); }
-  catch(e){ console.warn("その他決済振込金額保存失敗:", e); }
-}
-
 let otherPayRows = []; // 3ソースを正規化・重複排除して統合した明細一覧（表示のたびに再構築する）
 let otherPaySubView = "method"; // "method"（決済方法別集計） | "company"（決済会社別集計） | "submit"（提出データ）
 
@@ -16899,7 +16822,7 @@ function parsePaygateCreditDetailCSV(text){
 // 取込済みアーカイブ（3ソース分）から、重複排除済みの明細一覧を再構築する。
 // 注：PAYGATE日別内訳（paygateEmoney/paygateBarcode/paygateCredit）はここには含めない。
 // 決済方法別集計・決済会社別集計は精算明細CSV(paygate)の金額・手数料をそのまま使うため、
-// 日別内訳を混ぜると同じ金額が二重に集計されてしまう。日別内訳は日別決済金額ビュー専用に
+// 日別内訳を混ぜると同じ金額が二重に集計されてしまう。日別内訳は「その他決済確認」専用に
 // buildPaygateDailyDetailRows()で別管理する。
 function buildOtherPayRows(){
   const seen = new Set();
@@ -17270,436 +17193,195 @@ function renderOtherPayCompanyView(){
   </tr>`;
 }
 
-// 入金消し込みビュー：決済会社（funfo/Square/PAYGATE）を1つ選び、選択した月について
-// 取り込んだCSVの1決済ごとの明細をそのまま日にち・時間順に一覧表示する（決済方法は取り込んだ
-// 具体的なブランド名：Visa/Master/PayPay/交通系...など。「クレジットカード」のような総称ではない）。
-// 実際の入金と突き合わせるため、日付が変わるタイミングごとに、その日（または振込単位）の
-// 合計をはさむ。合計をまとめる基準日は、会社ごとに実際の入金日に
-// 最も近いものを使う：
-//   funfo   … 振込日（CSVの「振込日」列。無い場合は決済日で代用）
-//   PAYGATE … 支払日（精算明細CSVの先頭に書かれている実際の入金日。日別内訳CSVがあれば
-//              その明細を使いつつ、精算明細の支払日に紐づけて合計する）
-//   Square  … 取引日（CSV上に確定した振込日の情報が無いための代用。目安として扱う）
-//
-// ②売上集計との関係（実店舗の運用に基づく対応）：
-//   ・スマレジのレジでは決済端末としてPAYGATEしか使わない
-//   ・Square端末はfunfoレジでの会計にのみ使う
-//   そのため、②のfunfo伝票データ（その他決済）はSquare側の照合に、②のスマレジ取引データ
-//   （その他決済）はPAYGATE側の照合に、それぞれ対応する（funfoのCSV自体はモバイルオーダー決済
-//   なので②側に対応するレジ生データは無い）。
-const OTHERPAY_RECONCILE_COMPANY_LABELS = { funfo: "funfo", square: "Square", paygate: "PAYGATE" };
-// 会社ごとに、②側のどのレジ生データが対応するかのラベル・説明
-const OTHERPAY_RECONCILE_REGI_SOURCE = {
-  funfo: null,
-  square: { label: "funfo伝票", hint: "②売上集計に取り込まれたfunfo伝票（xlsx）のその他決済（現金以外）を、日にち・時間順に一覧表示します。Square端末はfunfoレジでの会計にのみ使われるため、この明細がSquareの精算データと対応します。" },
-  paygate: { label: "スマレジ取引", hint: "②売上集計に取り込まれたスマレジ取引CSVのその他決済（現金以外）を、日にち・時間順に一覧表示します。スマレジのレジではPAYGATE端末しか使わないため、この明細がPAYGATEの精算データと対応します。" }
-};
-function otherPayReconcileTransactionRows(source, monthKey, basis){
-  let rows;
-  if(source === "paygate" && paygateDetailRows && paygateDetailRows.length){
-    // 日別内訳CSV（実際の取引ごとの明細・手数料は精算明細から日割り配分済み）が取り込まれていれば
-    // そちらを使う。振込日は、割り当てられた精算期間(_period)のpayDateを使う（無ければ取引日で代用）。
-    rows = paygateDetailRows.map(r => ({
-      date: r.date, time: "", brand: r.brand, amount: r.amount, feeAmount: r.feeAmount || 0,
-      net: (r.net != null) ? r.net : (r.amount - (r.feeAmount || 0)),
-      groupDate: (r._period && r._period.payDate) || r.date
-    }));
-  } else {
-    // net（振込予定金額）は、CSVに直接その決済分の受取額が記載されていればその値をそのまま使う
-    // （funfoの「受取額」列、Squareの「合計（純額）」列など）。無ければ販売金額－決済手数料で代用する。
-    rows = otherPayReconcileSourceRows(source).map(r => ({
-      date: r.date, time: r.time || "", brand: r.brand, amount: r.amount, feeAmount: r.feeAmount || 0,
-      net: (r.net != null) ? r.net : (r.amount - (r.feeAmount || 0)),
-      groupDate: r.payDate || r.date
-    }));
-  }
-  // basis==="date" のときは決済日（取引日）が対象月のもの、省略時は振込日が対象月のものを対象にする。
-  rows = rows.filter(r => { const d = basis === "date" ? r.date : r.groupDate; return d && d.slice(0, 7) === monthKey; });
-  // 振込単位（groupDate）でまとめて見えるよう、まず振込日、その中では実際の取引日時の順に並べる。
-  rows.sort((a, b) => {
-    if(a.groupDate !== b.groupDate) return a.groupDate.localeCompare(b.groupDate);
-    if(a.date !== b.date) return a.date.localeCompare(b.date);
-    return (a.time || "").localeCompare(b.time || "");
-  });
-  return rows;
-}
-function otherPayReconcileSourceRows(source){
-  if(source === "paygate"){
-    // PAYGATEは精算明細CSV（支払日ベース・会社側の正式な入金予定額）を使う。
-    return otherPayRows.filter(r => r.source === "paygate");
-  }
-  return otherPayRows.filter(r => r.source === source);
-}
-function otherPayReconcileSelection(){
-  const monthEl = document.getElementById("otherPayReconcileMonth");
-  const companyEl = document.getElementById("otherPayReconcileCompany");
-  let monthKey = monthEl && monthEl.value ? monthEl.value : "";
-  if(!monthKey){
-    monthKey = todayStr().slice(0, 7);
-    if(monthEl) monthEl.value = monthKey;
-  }
-  const source = companyEl && companyEl.value ? companyEl.value : "funfo";
-  return { monthKey, source };
-}
-function otherPayReconcileTxRowHtml(r){
-  const dateObj = new Date(r.date + "T00:00:00");
-  const weekday = WEEKDAY_LABELS_JA[dateObj.getDay()];
-  return `<tr>
-    <td style="padding:3px 8px;border:1px solid var(--border);">${r.date}</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:center;">${weekday}</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:center;">${escAttr(r.time || "－")}</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);">${escAttr(r.brand || "不明")}</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.amount)}円</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.feeAmount)}円</td>
-    <td style="padding:3px 8px;border:1px solid var(--border);text-align:right;">${r.net != null ? fmtNum(r.net) + "円" : "－（データなし）"}</td>
-  </tr>`;
-}
-// 振込予定金額は、1決済ごとにCSVへ記載された受取額（無ければ販売金額－決済手数料で代用した値、
-// otherPayReconcileTransactionRowsのnetフィールド）をそのまま合計する。グループの明細が
-// 1件も無い場合（販売データが無いのに通帳の振込だけ登録したケースなど）はnullを返す。
-function otherPayReconcileExpectedAmount(group){
-  if(!group || !group.length) return null;
-  const net = group.reduce((s, r) => s + (Number(r.net != null ? r.net : (r.amount - r.feeAmount)) || 0), 0);
-  return Number.isFinite(net) ? net : null;
-}
-function otherPayReconcileSubtotalRowHtml(groupDate, group, source){
-  const dateObj = new Date(groupDate + "T00:00:00");
-  const weekday = WEEKDAY_LABELS_JA[dateObj.getDay()];
-  const amount = group.reduce((s, r) => s + r.amount, 0);
-  const feeAmount = group.reduce((s, r) => s + r.feeAmount, 0);
-  const netAmount = otherPayReconcileExpectedAmount(group);
-  const hasExpected = netAmount !== null;
-  return `<tr style="font-weight:700;background:var(--bg);">
-    <td style="padding:4px 8px;border:1px solid var(--border);" colspan="2">${groupDate}（${weekday}）振込分</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${group.length}件</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);"></td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(amount)}円</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(feeAmount)}円</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${hasExpected ? fmtNum(netAmount) + "円" : "－（データなし）"}</td>
-  </tr>`;
-}
-function otherPayReconcileGroupedByDate(source, monthKey, basis){
-  const rows = otherPayReconcileTransactionRows(source, monthKey, basis);
-  const groups = []; // [{ groupDate, bucket }]（rowsは既にgroupDate順に並んでいる前提）
-  let curGroup = null, bucket = [];
-  const flush = () => { if(curGroup !== null) groups.push({ groupDate: curGroup, bucket }); };
-  rows.forEach(r => {
-    if(r.groupDate !== curGroup){ flush(); curGroup = r.groupDate; bucket = []; }
-    bucket.push(r);
-  });
-  flush();
-  groups.sort((a, b) => a.groupDate.localeCompare(b.groupDate));
-  return groups;
-}
-/* ---- 振込データ（決済会社の振込明細）と決済データ（取込済みの決済明細）を並べて照合する ----
-   PAYGATE：精算明細（支払日×決済方法×対象期間ごとの振込額）と、日別内訳CSV（実際の取引）を、精算期間に
-            割り当てて比較する。決済明細が無い精算、精算に割り当てられない決済明細を「反映されていない」として示す。
-   funfo/Square：CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べ、
-            受取額と、決済明細の販売金額－手数料の差異を確認する。振込日がまだ来ていない決済も示す。 */
-let otherPayReconcileMode = "side"; // "side"（並べて照合） | "detail"（従来の明細表示）
-function setOtherPayReconcileMode(m){
-  otherPayReconcileMode = m;
-  renderOtherPayReconcileView();
-}
-function buildOtherPaySideBySide(source, monthKey){
-  const rows = [];
-  const notes = [];
-  if(source === "paygate"){
-    // 対象月（決済日）に対象期間がかかる精算を対象にする（精算期間は月初〜15日・16日〜月末のため、通常は月をまたがない）。
-    const mStart = monthKey + "-01", mEnd = monthKey + "-31";
-    const periods = paygateSettlementPeriods().filter(p => p.start <= mEnd && p.end >= mStart);
-    const hasDetail = paygateDetailRows.length > 0;
-    if(!hasDetail) notes.push("PAYGATEの日別内訳（電子マネー取引履歴・バーコード決済取引履歴・クレジット処理結果）が取り込まれていないため、決済データ側は空です。");
-    periods.sort((a, b) => (a.payDate || "").localeCompare(b.payDate || "") || a.method.localeCompare(b.method) || a.periodLabel.localeCompare(b.periodLabel));
-    periods.forEach(p => {
-      const det = paygateDetailRows.filter(r => r._period && r._period.method === p.method && r._period.periodLabel === p.periodLabel);
-      const dAmount = det.reduce((t, r) => t + r.amount, 0);
-      const dFee = det.reduce((t, r) => t + (r.feeAmount || 0), 0);
-      const diff = dAmount - p.totalAmount;
-      let status, level;
-      if(!det.length){ status = "決済明細が未取込（または該当期間の決済なし）"; level = "warn"; }
-      else if(Math.abs(diff) <= 1){ status = "一致"; level = "ok"; }
-      else { status = diff > 0 ? "決済明細が精算明細より多い" : "決済明細が不足（反映されていない決済の可能性）"; level = "ng"; }
-      rows.push({
-        payDate: p.payDate, label: `${OTHERPAY_METHOD_LABELS[p.method] || p.method}（${p.periodLabel}）`,
-        left: { amount: p.totalAmount, fee: p.totalFee, net: p.totalAmount - p.totalFee },
-        right: det.length ? { count: det.length, amount: dAmount, fee: dFee, net: dAmount - dFee } : null,
-        diff: det.length ? diff : null, status, level
-      });
-    });
-    // 精算明細に割り当てられていない決済明細（未精算、または精算明細が未取込の期間）
-    const unassigned = {};
-    paygateDetailRows.filter(r => !r._period && (r.date || "").slice(0, 7) === monthKey).forEach(r => {
-      const k = r.method;
-      (unassigned[k] = unassigned[k] || []).push(r);
-    });
-    Object.keys(unassigned).forEach(m => {
-      const det = unassigned[m];
-      const dates = det.map(r => r.date).sort();
-      const amount = det.reduce((t, r) => t + r.amount, 0);
-      rows.push({
-        payDate: "", label: `${OTHERPAY_METHOD_LABELS[m] || m}（取引日 ${dates[0]}〜${dates[dates.length - 1]}）`,
-        left: null, right: { count: det.length, amount, fee: 0, net: amount },
-        diff: null, status: "精算明細に反映されていない（未精算、または精算明細が未取込）", level: "ng"
-      });
-    });
-    return { rows, notes };
-  }
-  // funfo / Square
-  if(source === "square") notes.push("SquareのCSVには振込日の情報が無いため、取引日ごとにまとめています（実際の入金日とは異なる場合があります）。");
-  const today = todayStr();
-  // 決済日が対象月の明細を、振込日ごとにまとめる（振込が翌月になる決済も含む。月をまたぐ振込は対象月分のみ）。
-  const groups = otherPayReconcileGroupedByDate(source, monthKey, "date");
-  notes.push("決済日が対象月の決済を、振込日ごとにまとめています。振込日が翌月になる決済も含まれます。");
-  groups.forEach(g => {
-    const b = g.bucket;
-    const amount = b.reduce((t, r) => t + r.amount, 0);
-    const fee = b.reduce((t, r) => t + r.feeAmount, 0);
-    const net = otherPayReconcileExpectedAmount(b);
-    const dates = b.map(r => r.date).sort();
-    const rightNet = amount - fee;
-    const diff = (net != null) ? rightNet - net : null;
-    let status, level;
-    if(source === "funfo" && g.groupDate > today){ status = "振込予定日前（まだ振り込まれていません）"; level = "warn"; }
-    else if(diff == null){ status = "受取額のデータなし"; level = "warn"; }
-    else if(Math.abs(diff) <= 1){ status = "一致"; level = "ok"; }
-    else { status = "受取額と、販売金額－手数料が合いません"; level = "ng"; }
-    rows.push({
-      payDate: g.groupDate, label: `決済日 ${dates[0]}${dates[0] !== dates[dates.length - 1] ? "〜" + dates[dates.length - 1] : ""}`,
-      left: { amount, fee, net },
-      right: { count: b.length, amount, fee, net: rightNet },
-      diff, status, level
-    });
-  });
-  return { rows, notes };
-}
-function renderOtherPaySideBySide(){
-  const box = document.getElementById("otherPayReconcileSide");
-  if(!box) return;
-  const { monthKey, source } = otherPayReconcileSelection();
-  const data = buildOtherPaySideBySide(source, monthKey);
-  const tdS = "padding:4px 8px;border:1px solid var(--border);";
-  const num = v => v == null ? "<span style=\"color:var(--muted);\">－</span>" : fmtNum(Math.round(v)) + "円";
-  const levelStyle = { ok: "color:#1a8a3d;font-weight:700;", warn: "color:#a8740a;font-weight:700;", ng: "color:#c0392b;font-weight:700;" };
-  const levelMark = { ok: "✅ ", warn: "❓ ", ng: "⚠️ " };
-  const counts = { ok: 0, warn: 0, ng: 0 };
-  data.rows.forEach(r => counts[r.level]++);
-  const body = data.rows.map(r => {
-    const wd = r.payDate ? WEEKDAY_LABELS_JA[new Date(r.payDate + "T00:00:00").getDay()] : "";
-    return `<tr>
-      <td style="${tdS}">${r.payDate ? `${r.payDate}（${wd}）` : "－"}</td>
-      <td style="${tdS}text-align:left;">${escAttr(r.label)}</td>
-      <td style="${tdS}text-align:right;background:#f4f8f5;">${num(r.left && r.left.amount)}</td>
-      <td style="${tdS}text-align:right;background:#f4f8f5;">${num(r.left && r.left.fee)}</td>
-      <td style="${tdS}text-align:right;background:#f4f8f5;font-weight:700;">${num(r.left && r.left.net)}</td>
-      <td style="${tdS}text-align:right;background:#f4f6fb;">${r.right ? r.right.count + "件" : "<span style=\"color:var(--muted);\">－</span>"}</td>
-      <td style="${tdS}text-align:right;background:#f4f6fb;">${num(r.right && r.right.amount)}</td>
-      <td style="${tdS}text-align:right;background:#f4f6fb;">${num(r.right && r.right.fee)}</td>
-      <td style="${tdS}text-align:right;background:#f4f6fb;font-weight:700;">${num(r.right && r.right.net)}</td>
-      <td style="${tdS}text-align:right;">${r.diff == null ? "<span style=\"color:var(--muted);\">－</span>" : fmtNum(Math.round(r.diff)) + "円"}</td>
-      <td style="${tdS}text-align:left;${levelStyle[r.level]}">${levelMark[r.level]}${escAttr(r.status)}</td>
-    </tr>`;
-  }).join("");
-  const colsLeft = 3;
-  const leftTitle = source === "paygate" ? "振込データ（精算明細）" : "振込データ（振込日ごとの受取額）";
-  const diffTitle = source === "paygate" ? "差異（決済－振込）" : "差異（決済明細－受取額）";
-  box.innerHTML = `
-    ${data.notes.map(n => `<div class="hint" style="margin-bottom:6px;color:#a8740a;">${escAttr(n)}</div>`).join("")}
-    <div style="margin-bottom:8px;font-size:12.5px;font-weight:700;">
-      ${data.rows.length ? `✅ 一致 ${counts.ok}件　❓ 要確認 ${counts.warn}件　⚠️ 反映されていない・不一致 ${counts.ng}件` : ""}
-    </div>
-    ${data.rows.length ? `<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:12.5px;width:100%;min-width:1000px;">
-      <thead>
-        <tr style="background:var(--bg);">
-          <th rowspan="2" style="${tdS}">${source === "paygate" ? "支払日" : "振込日"}</th>
-          <th rowspan="2" style="${tdS}">${source === "paygate" ? "決済方法（対象期間）" : "決済日"}</th>
-          <th colspan="${colsLeft}" style="${tdS}background:#e8f1ea;">${leftTitle}</th>
-          <th colspan="4" style="${tdS}background:#e6ecf6;">決済データ（取込済みの決済明細）</th>
-          <th rowspan="2" style="${tdS}">${diffTitle}</th>
-          <th rowspan="2" style="${tdS}">状態</th>
-        </tr>
-        <tr style="background:var(--bg);">
-          <th style="${tdS}">販売金額</th><th style="${tdS}">手数料</th><th style="${tdS}">${source === "paygate" ? "振込額" : "受取額"}</th>
-          <th style="${tdS}">件数</th><th style="${tdS}">販売金額</th><th style="${tdS}">手数料</th><th style="${tdS}">受取額</th>
-        </tr>
-      </thead>
-      <tbody>${body}</tbody></table></div>`
-      : `<div class="hint">選択した月・決済会社のデータがありません。</div>`}
-    <div class="hint" style="margin-top:8px;">
-      ${source === "paygate"
-        ? "決済日（精算の対象期間）が対象月にかかる精算について、精算明細（PAYGATEの支払日・決済方法・対象期間ごとの振込額）と、日別内訳の決済明細を、精算期間に割り当てて比べています。決済明細側の手数料は、精算明細の手数料を取引金額の割合で配分した概算です。"
-        : "CSVの振込日ごとの受取額（振込データ）と、その振込に含まれる決済明細の合計を並べています。"}
-    </div>`;
-}
-function renderOtherPayReconcileView(){
-  const body = document.getElementById("otherPayReconcileBody");
-  const emptyEl = document.getElementById("otherPayReconcileEmpty");
-  if(!body) return;
-  // 表示モード（並べて照合／明細一覧）
-  const sideBtn = document.getElementById("otherPayReconcileModeSideBtn"), detailBtn = document.getElementById("otherPayReconcileModeDetailBtn");
-  if(sideBtn) sideBtn.classList.toggle("active", otherPayReconcileMode === "side");
-  if(detailBtn) detailBtn.classList.toggle("active", otherPayReconcileMode === "detail");
-  const sideBox = document.getElementById("otherPayReconcileSide"), detailWrap = document.getElementById("otherPayReconcileDetailWrap");
-  if(sideBox) sideBox.style.display = otherPayReconcileMode === "side" ? "" : "none";
-  if(detailWrap) detailWrap.style.display = otherPayReconcileMode === "detail" ? "" : "none";
-  const monthLabel = document.getElementById("otherPayReconcileMonthLabel");
-  if(monthLabel) monthLabel.textContent = otherPayReconcileMode === "side" ? "対象月（決済日）" : "対象月（振込日）";
-  if(otherPayReconcileMode === "side") renderOtherPaySideBySide();
-  const { monthKey, source } = otherPayReconcileSelection();
-  const groups = otherPayReconcileGroupedByDate(source, monthKey);
-  if(!groups.length){ body.innerHTML = ""; if(emptyEl) emptyEl.style.display = "block"; }
-  else{
-    if(emptyEl) emptyEl.style.display = "none";
-    const html = [];
-    groups.forEach(g => {
-      html.push(...g.bucket.map(otherPayReconcileTxRowHtml), otherPayReconcileSubtotalRowHtml(g.groupDate, g.bucket, source));
-    });
-    body.innerHTML = html.join("");
-  }
-  renderOtherPayRegiCrossCheck(monthKey, source);
-}
-function exportOtherPayReconcileToExcel(){
-  if(typeof XLSX === "undefined"){ salesExcelUnavailableAlert(); return; }
-  const { monthKey, source } = otherPayReconcileSelection();
-  if(otherPayReconcileMode === "side"){
-    const data = buildOtherPaySideBySide(source, monthKey);
-    const head = [source === "paygate" ? "支払日" : "振込日", source === "paygate" ? "決済方法（対象期間）" : "決済日",
-      "振込データ 販売金額", "振込データ 手数料", source === "paygate" ? "振込データ 振込額" : "振込データ 受取額"];
-    head.push("決済データ 件数", "決済データ 販売金額", "決済データ 手数料", "決済データ 受取額", "差異", "状態");
-    const aoa = [head];
-    const n = v => v == null ? "" : Math.round(v);
-    data.rows.forEach(r => {
-      const line = [r.payDate, r.label, n(r.left && r.left.amount), n(r.left && r.left.fee), n(r.left && r.left.net)];
-      line.push(r.right ? r.right.count : "", n(r.right && r.right.amount), n(r.right && r.right.fee), n(r.right && r.right.net), n(r.diff), r.status);
-      aoa.push(line);
-    });
-    const wb0 = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb0, XLSX.utils.aoa_to_sheet(aoa), "振込と決済の照合");
-    XLSX.writeFile(wb0, `入金消し込み_振込と決済の照合_${OTHERPAY_RECONCILE_COMPANY_LABELS[source] || source}_${monthKey}.xlsx`);
-    return;
-  }
-  const groups = otherPayReconcileGroupedByDate(source, monthKey);
-  const aoa = [["日付", "曜日", "時間", "決済方法", "販売金額", "決済手数料", "振込予定金額（自動）"]];
-  groups.forEach(g => {
-    g.bucket.forEach(r => {
-      const dateObj = new Date(r.date + "T00:00:00");
-      aoa.push([r.date, WEEKDAY_LABELS_JA[dateObj.getDay()], r.time || "", r.brand || "不明", Math.round(r.amount), Math.round(r.feeAmount), r.net != null ? Math.round(r.net) : "データなし"]);
-    });
-    const amount = g.bucket.reduce((s, r) => s + r.amount, 0);
-    const feeAmount = g.bucket.reduce((s, r) => s + r.feeAmount, 0);
-    const netAmount = otherPayReconcileExpectedAmount(g.bucket);
-    const dateObj = new Date(g.groupDate + "T00:00:00");
-    aoa.push([g.groupDate + " 振込分", WEEKDAY_LABELS_JA[dateObj.getDay()], "", `${g.bucket.length}件合計`, Math.round(amount), Math.round(feeAmount), netAmount !== null ? Math.round(netAmount) : "データなし"]);
-  });
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{wch:14},{wch:6},{wch:8},{wch:16},{wch:12},{wch:12},{wch:16}];
-  XLSX.utils.book_append_sheet(wb, ws, OTHERPAY_RECONCILE_COMPANY_LABELS[source] || source);
+/* ===================== その他決済確認 =====================
+   指定した月（決済日）・決済会社ごとに、②売上集計（レジ）のその他決済データと、⑤その他決済集計（決済端末）の
+   データを、日付と金額で突き合わせて、横に並べて表示する。どちらか一方にしかないデータはアラートで示す。
+   ②側の対応（実店舗の運用に基づく）：
+     ・funfo   … funfo伝票の支払い方法が「funfo」のもの
+     ・Square  … funfo伝票の支払い方法が「Square」または、現金・funfoのどちらでもない（カード等）もの
+                （Square端末はfunfoレジでの会計にのみ使うため）
+     ・PAYGATE … スマレジ取引のその他決済（スマレジのレジではPAYGATE端末しか使わないため）
+   ⑤側：funfo／Square は支払履歴・お取引CSVの1決済ごとの明細、PAYGATE は日別内訳CSVの明細
+        （日別内訳が未取込のときは、取引単位で突き合わせられないため、アラートは出さない）。 */
+const OTHERPAY_CHECK_COMPANIES = [
+  { id: "funfo", label: "funfo" },
+  { id: "square", label: "Square" },
+  { id: "paygate", label: "PAYGATE" }
+];
+let otherPayCheckCompany = "funfo";
 
-  const crossRows = computeRegiOtherPaySlipRows(monthKey, source);
-  const aoa2 = [["日付", "時間", "記録元", "決済方法", "金額"]];
-  crossRows.forEach(r => {
-    aoa2.push([r.date, r.time || "", r.sourceLabel, r.brand, Math.round(r.amount)]);
-  });
-  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
-  ws2["!cols"] = [{wch:11},{wch:8},{wch:12},{wch:14},{wch:12}];
-  XLSX.utils.book_append_sheet(wb, ws2, "②データとの照合");
-
-  XLSX.writeFile(wb, `入金消し込み_${OTHERPAY_RECONCILE_COMPANY_LABELS[source] || source}_${monthKey}.xlsx`);
-}
-
-// ②売上集計にアップロードされたfunfo伝票（xlsx）・スマレジ取引CSVから、その他決済（現金以外）の
-// 明細を1決済ごとに日にち・時間順で取り出す。レジ締めの生データ（regiSalesState）は日付ごとに
-// regiDailyStore（＝appStore）へ "regi_sales_v1_YYYY-MM-DD" のキーで保存されているため、
-// 対象月の全日付についてこのキーを直接読み出して集計する（レジ締め画面を開かなくても参照できる）。
-// 実店舗の運用として、Square端末はfunfoレジでの会計にのみ使い、スマレジのレジではPAYGATE端末
-// しか使わないため、companyには"square"（→funfo伝票を返す）か"paygate"（→スマレジ取引を返す）
-// のいずれかを渡す。"funfo"（funfoのCSV自体＝モバイルオーダー決済）には対応する②データが
-// 無いため、常に空配列を返す。
-// ※スマレジの明細は「内クレジット支払金額」列のみでカード/電子マネー/QRの区別ができないため、
-//   ブランド表示は「クレジット等（詳細不明）」とする。
-function computeRegiOtherPaySlipRows(monthKey, company){
-  if(company === "funfo") return [];
+// ②売上集計（レジ）のその他決済を、対象月・決済会社ごとに取り出す
+function regiOtherPayRowsForCheck(monthKey, company){
   const [y, m] = monthKey.split("-").map(Number);
   const dayCount = new Date(y, m, 0).getDate();
   const rows = [];
   for(let day = 1; day <= dayCount; day++){
     const dateStr = `${monthKey}-${String(day).padStart(2, "0")}`;
     let st;
-    try{ st = JSON.parse(appStore.getItem(regiSalesKey(dateStr)) || "null"); }
-    catch(e){ st = null; }
+    try{ st = JSON.parse(appStore.getItem(regiSalesKey(dateStr)) || "null"); }catch(e){ st = null; }
     if(!st) continue;
-    if(company !== "paygate"){
-      (st.funfoSlips || []).forEach(slip => {
-        (slip.payments || []).forEach(p => {
-          const method = String(p.method || "");
+    if(company === "funfo" || company === "square"){
+      (st.funfoSlips || []).forEach(slip=>{
+        (slip.payments || []).forEach(p=>{
           const amount = Number(p.amount) || 0;
-          if(method.includes("現金") || amount <= 0) return;
-          rows.push({ date: dateStr, time: slip.time || "", sourceLabel: "funfo伝票", brand: method, amount });
+          if(amount <= 0) return;
+          const cls = classifyFunfoPayMethod(p.method);
+          if(cls === "cash") return;
+          const mine = company === "funfo" ? cls === "funfo" : (cls === "square" || cls === "other");
+          if(mine) rows.push({ date: dateStr, time: slip.time || "", brand: String(p.method || ""), amount });
         });
       });
-    }
-    if(company !== "square"){
-      const smaregiByTx = {};
-      ((st.smaregi && st.smaregi.rows) || []).forEach(r => {
-        const otherAmt = Number(r.otherAmount) || 0;
-        if(otherAmt <= 0) return;
+    } else {
+      const byTx = {};
+      ((st.smaregi && st.smaregi.rows) || []).forEach(r=>{
+        const amt = Number(r.otherAmount) || 0;
+        if(amt <= 0) return;
         const txId = r.txId || (dateStr + "::" + (r.time || ""));
-        if(!smaregiByTx[txId]) smaregiByTx[txId] = { date: dateStr, time: r.time || "", amount: 0 };
-        smaregiByTx[txId].amount += otherAmt;
+        if(!byTx[txId]) byTx[txId] = { date: dateStr, time: r.time || "", brand: "クレジット等（詳細不明）", amount: 0 };
+        byTx[txId].amount += amt;
       });
-      Object.values(smaregiByTx).forEach(tx => {
-        rows.push({ date: tx.date, time: tx.time, sourceLabel: "スマレジ取引", brand: "クレジット等（詳細不明）", amount: tx.amount });
-      });
+      Object.values(byTx).forEach(tx=>rows.push(tx));
     }
   }
-  rows.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   return rows;
 }
-function renderOtherPayRegiCrossCheck(monthKey, company){
-  const body = document.getElementById("otherPayRegiCrossCheckBody");
-  const emptyEl = document.getElementById("otherPayRegiCrossCheckEmpty");
-  const summaryEl = document.getElementById("otherPayRegiCrossCheckSummary");
-  const titleEl = document.getElementById("otherPayRegiCrossCheckTitle");
-  const hintEl = document.getElementById("otherPayRegiCrossCheckHint");
+// ⑤その他決済集計（決済端末）のデータを、対象月（決済日）・決済会社ごとに取り出す。取引単位で取り出せないときは null。
+function terminalOtherPayRowsForCheck(monthKey, company){
+  const inMonth = d => d && String(d).slice(0, 7) === monthKey;
+  if(company === "paygate"){
+    if(!paygateDetailRows || !paygateDetailRows.length) return null;
+    return paygateDetailRows.filter(r=>inMonth(r.date)).map(r=>({
+      date: r.date, time: "", brand: r.brand || "", amount: Number(r.amount) || 0,
+      payDate: (r._period && r._period.payDate) || ""
+    }));
+  }
+  return otherPayRows.filter(r=>r.source === company && inMonth(r.date)).map(r=>({
+    date: r.date, time: r.time || "", brand: r.brand || "", amount: Number(r.amount) || 0, payDate: r.payDate || ""
+  }));
+}
+function checkTimeToMin(t){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+}
+// ②と⑤を、日付＋金額が同じもの同士で対応づける（同じ日付・金額が複数あるときは、時間が近いものから）。
+function matchOtherPayCheckRows(L, R){
+  const byKey = new Map();
+  R.forEach((r, i)=>{
+    const k = r.date + "|" + Math.round(r.amount);
+    if(!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(i);
+  });
+  const usedR = new Set();
+  const out = [];
+  const sortedL = L.slice().sort((a,b)=> (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  sortedL.forEach(l=>{
+    const cands = (byKey.get(l.date + "|" + Math.round(l.amount)) || []).filter(i=>!usedR.has(i));
+    let pick = -1;
+    if(cands.length){
+      const lt = checkTimeToMin(l.time);
+      pick = cands[0];
+      if(lt !== null){
+        let best = Infinity;
+        cands.forEach(i=>{
+          const rt = checkTimeToMin(R[i].time);
+          const diff = rt === null ? 9999 : Math.abs(rt - lt);
+          if(diff < best){ best = diff; pick = i; }
+        });
+      }
+    }
+    if(pick >= 0){ usedR.add(pick); out.push({ type: "pair", l, r: R[pick] }); }
+    else out.push({ type: "leftOnly", l, r: null });
+  });
+  R.forEach((r, i)=>{ if(!usedR.has(i)) out.push({ type: "rightOnly", l: null, r }); });
+  out.sort((a, b)=>{
+    const ka = ((a.l || a.r).date + ((a.l || a.r).time || "")), kb = ((b.l || b.r).date + ((b.l || b.r).time || ""));
+    return ka.localeCompare(kb) || ((a.l || a.r).amount - (b.l || b.r).amount);
+  });
+  return out;
+}
+// 決済会社ごとの照合結果（表示用）
+function computeOtherPayCheck(monthKey, company){
+  const L = regiOtherPayRowsForCheck(monthKey, company);
+  const R = terminalOtherPayRowsForCheck(monthKey, company);
+  if(R === null) return { rows: L.map(l=>({ type: "unchecked", l, r: null })), L, R: [], unavailable: true, leftOnly: 0, rightOnly: 0, pairs: 0 };
+  const rows = matchOtherPayCheckRows(L, R);
+  const count = t=>rows.filter(x=>x.type === t).length;
+  return { rows, L, R, unavailable: false, leftOnly: count("leftOnly"), rightOnly: count("rightOnly"), pairs: count("pair") };
+}
+function otherPayCheckMonth(){
+  const el = document.getElementById("otherPayCheckMonth");
+  if(el && !el.value) el.value = todayStr().slice(0, 7);
+  return el ? el.value : todayStr().slice(0, 7);
+}
+function setOtherPayCheckCompany(id){ otherPayCheckCompany = id; renderOtherPayCheckView(); }
+function renderOtherPayCheckView(){
+  const body = document.getElementById("otherPayCheckBody");
   if(!body) return;
-  const info = OTHERPAY_RECONCILE_REGI_SOURCE[company];
-  if(titleEl) titleEl.textContent = info ? `②売上集計データとの照合（${info.label}・参考）` : "②売上集計データとの照合（参考）";
-  if(hintEl) hintEl.textContent = info ? info.hint : "funfoはモバイルオーダー決済のため、②売上集計側に対応するレジ生データはありません。";
-  if(!info){
-    body.innerHTML = "";
-    if(emptyEl) emptyEl.style.display = "block";
-    if(summaryEl) summaryEl.innerHTML = "";
-    return;
+  const monthKey = otherPayCheckMonth();
+  // 決済会社ごとのアラート件数（3社分）と、選択の切り替え
+  const results = {};
+  OTHERPAY_CHECK_COMPANIES.forEach(c=>{ results[c.id] = computeOtherPayCheck(monthKey, c.id); });
+  document.getElementById("otherPayCheckCompanyChips").innerHTML = OTHERPAY_CHECK_COMPANIES.map(c=>{
+    const r = results[c.id], n = r.leftOnly + r.rightOnly;
+    const sel = c.id === otherPayCheckCompany;
+    return `<button type="button" class="${sel ? "" : "secondary"}" style="padding:4px 12px;" onclick="setOtherPayCheckCompany('${c.id}')">${c.label}${r.unavailable ? "" : (n ? ` <span style="color:${sel ? "#ffd2cc" : "#c0392b"};font-weight:700;">⚠${n}</span>` : ` <span style="opacity:.8;">✓</span>`)}</button>`;
+  }).join("");
+  const res = results[otherPayCheckCompany];
+  const company = OTHERPAY_CHECK_COMPANIES.find(c=>c.id === otherPayCheckCompany);
+  // アラート
+  const alertBox = document.getElementById("otherPayCheckAlert");
+  const totalAlerts = OTHERPAY_CHECK_COMPANIES.reduce((t,c)=>t + results[c.id].leftOnly + results[c.id].rightOnly, 0);
+  const lines = OTHERPAY_CHECK_COMPANIES.filter(c=>results[c.id].leftOnly + results[c.id].rightOnly > 0)
+    .map(c=>`${c.label}：レジのみ ${results[c.id].leftOnly}件／決済端末のみ ${results[c.id].rightOnly}件`);
+  alertBox.innerHTML = totalAlerts
+    ? `<div style="padding:8px 12px;border:1px solid #e0a8a0;background:#fdecea;color:#c0392b;border-radius:8px;font-size:13px;line-height:1.7;"><b>⚠ ${monthKey} に、レジと決済端末で対応するデータが無い決済が、合計${totalAlerts}件あります。</b><br>${lines.join("　／　")}</div>`
+    : `<div style="padding:8px 12px;border:1px solid #b9dcc4;background:#eef8f1;color:#1a8a3d;border-radius:8px;font-size:13px;">✅ ${monthKey} は、レジと決済端末のデータが、全て対応しています。</div>`;
+  // 注記
+  const noteEl = document.getElementById("otherPayCheckNote");
+  const notes = [];
+  if(res.unavailable) notes.push("PAYGATEの日別内訳（電子マネー取引履歴・バーコード決済取引履歴・クレジット処理結果）が取り込まれていないため、取引単位の照合ができません。アラートは出していません。");
+  if(!res.unavailable && !res.R.length) notes.push(`⑤その他決済集計に、${company.label}の${monthKey}の決済データがありません（CSVを取り込んでいるか確認してください）。`);
+  if(!res.L.length) notes.push(`②売上集計に、${company.label}に該当する${monthKey}のその他決済がありません。`);
+  noteEl.innerHTML = notes.map(n=>`<div style="color:#a8740a;">${escAttr(n)}</div>`).join("");
+  // 表
+  const tdS = "padding:3px 8px;border:1px solid var(--border);";
+  const cell = (r, withPay)=>{
+    if(!r) return `<td style="${tdS}background:#f4f4f4;color:var(--muted);text-align:center;" colspan="${withPay ? 5 : 4}">－</td>`;
+    const t = `<td style="${tdS}">${r.date}</td><td style="${tdS}text-align:center;">${escAttr(r.time || "－")}</td><td style="${tdS}">${escAttr(r.brand || "")}</td><td style="${tdS}text-align:right;">${fmtNum(Math.round(r.amount))}円</td>`;
+    return t + (withPay ? `<td style="${tdS}">${r.payDate || "－"}</td>` : "");
+  };
+  const label = { pair: ["✅ 一致", "#1a8a3d", ""], leftOnly: ["⚠ レジのみ（端末データなし）", "#c0392b", "background:#fdecea;"], rightOnly: ["⚠ 端末のみ（レジデータなし）", "#c0392b", "background:#fff3e0;"], unchecked: ["－ 照合不可", "var(--muted)", ""] };
+  body.innerHTML = res.rows.map(x=>{
+    const [txt, color, bg] = label[x.type];
+    return `<tr style="${bg}"><td style="${tdS}font-weight:700;color:${color};white-space:nowrap;">${txt}</td>${cell(x.l, false)}${cell(x.r, true)}</tr>`;
+  }).join("");
+  if(res.rows.length){
+    const lt = res.L.reduce((t,r)=>t + r.amount, 0), rt = res.R.reduce((t,r)=>t + r.amount, 0);
+    const diff = rt - lt;
+    body.innerHTML += `<tr style="font-weight:700;background:var(--bg);"><td style="${tdS}">合計</td><td style="${tdS}text-align:right;" colspan="3">${res.L.length}件</td><td style="${tdS}text-align:right;">${fmtNum(Math.round(lt))}円</td>
+      <td style="${tdS}text-align:right;" colspan="3">${res.unavailable ? "－" : res.R.length + "件"}</td><td style="${tdS}text-align:right;" colspan="2">${res.unavailable ? "－" : fmtNum(Math.round(rt)) + "円　" + `<span style="color:${Math.abs(diff) <= 1 ? "#1a8a3d" : "#c0392b"};">（差 ${fmtNum(Math.round(diff))}円）</span>`}</td></tr>`;
   }
-  const rows = computeRegiOtherPaySlipRows(monthKey, company);
-  if(!rows.length){
-    body.innerHTML = "";
-    if(emptyEl) emptyEl.style.display = "block";
-  } else {
-    if(emptyEl) emptyEl.style.display = "none";
-    body.innerHTML = rows.map(r => `<tr>
-      <td style="padding:4px 8px;border:1px solid var(--border);">${r.date}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:center;">${escAttr(r.time || "－")}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);">${escAttr(r.sourceLabel)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);">${escAttr(r.brand)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.amount)}円</td>
-    </tr>`).join("");
-  }
-  if(summaryEl){
-    const regiTotal = rows.reduce((s, r) => s + r.amount, 0);
-    const csvTotal = otherPayReconcileSourceRows(company)
-      .filter(r => (r.payDate || r.date) && (r.payDate || r.date).slice(0, 7) === monthKey)
-      .reduce((s, r) => s + r.amount, 0);
-    const diff = csvTotal - regiTotal;
-    const diffOk = Math.abs(diff) <= 1;
-    summaryEl.innerHTML = `②の記録合計：${fmtNum(regiTotal)}円（${rows.length}件）　／　⑤の${OTHERPAY_RECONCILE_COMPANY_LABELS[company]}CSV合計：${fmtNum(csvTotal)}円　／　差：` +
-      `<span style="color:${diffOk ? "#1a8a3d" : "#c0392b"};">${fmtNum(diff)}円${diffOk ? "（一致）" : "（要確認）"}</span>`;
-  }
+  document.getElementById("otherPayCheckEmpty").style.display = res.rows.length ? "none" : "block";
+}
+function exportOtherPayCheckToExcel(){
+  if(typeof XLSX === "undefined"){ salesExcelUnavailableAlert(); return; }
+  const monthKey = otherPayCheckMonth();
+  const wb = XLSX.utils.book_new();
+  const names = { pair: "一致", leftOnly: "レジのみ（端末データなし）", rightOnly: "端末のみ（レジデータなし）", unchecked: "照合不可" };
+  OTHERPAY_CHECK_COMPANIES.forEach(c=>{
+    const res = computeOtherPayCheck(monthKey, c.id);
+    const aoa = [["状態", "②日付", "②時間", "②決済方法", "②金額", "⑤日付", "⑤時間", "⑤決済方法", "⑤金額", "⑤振込日"]];
+    res.rows.forEach(x=>{
+      aoa.push([names[x.type], x.l ? x.l.date : "", x.l ? x.l.time : "", x.l ? x.l.brand : "", x.l ? Math.round(x.l.amount) : "",
+        x.r ? x.r.date : "", x.r ? x.r.time : "", x.r ? x.r.brand : "", x.r ? Math.round(x.r.amount) : "", x.r ? x.r.payDate : ""]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{wch:26},{wch:11},{wch:8},{wch:18},{wch:10},{wch:11},{wch:8},{wch:18},{wch:10},{wch:11}];
+    XLSX.utils.book_append_sheet(wb, ws, c.label);
+  });
+  XLSX.writeFile(wb, `その他決済確認_${monthKey}.xlsx`);
 }
 
-// 提出データビュー：取込済みCSVファイルごとに、管理部へ提出したかどうかを記録する。
-// ※このビューは概要のみの実装。詳しい仕様は別途相談のうえ更新する想定。
 function renderOtherPaySubmitView(){
   const box = document.getElementById("otherPaySubmitList");
   if(!box) return;
@@ -17749,7 +17431,7 @@ function toggleOtherPaySubmitted(source, id, val){
 
 function switchOtherPaySubView(v){
   otherPaySubView = v;
-  ["method", "company", "daily", "reconcile", "submit"].forEach(k => {
+  ["method", "company", "check", "submit"].forEach(k => {
     const btn = document.getElementById("otherPayTab" + k.charAt(0).toUpperCase() + k.slice(1) + "Btn");
     const panel = document.getElementById("otherPayPanel" + k.charAt(0).toUpperCase() + k.slice(1));
     if(btn) btn.classList.toggle("active", k === v);
@@ -17764,8 +17446,7 @@ function renderOtherPayActiveView(){
   renderOtherPayUnknownWarning();
   if(otherPaySubView === "method") renderOtherPayMethodView();
   else if(otherPaySubView === "company") renderOtherPayCompanyView();
-  else if(otherPaySubView === "daily") renderOtherPayDailyView();
-  else if(otherPaySubView === "reconcile") renderOtherPayReconcileView();
+  else if(otherPaySubView === "check") renderOtherPayCheckView();
   else if(otherPaySubView === "submit") renderOtherPaySubmitView();
 }
 
@@ -17774,108 +17455,6 @@ function renderOtherPayActiveView(){
 // funfo・Squareは実際の取引日をそのまま使う。PAYGATEは日別内訳CSV（電子マネー/QR/クレジットの
 // 取引履歴）が取り込まれていればそちらの実際の取引日・日割り配分済み手数料を使い、
 // 未取込の場合は精算明細の「支払日」にまとめて計上する（フォールバック。従来どおりの挙動）。
-function computeOtherPayDailyRows(monthKey){
-  const [y, m] = monthKey.split("-").map(Number);
-  const dayCount = new Date(y, m, 0).getDate();
-  const blankBucket = () => ({ credit: {amount:0,fee:0}, emoney: {amount:0,fee:0}, qr: {amount:0,fee:0}, unknown: {amount:0,fee:0} });
-  const byDate = {};
-  const addRow = (r) => {
-    if(!r.date || r.date.slice(0,7) !== monthKey) return;
-    if(!byDate[r.date]) byDate[r.date] = blankBucket();
-    const key = ["credit","emoney","qr"].includes(r.method) ? r.method : "unknown";
-    byDate[r.date][key].amount += Number(r.amount)||0;
-    byDate[r.date][key].fee += Number(r.feeAmount)||0;
-  };
-  otherPayRows.forEach(r => { if(r.source !== "paygate") addRow(r); });
-  if(paygateDetailRows.length){
-    paygateDetailRows.forEach(addRow);
-  } else {
-    otherPayRows.forEach(r => { if(r.source === "paygate") addRow(r); });
-  }
-  const rows = [];
-  for(let day = 1; day <= dayCount; day++){
-    const dateStr = `${monthKey}-${String(day).padStart(2, "0")}`;
-    const b = byDate[dateStr] || blankBucket();
-    const totalAmount = b.credit.amount + b.emoney.amount + b.qr.amount + b.unknown.amount;
-    const totalFee = b.credit.fee + b.emoney.fee + b.qr.fee + b.unknown.fee;
-    rows.push({ date: dateStr, credit: b.credit, emoney: b.emoney, qr: b.qr, unknown: b.unknown, totalAmount, totalFee });
-  }
-  return rows;
-}
-function renderOtherPayDailyView(){
-  const monthInput = document.getElementById("otherPayDailyMonth");
-  if(!monthInput.value){
-    const dates = otherPayRows.map(r => r.date).filter(Boolean).sort();
-    monthInput.value = dates.length ? dates[dates.length-1].slice(0,7) : todayStr().slice(0,7);
-  }
-  const monthKey = monthInput.value;
-  const rows = computeOtherPayDailyRows(monthKey);
-  const body = document.getElementById("otherPayDailyBody");
-  const emptyEl = document.getElementById("otherPayDailyEmpty");
-  if(!body) return;
-  const hasAny = rows.some(r => r.totalAmount > 0);
-  if(!hasAny){ body.innerHTML = ""; if(emptyEl) emptyEl.style.display = "block"; return; }
-  if(emptyEl) emptyEl.style.display = "none";
-  const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
-  const sums = { credit:{amount:0,fee:0}, emoney:{amount:0,fee:0}, qr:{amount:0,fee:0}, totalAmount:0, totalFee:0 };
-  const rowsHtml = rows.map(r => {
-    sums.credit.amount += r.credit.amount; sums.credit.fee += r.credit.fee;
-    sums.emoney.amount += r.emoney.amount; sums.emoney.fee += r.emoney.fee;
-    sums.qr.amount += r.qr.amount; sums.qr.fee += r.qr.fee;
-    sums.totalAmount += r.totalAmount; sums.totalFee += r.totalFee;
-    const wd = WEEKDAY_JA[new Date(r.date + "T00:00:00").getDay()];
-    return `<tr${r.totalAmount === 0 ? ' style="color:var(--muted);"' : ""}>
-      <td style="padding:4px 8px;border:1px solid var(--border);">${formatDateDisplay(r.date)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);">${wd}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.credit.amount)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.credit.fee)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.emoney.amount)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.emoney.fee)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.qr.amount)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(r.qr.fee)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;font-weight:600;">${fmtNum(r.totalAmount)}</td>
-      <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;font-weight:600;">${fmtNum(r.totalFee)}</td>
-    </tr>`;
-  }).join("");
-  body.innerHTML = rowsHtml + `<tr style="font-weight:700;background:var(--bg);">
-    <td style="padding:4px 8px;border:1px solid var(--border);" colspan="2">合計</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.credit.amount)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.credit.fee)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.emoney.amount)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.emoney.fee)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.qr.amount)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.qr.fee)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.totalAmount)}</td>
-    <td style="padding:4px 8px;border:1px solid var(--border);text-align:right;">${fmtNum(sums.totalFee)}</td>
-  </tr>`;
-}
-// ⑤その他決済集計「日別決済金額」ビューをExcel(.xlsx)としてダウンロードする（消し込み作業用）。
-function exportOtherPayDailyToExcel(){
-  if(typeof XLSX === "undefined"){ salesExcelUnavailableAlert(); return; }
-  const monthKey = document.getElementById("otherPayDailyMonth").value || todayStr().slice(0,7);
-  const rows = computeOtherPayDailyRows(monthKey);
-  const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
-  const aoa = [
-    [`その他決済集計　日別決済金額　${monthKey}`], [],
-    ["日付","曜日","クレジットカード金額","クレジットカード手数料","電子マネー金額","電子マネー手数料","QRコード決済金額","QRコード決済手数料","合計金額","合計手数料"]
-  ];
-  const sums = { credit:{amount:0,fee:0}, emoney:{amount:0,fee:0}, qr:{amount:0,fee:0}, totalAmount:0, totalFee:0 };
-  rows.forEach(r => {
-    sums.credit.amount += r.credit.amount; sums.credit.fee += r.credit.fee;
-    sums.emoney.amount += r.emoney.amount; sums.emoney.fee += r.emoney.fee;
-    sums.qr.amount += r.qr.amount; sums.qr.fee += r.qr.fee;
-    sums.totalAmount += r.totalAmount; sums.totalFee += r.totalFee;
-    const wd = WEEKDAY_JA[new Date(r.date + "T00:00:00").getDay()];
-    aoa.push([formatDateDisplay(r.date), wd, Math.round(r.credit.amount), Math.round(r.credit.fee), Math.round(r.emoney.amount), Math.round(r.emoney.fee), Math.round(r.qr.amount), Math.round(r.qr.fee), Math.round(r.totalAmount), Math.round(r.totalFee)]);
-  });
-  aoa.push(["合計", "", Math.round(sums.credit.amount), Math.round(sums.credit.fee), Math.round(sums.emoney.amount), Math.round(sums.emoney.fee), Math.round(sums.qr.amount), Math.round(sums.qr.fee), Math.round(sums.totalAmount), Math.round(sums.totalFee)]);
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{wch:12},{wch:6},{wch:14},{wch:12},{wch:14},{wch:12},{wch:14},{wch:12},{wch:12},{wch:12}];
-  XLSX.utils.book_append_sheet(wb, ws, "日別決済金額");
-  XLSX.writeFile(wb, `その他決済集計_日別決済金額_${monthKey}.xlsx`);
-}
-
 function fillOtherPayTemplate(tpl, summaryText){
   return String(tpl || "")
     .replaceAll("{{storeName}}", regiSettings.storeName)
