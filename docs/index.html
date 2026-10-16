@@ -2566,6 +2566,25 @@ function safeLocalStorageSetItem(key, value){
    移行済みのregi_sales_v1_*・regi_close_v1_*データを引き続き問題なく参照できるよう、変更していない
    （中身は「レジ締め日別データ専用」から「アプリの全保存データ用」へ拡張されている）。
    ========================================================== */
+// 起動時のデータ読み込み（ブート処理）が始まる前は、画面上の一覧などがまだ空の初期値のままなので、
+// その状態で保存すると、クラウドの中身を空で上書きしてしまう（2026-10-16、ログイン画面の裏で
+// その他決済の取込履歴を空で上書きした事故）。ブート処理が始まるまでは保存を受け付けない。
+let _appDataLoaded = false;
+let _writeBeforeBootWarned = false;
+function _warnWriteBeforeBoot(key){
+  // モーダル（alert）は画面を止めてしまうので使わず、記録と画面上部の表示だけにする
+  console.warn("起動中のため保存しませんでした:", key);
+  (window.__preBootWrites = window.__preBootWrites || []).push(String(key));
+  if(_writeBeforeBootWarned) return;
+  _writeBeforeBootWarned = true;
+  const show = ()=>{
+    const el = document.getElementById("cloudLocalBanner");
+    if(!el) return;
+    el.style.display = "block";
+    el.textContent = "⚠ まだデータの読み込みが終わっていないため、保存しませんでした。ログイン（部門・氏名・暗証番号）を済ませて、画面が表示されてから操作してください。";
+  };
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", show); else show();
+}
 const REGI_IDB_DB_NAME = "regi_daily_store_v1";
 const REGI_IDB_STORE_NAME = "daily";
 // v1は「レジ締め日別データのみ」を対象にしていた旧移行フラグ（後方互換のため残す。以後の判定には使わない）。
@@ -2678,6 +2697,7 @@ function deptVisibleKeys(){
 const regiDailyStore = {
   getItem(key){ key = deptStoreKey(key); return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null; },
   setItem(key, value){
+    if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
     key = deptStoreKey(key);
     const _changed = _regiDailyCache.get(key) !== value;
     _regiDailyCache.set(key, value);
@@ -2694,6 +2714,7 @@ const regiDailyStore = {
     });
   },
   removeItem(key){
+    if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
     key = deptStoreKey(key);
     const _had = _regiDailyCache.has(key);
     _regiDailyCache.delete(key);
@@ -3281,6 +3302,7 @@ function registerBootStep(fn){ _bootSteps.push(fn); }
 async function runBootSteps(){
   await _regiDailyStoreReady;
   await appAccountGate(); // アカウントが登録されていれば、部門選択→氏名選択→暗証番号（無ければ何もしない）
+  _appDataLoaded = true;
   for(const step of _bootSteps){
     try{ step(); }catch(err){ console.error("boot step failed:", err); }
   }
