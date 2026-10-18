@@ -1678,7 +1678,7 @@
             <div id="storageUsageCleanupResult" class="hint" style="margin-top:6px;"></div>
           </div>
           <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">
-            <div class="hint" style="margin-bottom:6px;">古いデータの削除を毎回手動で行わなくて済むよう、基準日数より古い伝票明細データを、時間帯別集計・売上金額を「売上管理」へ反映した上で自動的に削除できます（伝票単位の明細のみが対象。時間帯別・売上金額・商品未マッチ確認などに使う数値は残ります）。1日1回、ページを開いたときにバックグラウンドで実行します。</div>
+            <div class="hint" style="margin-bottom:6px;">古いデータの削除を毎回手動で行わなくて済むよう、基準日数より古い伝票明細データを、時間帯別集計・売上金額を「売上管理」へ反映した上で自動的に削除できます（伝票単位の明細のみが対象。時間帯別・売上金額・商品未マッチ確認などに使う数値は残ります）。1日1回、ページを開いたときにバックグラウンドで実行します。<b style="color:var(--danger);">有効にすると、②売上集計・その他決済確認などで、基準日数より前のデータが見られなくなります。通常はオフのままにしてください。</b></div>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;">
               <input type="checkbox" id="set_autoCleanupEnabled" onchange="saveRegiAutoCleanupSettings()"> 自動整理を有効にする
             </label>
@@ -14425,7 +14425,7 @@ let regiView = "regi";
 let lastRegiTheoryTotal = 0, lastRegiActualTotal = 0;
 const REGI_DEFAULT_SETTINGS = {
   regiTheoryTemplate: null, regiTheoryTemplateSavedAt: null,
-  autoCleanupEnabled: true, autoCleanupDays: 30,
+  autoCleanupEnabled: false, autoCleanupDays: 30,
   storeName: "千石蔵ビアホール", partner: "国稀酒造株式会社", email: "", cc: "",
   subjectTemplate: "【{{storeName}}】{{date}} 売上集計報告",
   bodyTemplate:
@@ -17522,7 +17522,7 @@ function renderRegiSettingsView(){
   document.getElementById("set_otherPayCc").value = regiSettings.otherPayCc || "";
   document.getElementById("set_otherPaySubjectTemplate").value = regiSettings.otherPaySubjectTemplate || "";
   document.getElementById("set_otherPayBodyTemplate").value = regiSettings.otherPayBodyTemplate || "";
-  document.getElementById("set_autoCleanupEnabled").checked = regiSettings.autoCleanupEnabled !== false;
+  document.getElementById("set_autoCleanupEnabled").checked = !!(regiSettings.autoCleanupEnabled && regiSettings.autoCleanupConfirmed);
   document.getElementById("set_autoCleanupDays").value = regiSettings.autoCleanupDays || REGI_DEFAULT_SETTINGS.autoCleanupDays;
   renderRegiAutoCleanupStatus();
 }
@@ -17536,7 +17536,15 @@ function renderRegiAutoCleanupStatus(){
     : `最終実行：${r.ranAt}　対象日はありませんでした`;
 }
 function saveRegiAutoCleanupSettings(){
-  regiSettings.autoCleanupEnabled = document.getElementById("set_autoCleanupEnabled").checked;
+  const wantOn = document.getElementById("set_autoCleanupEnabled").checked;
+  if(wantOn && !regiSettings.autoCleanupConfirmed){
+    if(!confirm("自動整理を有効にすると、基準日数より古いfunfo伝票・スマレジ明細・レジ締めの日別データが、毎日自動で削除されます（②売上集計や、その他決済確認に過去のデータが出なくなります）。\n\n本当に有効にしますか？")){
+      document.getElementById("set_autoCleanupEnabled").checked = false;
+      return;
+    }
+    regiSettings.autoCleanupConfirmed = true;
+  }
+  regiSettings.autoCleanupEnabled = wantOn;
   regiSettings.autoCleanupDays = Math.max(1, Number(document.getElementById("set_autoCleanupDays").value) || REGI_DEFAULT_SETTINGS.autoCleanupDays);
   persistRegiSettings();
 }
@@ -17998,7 +18006,8 @@ function cleanupOldRegiDailyData(){
 let _regiAutoCleanupLastResult = null;
 function autoCleanupOldRegiDailyData(){
   try{
-    if(!regiSettings.autoCleanupEnabled) return;
+    // 以前は初期設定で有効になっており、30日より前のデータが自動で消えていた。利用者が確認して有効にした場合のみ動かす。
+    if(!regiSettings.autoCleanupEnabled || !regiSettings.autoCleanupConfirmed) return;
     const days = Number(regiSettings.autoCleanupDays) || 30;
     const today = todayStr();
     const lastRun = appStore.getItem("regi_auto_cleanup_last_run_v1");
