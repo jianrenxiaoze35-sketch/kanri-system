@@ -17248,7 +17248,7 @@ function regiOtherPayRowsForCheck(monthKey, company){
   for(let day = 1; day <= dayCount; day++){
     const dateStr = `${monthKey}-${String(day).padStart(2, "0")}`;
     let st;
-    try{ st = JSON.parse(appStore.getItem(regiSalesKey(dateStr)) || "null"); }catch(e){ st = null; }
+    try{ st = JSON.parse(regiDailyStore.getItem(regiSalesKey(dateStr)) || "null"); }catch(e){ st = null; }
     if(!st) continue;
     if(company === "funfo" || company === "square"){
       (st.funfoSlips || []).forEach(slip=>{
