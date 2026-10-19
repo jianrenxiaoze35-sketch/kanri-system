@@ -3549,7 +3549,7 @@ const INGREDIENT_SORT_COLUMNS = [
   { key: "lotTotalAmount", label: "価格(大)<br>合計金額", type: "num" },
   { key: "purchaseHistoryTotalAmount", label: "総額<br>(按分込み)", type: "num" },
   { key: "purchaseHistoryAllocatedAmount", label: "うちその他<br>経費按分", type: "num" },
-  { key: "purchaseHistoryTotalQty", label: "総数", type: "num" },
+  { key: "purchaseHistoryTotalQty", label: "総数<br>(単位:中)", type: "num" },
   { key: "status", label: "ステータス", type: "text" },
   { key: "storageLocationsText", label: "保管場所", type: "text" },
   { key: "stockFromLot", label: "在庫数<br>(仕入累計・中)", type: "num" },
@@ -8550,7 +8550,7 @@ function renderIngredients(){
         <td>${fmtNum(Math.round(r.lotTotalAmount*100)/100)}</td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalAmount*100)/100)}</td>
         <td class="calc" title="${escAttr(r.allocatedTooltip || "その他経費の按分はありません")}">${fmtNum(Math.round(r.purchaseHistoryAllocatedAmount*100)/100)}</td>
-        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalQty*100)/100)}</td>
+        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalQty*100)/100)}${m.midUnit ? `<span style="color:var(--muted);font-size:11px;"> ${escAttr(m.midUnit)}</span>` : ""}</td>
         <td${cls("status","text")}><select title="仕入れデータの有無により自動的に上書きされる場合があります" onchange="updateMaterialInline('${m.id}','status',this.value)">${inlineSelectOptions(OPTIONS.status, m.status)}</select></td>
         <td${cls("storageLocations","text")}><div style="cursor:pointer;min-height:16px;" onclick="event.stopPropagation();openIngredientStorageEditor('${m.id}',this)" title="クリックして保管場所を選択">${(m.storageLocations||[]).join("、") || '<span style="color:var(--muted);">（未選択・クリックして選択）</span>'}</div></td>
         <td class="calc">${fmtNum(Math.round(r.stockFromLot*100)/100)}</td>
@@ -8714,7 +8714,7 @@ function saveIngredientsBulk(){
 
 /* ---------- 原料・資材・半製品マスタ CSV書き出し ---------- */
 function exportIngredientsCSV(){
-  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","単位(中)","価格(中)税込","数値(中)","単位(大)","価格(大)税込","価格(大)合計金額","総額(按分込み)","うちその他経費按分","総数","ステータス","保管場所","在庫数(仕入累計・中)","単位(中)(在庫)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
+  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","単位(中)","価格(中)税込","数値(中)","単位(大)","価格(大)税込","価格(大)合計金額","総額(按分込み)","うちその他経費按分","総数(中)","ステータス","保管場所","在庫数(仕入累計・中)","単位(中)(在庫)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
   const list = materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=>{
