@@ -2236,7 +2236,7 @@
       <div class="form-field"><label>単位(小)</label><select id="f_pu_packUnit"></select></div>
       <div class="form-field"><label>ロット入数(大)</label><input type="number" id="f_pu_lotQty" step="0.01"></div>
       <div class="form-field"><label>単位(大)</label><select id="f_pu_lotUnit"></select></div>
-      <div class="form-field"><label>メーカー</label><input type="text" id="f_pu_maker"></div>
+      <div class="form-field"><label>メーカー</label><select id="f_pu_maker"></select></div>
     </div>
     <div id="f_pu_allocBox" style="display:none;margin:0 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#f7faf8;">
       <div style="font-weight:700;margin-bottom:6px;">その他経費（イニシャルコスト・サービス料・割引・送料など）の按分先</div>
@@ -2394,7 +2394,7 @@
         <div class="form-field"><label>中分類</label><select id="f_i_bunrui" onchange="refreshMaterialCategoryOptions()"></select></div>
         <div class="form-field"><label>小分類</label><select id="f_i_subCategory"></select></div>
         <div class="form-field"><label>ステータス<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">※仕入れ管理に仕入れデータがあれば自動的に「在庫〇」、無ければ「未取り扱い」になります</span></label><select id="f_i_status"></select></div>
-        <div class="form-field"><label>メーカー</label><input type="text" id="f_i_maker"></div>
+        <div class="form-field"><label>メーカー</label><select id="f_i_maker"></select></div>
         <div class="form-field"><label>仕入れ先</label><select id="f_i_supplier"></select></div>
 
         <div class="section-title">単位・価格</div>
@@ -3335,6 +3335,7 @@ const DEFAULT_OPTIONS = {
   // 単位（中）：在庫を数える単位（例：本）。初期値は単位（小）と同じ内容（初回に移し替える）
   unitMid: ["g", "kg", "ml", "L", "個", "本", "枚", "袋", "m", "台", "式", "図", "個口", "CAN", "P", "PCS", "pack"],
   status: ["在庫〇", "未取り扱い"],
+  maker: [],
   storageLocation: ["倉庫", "厨房", "カウンター", "カウンターコールドテーブル", "厨房コールドテーブル", "厨房冷蔵庫", "厨房冷凍庫", "チェストストッカー"],
   supplier: ["仕入れ先A", "仕入れ先B", "仕入れ先C", "その他"],
   salesCategory: ["レストラン", "Shop"],
@@ -3360,6 +3361,7 @@ const FIELD_LABELS = {
   unit: "単位 小（原料・資材）",
   status: "ステータス（原料・資材）",
   storageLocation: "保管場所（原料・資材）",
+  maker: "メーカー（原料・資材）",
   supplier: "仕入れ先（原料・資材）",
   purchaseStatus: "ステータス（仕入れ）"
 };
@@ -3504,6 +3506,7 @@ const OPTION_REG_FIELDS = {
     { opt: "category", f: "subCategory", label: "小分類", nested: true, bunruiField: "bunrui" },
     { opt: "status", f: "status", label: "ステータス" },
     { opt: "supplier", f: "supplier", label: "仕入れ先" },
+    { opt: "maker", f: "maker", label: "メーカー" },
     { opt: "unit", f: "unit", label: "単位(小)" },
     { opt: "unitMid", f: "midUnit", label: "単位(中)" },
     { opt: "lotUnit", f: "lotUnit", label: "単位(大)" },
@@ -3514,6 +3517,7 @@ const OPTION_REG_FIELDS = {
     { opt: "bunrui", f: "bunrui", label: "中分類" },
     { opt: "category", f: "category", label: "小分類", nested: true, bunruiField: "bunrui" },
     { opt: "supplier", f: "supplier", label: "仕入れ先" },
+    { opt: "maker", f: "maker", label: "メーカー" },
     { opt: "purchaseStatus", f: "status", label: "ステータス" },
     { opt: "unitMid", f: "unit", label: "単位(中)" },
     { opt: "unit", f: "packUnit", label: "単位(小)" },
@@ -3652,6 +3656,20 @@ function closeOptionRegistration(doRegister){
   _optionRegOpen = false;
   if(added) alert(`${added}件を、設定の分類に登録しました。`);
 }
+// メーカーを分類の選択肢にした。初回だけ、すでに入っているメーカー名を、選択肢として登録する。
+registerBootStep(function(){
+  const FLAG = "maker_options_seed_v1_done";
+  if(appStore.getItem(FLAG)) return;
+  const set = new Set(Array.isArray(OPTIONS.maker) ? OPTIONS.maker : []);
+  [].concat(materials || [], purchases || []).forEach(r=>{
+    const v = r && r.maker ? String(r.maker).trim() : "";
+    if(v) set.add(v);
+  });
+  OPTIONS.maker = [...set].sort((a,b)=>a.localeCompare(b, "ja"));
+  appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+  appStore.setItem(FLAG, "1");
+  try{ initSelects(); }catch(e){}
+});
 let draftOptions = null;
 let productsBulkDraft = [];
 let purchasesBulkDraft = [];
@@ -3919,7 +3937,7 @@ function openPurchaseForm(purchase){
   document.getElementById("f_pu_packUnit").value = purchase ? (purchase.packUnit || "") : "";
   document.getElementById("f_pu_lotQty").value = purchase ? (purchase.lotQty || "") : "";
   document.getElementById("f_pu_lotUnit").value = purchase ? (purchase.lotUnit || "") : "";
-  document.getElementById("f_pu_maker").value = purchase ? (purchase.maker || "") : "";
+  setSelectValueKeep("f_pu_maker", purchase ? (purchase.maker || "") : "");
   document.getElementById("f_pu_quotationInput").value = "";
   document.getElementById("f_pu_invoiceInput").value = "";
   currentQuotationFile = purchase && purchase.quotationFile ? purchase.quotationFile : null;
@@ -4017,7 +4035,9 @@ function applyMaterialDefaultsToPurchaseForm(materialId){
   const setIfBlank = (id, val)=>{
     const el = document.getElementById(id);
     if(!el) return;
-    if(!el.value && val !== undefined && val !== null && val !== "") el.value = val;
+    if(!el.value && val !== undefined && val !== null && val !== ""){
+      if(el.tagName === "SELECT") setSelectValueKeep(id, val); else el.value = val;
+    }
   };
   setIfBlank("f_pu_packQty", m.packQty);
   setIfBlank("f_pu_packUnit", m.unit);
@@ -5069,7 +5089,7 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>単位(小)</label>${bulkSelect(OPTIONS.unit, r.packUnit, `updatePurchaseBulk(${i},'packUnit',this.value)`)}</div>
         <div class="form-field"><label>ロット入数(大)</label><input type="number" value="${r.lotQty ?? ''}" oninput="updatePurchaseBulk(${i},'lotQty',this.value)"></div>
         <div class="form-field"><label>単位(大)</label>${bulkSelect(OPTIONS.lotUnit, r.lotUnit, `updatePurchaseBulk(${i},'lotUnit',this.value)`)}</div>
-        <div class="form-field"><label>メーカー</label><input type="text" value="${escAttr(r.maker)}" oninput="updatePurchaseBulk(${i},'maker',this.value)"></div>
+        <div class="form-field"><label>メーカー</label>${bulkSelect(OPTIONS.maker, r.maker, `updatePurchaseBulk(${i},'maker',this.value)`)}</div>
       </div>
     </div>
     `;
@@ -6306,6 +6326,18 @@ async function switchPage(page){
   }
 }
 
+// セレクトに値を入れる。選択肢にない値（古いデータなど）は、選択肢に足して、そのまま保持する。
+function setSelectValueKeep(id, value){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const v = (value === undefined || value === null) ? "" : String(value);
+  if(v && ![...el.options].some(o=>o.value === v)){
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v;
+    el.appendChild(o);
+  }
+  el.value = v;
+}
 function fillSelect(id, list){
   const el = document.getElementById(id);
   if(!el) return; // 対象の要素がDOMに存在しない場合は何もしない(存在しないIDを渡しても他のinitSelects()内の処理が止まらないようにする)
@@ -6467,6 +6499,8 @@ function initSelects(){
   fillSelect("f_i_subCategory", OPTIONS.category);
   fillSelect("f_i_unit", OPTIONS.unit);
   fillSelect("f_i_midUnit", OPTIONS.unitMid);
+  fillSelect("f_i_maker", OPTIONS.maker);
+  fillSelect("f_pu_maker", OPTIONS.maker);
   fillSelect("f_i_lotUnit", OPTIONS.lotUnit);
   fillSelect("f_i_status", OPTIONS.status);
   fillSelect("f_i_supplier", OPTIONS.supplier);
@@ -6879,6 +6913,10 @@ const OPTION_DATA_TARGETS = {
     { label:"商品", rows:()=>products, arrayFields:["storageLocations"], key:()=>STORAGE_KEY, whole:()=>products },
     { label:"原料・資材・半製品", rows:()=>materials, arrayFields:["storageLocations"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
     { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["storageGroup"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
+  ],
+  maker: [
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["maker"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["maker"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
   ],
   supplier: [
     { label:"原料・資材・半製品", rows:()=>materials, fields:["supplier"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
@@ -8363,7 +8401,7 @@ function openIngredientForm(item){
   // ステータスは仕入れデータの有無から自動判定するため、新規追加時は「未取り扱い」を初期値とする
   // （仕入れ管理でこの資材の仕入れを登録すると、自動的に「在庫〇」に切り替わる）。
   document.getElementById("f_i_status").value = item ? (item.status||"") : "未取り扱い";
-  document.getElementById("f_i_maker").value = item ? (item.maker||"") : "";
+  setSelectValueKeep("f_i_maker", item ? (item.maker||"") : "");
   document.getElementById("f_i_supplier").value = item ? (item.supplier||"") : "";
   document.getElementById("f_i_packQty").value = item ? (item.packQty ?? "") : "";
   document.getElementById("f_i_unit").value = item ? (item.unit||"") : "";
@@ -8852,7 +8890,7 @@ function renderIngredients(){
         <td class="text">${escAttr(m.midUnit||"")}</td>
         <td><input type="number" step="0.01" value="${m.stockCount ?? ''}" onchange="updateMaterialInline('${m.id}','stockCount',this.value)"></td>
         <td>${fmtNum(r.stockTotal)}</td>
-        <td${cls("maker","text")}><input type="text" value="${escAttr(m.maker)}" onchange="updateMaterialInline('${m.id}','maker',this.value)"></td>
+        <td${cls("maker","text")}><select onchange="updateMaterialInline('${m.id}','maker',this.value)">${inlineSelectOptions(OPTIONS.maker, m.maker)}</select></td>
         <td${cls("supplier","text")}><select onchange="updateMaterialInline('${m.id}','supplier',this.value)">${inlineSelectOptions(OPTIONS.supplier, m.supplier)}</select></td>
         <td class="text">${r.usedProductNames.join("、")}</td>
         <td class="actions-col">
@@ -8942,7 +8980,7 @@ function renderIngredientsBulkGrid(){
         <div class="form-field"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, r.bunrui, `updateIngredientBulk(${i},'bunrui',this.value)`)}</div>
         <div class="form-field"><label>小分類</label>${bulkSelect(filteredCategoryListForBunrui(r.bunrui, r.subCategory), r.subCategory, `updateIngredientBulk(${i},'subCategory',this.value)`)}</div>
         <div class="form-field"><label>ステータス</label>${bulkSelect(OPTIONS.status, r.status, `updateIngredientBulk(${i},'status',this.value)`)}</div>
-        <div class="form-field"><label>メーカー</label><input type="text" value="${escAttr(r.maker)}" oninput="updateIngredientBulk(${i},'maker',this.value)"></div>
+        <div class="form-field"><label>メーカー</label>${bulkSelect(OPTIONS.maker, r.maker, `updateIngredientBulk(${i},'maker',this.value)`)}</div>
         <div class="form-field"><label>仕入れ先</label>${bulkSelect(OPTIONS.supplier, r.supplier, `updateIngredientBulk(${i},'supplier',this.value)`)}</div>
         <div class="form-field"><label>数値(小)</label><input type="number" value="${r.packQty ?? ''}" oninput="updateIngredientBulk(${i},'packQty',this.value)"></div>
         <div class="form-field"><label>単位(小)</label>${bulkSelect(OPTIONS.unit, r.unit, `updateIngredientBulk(${i},'unit',this.value)`)}</div>
