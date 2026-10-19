@@ -1739,7 +1739,7 @@
 
       <!-- 分類（大分類・中分類・小分類などの選択肢） -->
       <div id="settingsClassifyView">
-      <div class="hint" style="margin-bottom:14px;">商品マスタ・原料・資材・半製品マスタ・半製品/未完成品管理・仕入れ管理などで使う選択肢（大分類・小分類・中分類など）をここでまとめて編集できます。大分類と小分類は商品・原料の両方で共通の選択肢を使用します。</div>
+      <div class="hint" style="margin-bottom:14px;">商品マスタ・原料・資材・半製品マスタ・半製品/未完成品管理・仕入れ管理などで使う選択肢（大分類・中分類など）をここでまとめて編集できます。小分類は、中分類の中に作ります（中分類の「▶ 小分類」を開いて追加・名称変更・削除・並び替え）。中分類を選ぶと、その中の小分類だけが選べます。中分類に入っていない小分類はありません。</div>
       <div class="card">
         <div class="toolbar" style="margin-bottom:10px;">
           <button class="secondary" onclick="downloadSettingsOptionsTemplate()">📄 一括登録テンプレート</button>
@@ -3425,6 +3425,17 @@ registerBootStep(function(){
   } // end runOptionSupplements
   if(!appStore.getItem(OPTIONS_SUPPLEMENTS_FLAG)) appStore.setItem(OPTIONS_SUPPLEMENTS_FLAG, "1");
   if(runOptionSupplements) appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+  // 小分類は「中分類の中に作る」形式へ変更。以前は紐付けの無い中分類では「すべての小分類が選べる」仕様だったため、
+  // 紐付けの無い中分類には、現在の小分類をすべて入れて、選べる内容を変えずに新しい形式へ移す（一度だけ実行）。
+  const NESTED_CATEGORY_FLAG = "bunrui_nested_categories_v1_done";
+  if(!appStore.getItem(NESTED_CATEGORY_FLAG)){
+    const lk = OPTIONS.bunruiCategoryLinks;
+    (OPTIONS.bunrui || []).forEach(b=>{
+      if(!Array.isArray(lk[b]) || !lk[b].length) lk[b] = (OPTIONS.category || []).slice();
+    });
+    appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+    appStore.setItem(NESTED_CATEGORY_FLAG, "1");
+  }
 });
 // 大分類（department）を「商品カテゴリ」的な意味合いから「事業チャネル」の固定7区分へ変更する移行。
 // 既存データ（商品・原料・仕入れに保存済みのdepartment文字列）はそのまま残し、選択肢リストのみ置き換える。
@@ -6011,13 +6022,13 @@ function fillSelect(id, list){
 // 中分類(bunrui)の値に応じて選択可能な小分類(category)を絞り込む。
 // OPTIONS.bunruiCategoryLinksにその中分類の紐付けが無い（またはlinksが空配列）の場合は制限なし＝category全件。
 // preserveValueが指定され、それが絞り込み後のリストに含まれない場合は末尾に追加し、既存データの値を失わないようにする。
+// 小分類は中分類の中に作る形式。中分類が選ばれたら、その中分類の中の小分類だけを返す（中に無い小分類は選べない）。
+// 中分類が未選択のときだけ、すべての小分類を返す。
 function filteredCategoryListForBunrui(bunruiValue, preserveValue){
-  const links = OPTIONS.bunruiCategoryLinks && Array.isArray(OPTIONS.bunruiCategoryLinks[bunruiValue]) ? OPTIONS.bunruiCategoryLinks[bunruiValue] : null;
-  let list = OPTIONS.category;
-  if(links && links.length){
-    list = OPTIONS.category.filter(c=>links.includes(c));
-    if(preserveValue && !list.includes(preserveValue)) list = list.concat([preserveValue]);
-  }
+  if(!bunruiValue) return OPTIONS.category;
+  const links = OPTIONS.bunruiCategoryLinks && Array.isArray(OPTIONS.bunruiCategoryLinks[bunruiValue]) ? OPTIONS.bunruiCategoryLinks[bunruiValue] : [];
+  let list = links.slice();
+  if(preserveValue && !list.includes(preserveValue)) list = list.concat([preserveValue]);
   return list;
 }
 
@@ -6266,7 +6277,7 @@ function renderSettingsOptionsBody(){
   if(!body) return;
   ensureBunruiCategoryLinks();
   body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 20px;align-items:start;">` +
-  Object.keys(FIELD_LABELS).map(field=>{
+  Object.keys(FIELD_LABELS).filter(f=>f !== "category").map(field=>{
     if(!Array.isArray(draftOptions[field])) draftOptions[field] = [];
     const lastIdx = draftOptions[field].length - 1;
     const selectedSet = settingsSelectedValues[field];
@@ -6295,18 +6306,26 @@ function renderSettingsOptionsBody(){
           if(isBunrui){
             const linkArr = draftOptions.bunruiCategoryLinks[v];
             const linkCount = Array.isArray(linkArr) ? linkArr.length : 0;
-            const linkLabel = linkCount ? `小分類を紐付け中(${linkCount})` : "小分類を紐付け";
-            linkToggleHtml = `<button type="button" class="secondary" style="padding:2px 6px;font-size:11px;white-space:nowrap;" onclick="toggleBunruiLinkPanel(${i})">${linkLabel}</button>`;
+            const linkLabel = `小分類（${linkCount}）`;
+            linkToggleHtml = `<button type="button" class="secondary" style="padding:2px 6px;font-size:11px;white-space:nowrap;" onclick="toggleBunruiLinkPanel(${i})">${settingsLinkOpenIdx === i ? "▼" : "▶"} ${linkLabel}</button>`;
             if(settingsLinkOpenIdx === i){
-              const categoryList = draftOptions.category || [];
+              const subs = Array.isArray(linkArr) ? linkArr : [];
               linkPanelHtml = `
                 <div style="margin:4px 0 10px 0;padding:8px;border:1px solid var(--border);border-radius:6px;background:#f7f7f9;">
-                  <div class="hint" style="margin:0 0 6px;">何もチェックしない場合は制限なし（すべての小分類が選択可能）です。1つ以上チェックすると、原料・資材・半製品マスタや仕入れ管理でこの中分類を選んだ際に、チェックした小分類のみ選択できるようになります。</div>
-                  ${categoryList.length ? categoryList.map(c=>{
-                    const cChecked = Array.isArray(linkArr) && linkArr.includes(c);
-                    const cJs = c.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
-                    return `<label style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 6px 0;font-size:12px;"><input type="checkbox" ${cChecked?"checked":""} onchange="toggleBunruiCategoryLink(${i}, '${cJs}', this.checked)">${c}</label>`;
-                  }).join("") : `<div class="hint" style="margin:0;">小分類の選択肢がまだありません。</div>`}
+                  <div class="hint" style="margin:0 0 6px;">この中分類の中の小分類です。原料・資材・半製品マスタや仕入れ管理でこの中分類を選ぶと、ここにある小分類だけが選べます。</div>
+                  ${subs.map((c, j)=>`
+                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+                      <div style="display:flex;flex-direction:column;gap:2px;">
+                        <button class="secondary" style="padding:0 6px;line-height:1.4;${j===0?'visibility:hidden;':''}" onclick="moveBunruiSub(${i}, ${j}, -1)" title="上へ">▲</button>
+                        <button class="secondary" style="padding:0 6px;line-height:1.4;${j===subs.length-1?'visibility:hidden;':''}" onclick="moveBunruiSub(${i}, ${j}, 1)" title="下へ">▼</button>
+                      </div>
+                      <input type="text" value="${escAttr(c)}" oninput="updateBunruiSub(${i}, ${j}, this.value)" style="flex:1;">
+                      <button class="danger" style="padding:4px 8px;" onclick="removeBunruiSub(${i}, ${j})">削除</button>
+                    </div>`).join("") || `<div class="hint" style="margin:0 0 6px;">小分類がまだありません。下から追加してください。</div>`}
+                  <div style="display:flex;gap:6px;margin-top:6px;">
+                    <input type="text" id="newsub-${i}" placeholder="この中分類に小分類を追加" style="flex:1;" onkeydown="if(event.key==='Enter'){addBunruiSub(${i});}">
+                    <button class="secondary" onclick="addBunruiSub(${i})">追加</button>
+                  </div>
                 </div>
               `;
             }
@@ -6343,6 +6362,7 @@ function renderSettingsOptionsBody(){
           <button type="button" class="danger" style="padding:2px 6px;font-size:11px;" onclick="deleteSelectedSettingsOptions('${field}')">選択した項目を削除</button>
         </div>
       </div>
+      ${field === "bunrui" ? (()=>{ const o = settingsOrphanCategories(); return o.length ? `<div class="hint" style="margin:6px 0;padding:6px 8px;border:1px solid #e0a8a0;background:#fdecea;border-radius:6px;color:#c0392b;">中分類の中に入っていない小分類が${o.length}件あります（${o.map(escAttr).join("、")}）。保存すると選択肢から外れます（登録済みのデータの値は残ります）。必要なものは、中分類の「小分類」から追加してください。</div>` : ""; })() : ""}
       ${innerHtml}
     </div>
   `;
@@ -6397,20 +6417,75 @@ function toggleBunruiLinkPanel(idx){
   renderSettingsOptionsBody();
 }
 
-// bunruiIdx行目の中分類に対して、小分類categoryValueの紐付けON/OFFを切り替える。
-// 中分類の値はbunruiIdxから都度解決する（onchange文字列に値を焼き込まないことで、テキスト編集中でもずれない）。
-function toggleBunruiCategoryLink(bunruiIdx, categoryValue, checked){
+// ---- 小分類は中分類の中に作る（小分類の追加・名称変更・削除・並び替えは、中分類ごとのパネルで行う） ----
+function bunruiSubUsedElsewhere(bunruiValue, name){
+  const links = ensureBunruiCategoryLinks();
+  return Object.keys(links).some(k=> k !== bunruiValue && Array.isArray(links[k]) && links[k].includes(name));
+}
+function addBunruiSub(bunruiIdx){
   const bunruiValue = draftOptions.bunrui[bunruiIdx];
-  if(!bunruiValue) return;
+  const input = document.getElementById(`newsub-${bunruiIdx}`);
+  if(!bunruiValue || !input) return;
+  const name = input.value.trim();
+  if(!name) return;
   const links = ensureBunruiCategoryLinks();
   if(!Array.isArray(links[bunruiValue])) links[bunruiValue] = [];
-  const arr = links[bunruiValue];
-  const idx = arr.indexOf(categoryValue);
-  if(checked){
-    if(idx === -1) arr.push(categoryValue);
-  } else if(idx >= 0){
-    arr.splice(idx, 1);
+  if(links[bunruiValue].includes(name)){ alert(`「${name}」は、この中分類に既にあります。`); return; }
+  links[bunruiValue].push(name);
+  if(!draftOptions.category.includes(name)){
+    draftOptions.category.push(name);
+    if(draftOrigin.category) draftOrigin.category.push(null);
   }
+  renderSettingsOptionsBody();
+  const again = document.getElementById(`newsub-${bunruiIdx}`);
+  if(again) again.focus();
+}
+function updateBunruiSub(bunruiIdx, subIdx, value){
+  const bunruiValue = draftOptions.bunrui[bunruiIdx];
+  const links = ensureBunruiCategoryLinks();
+  const arr = links[bunruiValue];
+  if(!Array.isArray(arr) || arr[subIdx] === undefined) return;
+  const oldValue = arr[subIdx];
+  if(oldValue === value) return;
+  arr[subIdx] = value;
+  const ci = draftOptions.category.indexOf(oldValue);
+  if(!bunruiSubUsedElsewhere(bunruiValue, oldValue) && ci >= 0){
+    draftOptions.category[ci] = value; // 他の中分類で使っていない小分類は、名称変更として扱う（登録済みのデータにも反映）
+  } else if(value && !draftOptions.category.includes(value)){
+    draftOptions.category.push(value);
+    if(draftOrigin.category) draftOrigin.category.push(null);
+  }
+}
+function removeBunruiSub(bunruiIdx, subIdx){
+  const bunruiValue = draftOptions.bunrui[bunruiIdx];
+  const links = ensureBunruiCategoryLinks();
+  const arr = links[bunruiValue];
+  if(!Array.isArray(arr) || arr[subIdx] === undefined) return;
+  const name = arr[subIdx];
+  arr.splice(subIdx, 1);
+  if(!bunruiSubUsedElsewhere(bunruiValue, name)){
+    const ci = draftOptions.category.indexOf(name);
+    if(ci >= 0){
+      draftOptions.category.splice(ci, 1);
+      if(draftOrigin.category) draftOrigin.category.splice(ci, 1);
+    }
+  }
+  renderSettingsOptionsBody();
+}
+function moveBunruiSub(bunruiIdx, subIdx, dir){
+  const bunruiValue = draftOptions.bunrui[bunruiIdx];
+  const arr = ensureBunruiCategoryLinks()[bunruiValue];
+  const n = subIdx + dir;
+  if(!Array.isArray(arr) || n < 0 || n >= arr.length) return;
+  const t = arr[subIdx]; arr[subIdx] = arr[n]; arr[n] = t;
+  renderSettingsOptionsBody();
+}
+// 中分類の中に入っていない小分類は「ないもの」として扱い、保存時に選択肢から外す（登録済みのデータの値は消さない）。
+function settingsOrphanCategories(){
+  const links = ensureBunruiCategoryLinks();
+  const inAny = new Set();
+  (draftOptions.bunrui || []).forEach(b=>{ (links[b] || []).forEach(c=>inAny.add(c)); });
+  return (draftOptions.category || []).filter(c=>c && !inAny.has(c));
 }
 
 function toggleSettingsOptionSelect(field, value, checked){
@@ -6665,6 +6740,12 @@ function saveSettingsOptions(){
     if(!validBunrui.has(k)){ delete links[k]; return; }
     if(Array.isArray(links[k])) links[k] = links[k].filter(c=>validCategory.has(c));
   });
+  // 小分類は中分類の中に作る形式：選択肢の小分類は、中分類の中にあるものだけ（中分類の並び順→中の並び順、重複なし）
+  {
+    const ordered = [];
+    (draftOptions.bunrui || []).forEach(b=>{ (links[b] || []).forEach(c=>{ if(c && !ordered.includes(c)) ordered.push(c); }); });
+    draftOptions.category = ordered;
+  }
   OPTIONS = draftOptions;
   appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
   const appliedCount = applyOptionChangePlan(optionPlan);
@@ -6926,6 +7007,7 @@ function applyBudgetCategoryMappingImportRows(rows){
   const unmatchedNames = [];
   const newBunruiValues = [];
   const newCategoryValues = [];
+  const budgetImportCategoryPairs = []; // 小分類は中分類の中に作る形式のため、取込の小分類も、その行の中分類の中へ入れる
   rows.forEach(row=>{
     const name = (row.name||"").toString().trim();
     if(!name) return;
@@ -6939,13 +7021,22 @@ function applyBudgetCategoryMappingImportRows(rows){
     }
     if(!pairsByKey[item.key]) pairsByKey[item.key] = [];
     pairsByKey[item.key].push({ bunrui, category: category || null });
+    if(category) budgetImportCategoryPairs.push({ bunrui, category });
     if(!OPTIONS.bunrui.includes(bunrui) && !newBunruiValues.includes(bunrui)) newBunruiValues.push(bunrui);
     if(category && !OPTIONS.category.includes(category) && !newCategoryValues.includes(category)) newCategoryValues.push(category);
   });
 
-  if(newBunruiValues.length || newCategoryValues.length){
+  const nestedAdded = budgetImportCategoryPairs.some(pr=>{
+    const lk = OPTIONS.bunruiCategoryLinks[pr.bunrui];
+    return !Array.isArray(lk) || !lk.includes(pr.category);
+  });
+  if(newBunruiValues.length || newCategoryValues.length || nestedAdded){
     newBunruiValues.forEach(v=>OPTIONS.bunrui.push(v));
     newCategoryValues.forEach(v=>OPTIONS.category.push(v));
+    budgetImportCategoryPairs.forEach(pr=>{
+      if(!Array.isArray(OPTIONS.bunruiCategoryLinks[pr.bunrui])) OPTIONS.bunruiCategoryLinks[pr.bunrui] = [];
+      if(!OPTIONS.bunruiCategoryLinks[pr.bunrui].includes(pr.category)) OPTIONS.bunruiCategoryLinks[pr.bunrui].push(pr.category);
+    });
     appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
   }
 
