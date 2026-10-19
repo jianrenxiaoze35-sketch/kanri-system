@@ -3464,6 +3464,174 @@ registerBootStep(function(){
   }
   appStore.setItem(DEPARTMENT_CHANNEL_MIGRATION_FLAG, "1");
 });
+/* ---- 設定に登録がない値の登録確認 ----
+   商品マスタ・原料・資材・半製品マスタ・請求書／仕入れ管理に、設定（分類）にない値が入った（手入力・Excel/CSV取込など）ときは、
+   保存のあとで「登録確認」画面を出し、チェックした値を設定の分類に登録できるようにする。
+   「登録しない」を選んだ値は、この端末では、以後確認しない（同じ値で毎回確認が出ないようにするため）。 */
+const OPTION_REG_IGNORED_KEY = "kanri_optreg_ignored_v1";
+const OPTION_REG_FIELDS = {
+  products: [
+    { opt: "department", f: "department", label: "大分類" },
+    { opt: "category", f: "category", label: "小分類", nested: true },
+    { opt: "accounting", f: "accounting", label: "会計区分" },
+    { opt: "creditAccount", f: "creditAccount", label: "貸方科目" },
+    { opt: "customer", f: "customer", label: "売り先" },
+    { opt: "posSystem", f: "posSystem", label: "POSシステム" }
+  ],
+  materials: [
+    { opt: "department", f: "department", label: "大分類" },
+    { opt: "bunrui", f: "bunrui", label: "中分類" },
+    { opt: "category", f: "subCategory", label: "小分類", nested: true, bunruiField: "bunrui" },
+    { opt: "status", f: "status", label: "ステータス" },
+    { opt: "supplier", f: "supplier", label: "仕入れ先" },
+    { opt: "unit", f: "unit", label: "単位(小)" },
+    { opt: "unitMid", f: "midUnit", label: "単位(中)" },
+    { opt: "lotUnit", f: "lotUnit", label: "単位(大)" },
+    { opt: "storageLocation", f: "storageLocations", label: "保管場所", array: true }
+  ],
+  purchases: [
+    { opt: "department", f: "department", label: "大分類" },
+    { opt: "bunrui", f: "bunrui", label: "中分類" },
+    { opt: "category", f: "category", label: "小分類", nested: true, bunruiField: "bunrui" },
+    { opt: "supplier", f: "supplier", label: "仕入れ先" },
+    { opt: "purchaseStatus", f: "status", label: "ステータス" },
+    { opt: "unitMid", f: "unit", label: "単位(中)" },
+    { opt: "unit", f: "packUnit", label: "単位(小)" },
+    { opt: "lotUnit", f: "lotUnit", label: "単位(大)" }
+  ]
+};
+function optionRegIgnored(){
+  try{ return new Set(JSON.parse(localStorage.getItem(OPTION_REG_IGNORED_KEY) || "[]")); }catch(e){ return new Set(); }
+}
+function optionRegRememberIgnored(keys){
+  try{
+    const set = optionRegIgnored();
+    keys.forEach(k=>set.add(k));
+    localStorage.setItem(OPTION_REG_IGNORED_KEY, JSON.stringify([...set]));
+  }catch(e){}
+}
+// 設定にない値を集める。戻り値：[{opt, label, value, nested, bunruiCounts:{中分類:件数}, count}]
+function collectUnregisteredOptions(){
+  const ignored = optionRegIgnored();
+  const found = new Map();
+  const scan = (kind, rows)=>{
+    (rows || []).forEach(r=>{
+      if(!r) return;
+      OPTION_REG_FIELDS[kind].forEach(fd=>{
+        const known = Array.isArray(OPTIONS[fd.opt]) ? OPTIONS[fd.opt] : [];
+        const vals = fd.array ? (Array.isArray(r[fd.f]) ? r[fd.f] : []) : [r[fd.f]];
+        vals.forEach(v=>{
+          const value = (v === undefined || v === null) ? "" : String(v).trim();
+          if(!value || known.includes(value)) return;
+          const key = fd.opt + "|" + value;
+          if(ignored.has(key)) return;
+          if(!found.has(key)) found.set(key, { key, opt: fd.opt, label: fd.label, value, nested: !!fd.nested, bunruiCounts: {}, count: 0 });
+          const e = found.get(key);
+          e.count++;
+          if(fd.nested){
+            const b = fd.bunruiField ? String(r[fd.bunruiField] || "").trim() : "";
+            if(b) e.bunruiCounts[b] = (e.bunruiCounts[b] || 0) + 1;
+          }
+        });
+      });
+    });
+  };
+  try{ scan("products", products); }catch(e){}
+  try{ scan("materials", materials.filter(m=>!(typeof isHiddenNonMaterial === "function" && isHiddenNonMaterial(m)))); }catch(e){}
+  try{ scan("purchases", purchases); }catch(e){}
+  return [...found.values()];
+}
+let _optionRegTimer = null;
+let _optionRegOpen = false;
+function scheduleOptionRegistrationCheck(){
+  clearTimeout(_optionRegTimer);
+  _optionRegTimer = setTimeout(runOptionRegistrationCheck, 600);
+}
+function runOptionRegistrationCheck(){
+  if(_optionRegOpen) return;
+  // 他の確認画面（マスタへの反映の確認など）が開いているあいだは待つ
+  if(document.querySelector(".modal-overlay.show")){ _optionRegTimer = setTimeout(runOptionRegistrationCheck, 1000); return; }
+  const entries = collectUnregisteredOptions();
+  if(!entries.length) return;
+  openOptionRegistration(entries);
+}
+function openOptionRegistration(entries){
+  _optionRegOpen = true;
+  let ov = document.getElementById("optionRegOverlay");
+  if(!ov){
+    ov = document.createElement("div");
+    ov.className = "modal-overlay";
+    ov.id = "optionRegOverlay";
+    document.body.appendChild(ov);
+  }
+  const bunruiOpts = (OPTIONS.bunrui || []);
+  ov.innerHTML = `<div class="modal" style="width:780px;max-width:96vw;">
+    <h3>設定に登録がない項目</h3>
+    <div class="hint" style="margin-bottom:10px;">入力された内容に、⚙️設定の分類に登録されていない項目があります。登録する項目にチェックを入れて「設定に登録」を押すと、設定の分類に追加され、選択肢から選べるようになります（入力済みのデータはそのまま残ります）。小分類は、入れる中分類を選んでください。</div>
+    <div style="max-height:56vh;overflow:auto;">
+      <table class="bulk-table compact-table" style="min-width:0;width:100%;">
+        <thead><tr><th style="width:50px;">登録</th><th>項目</th><th>値</th><th>件数</th><th>入れる中分類（小分類のみ）</th></tr></thead>
+        <tbody>${entries.map((e, i)=>{
+          let selHtml = "";
+          if(e.nested){
+            const top = Object.keys(e.bunruiCounts).sort((a,b)=>e.bunruiCounts[b]-e.bunruiCounts[a]).find(b=>bunruiOpts.includes(b)) || "";
+            selHtml = `<select data-optreg-bunrui="${i}"><option value="">（選んでください）</option>${bunruiOpts.map(b=>`<option value="${escAttr(b)}" ${b===top?"selected":""}>${escAttr(b)}</option>`).join("")}</select>`;
+          }
+          return `<tr><td><input type="checkbox" data-optreg-chk="${i}" checked></td><td>${escAttr(e.label)}</td><td style="text-align:left;">${escAttr(e.value)}</td><td>${e.count}</td><td>${selHtml}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeOptionRegistration(false)">登録しない（以後確認しない）</button>
+      <button onclick="closeOptionRegistration(true)">設定に登録</button>
+    </div>
+  </div>`;
+  ov.classList.add("show");
+  ov._entries = entries;
+}
+function closeOptionRegistration(doRegister){
+  const ov = document.getElementById("optionRegOverlay");
+  const entries = (ov && ov._entries) || [];
+  const skipped = [];
+  let added = 0, needBunrui = 0;
+  entries.forEach((e, i)=>{
+    const chk = ov.querySelector(`input[data-optreg-chk="${i}"]`);
+    const checked = doRegister && chk && chk.checked;
+    if(!checked){ skipped.push(e.key); return; }
+    if(e.nested){
+      const sel = ov.querySelector(`select[data-optreg-bunrui="${i}"]`);
+      const b = sel ? sel.value : "";
+      if(!b){ needBunrui++; return; }
+      if(!OPTIONS.bunruiCategoryLinks || typeof OPTIONS.bunruiCategoryLinks !== "object") OPTIONS.bunruiCategoryLinks = {};
+      if(!Array.isArray(OPTIONS.bunruiCategoryLinks[b])) OPTIONS.bunruiCategoryLinks[b] = [];
+      if(!OPTIONS.bunruiCategoryLinks[b].includes(e.value)) OPTIONS.bunruiCategoryLinks[b].push(e.value);
+      if(!OPTIONS.category.includes(e.value)) OPTIONS.category.push(e.value);
+      added++;
+    } else {
+      if(!Array.isArray(OPTIONS[e.opt])) OPTIONS[e.opt] = [];
+      if(!OPTIONS[e.opt].includes(e.value)) OPTIONS[e.opt].push(e.value);
+      added++;
+    }
+  });
+  if(needBunrui){
+    alert(`小分類${needBunrui}件は、入れる中分類が選ばれていないため登録していません。中分類を選んでから、もう一度「設定に登録」を押してください。`);
+    // 中分類未選択の行を残したまま、開いたままにする
+    return;
+  }
+  if(added){
+    appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+    try{ initSelects(); }catch(e){}
+    try{
+      const pg = document.getElementById("page-settings");
+      if(pg && pg.classList.contains("active")) renderSettingsOptions();
+    }catch(e){}
+    try{ render(); renderIngredients(); renderPurchases(); }catch(e){}
+  }
+  if(skipped.length) optionRegRememberIgnored(skipped);
+  ov.classList.remove("show");
+  _optionRegOpen = false;
+  if(added) alert(`${added}件を、設定の分類に登録しました。`);
+}
 let draftOptions = null;
 let productsBulkDraft = [];
 let purchasesBulkDraft = [];
@@ -3652,6 +3820,7 @@ let currentQuotationFile = null;
 let currentInvoiceFile = null;
 
 function save(){
+  scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   appStore.setItem(STORAGE_KEY, JSON.stringify(products));
   render();
   if(typeof renderRecipeMissingAlert === "function") renderRecipeMissingAlert();
@@ -3691,6 +3860,7 @@ function absorbNewSupplierNames(supplierNames){
 }
 
 function savePurchases(){
+  scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   invalidateMaterialOtherExpenseCache();
   invalidateSalesMaterialConsumptionCache(); // 代替資材の在庫割り当ては仕入れ数量にも依存するため
   try{
@@ -7904,6 +8074,7 @@ function saveProductsBulk(){
 
 /* ===================== 原料・資材・半製品マスタ ===================== */
 function saveIngredients(){
+  scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   appStore.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
   invalidateSalesMaterialConsumptionCache(); // 資材が変われば、資材IDに紐づく売上消費量の集計も無効になるため
   renderIngredients();
