@@ -643,6 +643,7 @@
         <button class="secondary" id="purchaseViewSupplierBtn" onclick="switchPurchaseView('supplier')">仕入れ先</button>
         <button class="secondary" id="purchaseViewBunruiBtn" onclick="switchPurchaseView('bunrui')">中分類</button>
         <button class="secondary" id="purchaseViewDeliveryBtn" onclick="switchPurchaseView('delivery')">納品確認 <span class="count-badge" id="purchaseDeliveryAlertBadge"></span></button>
+        <button class="secondary" id="purchaseViewDataBtn" onclick="switchPurchaseView('data')">データ管理</button>
       </div>
 
       <div id="purchaseViewInvoiceWrap">
@@ -700,6 +701,25 @@
             <tbody id="purchaseSupplierTableBody"></tbody>
           </table>
           <div class="empty" id="purchaseSupplierEmptyMsg" style="display:none;">データがありません。</div>
+        </div>
+      </div>
+
+      <div id="purchaseViewDataWrap" style="display:none;">
+        <div class="topbar">
+          <h2>データ管理（アップロード済みの請求書）</h2>
+          <div class="toolbar">
+            <button class="secondary active" id="purchaseDataMonthBtn" onclick="switchPurchaseDataMode('month')">月別</button>
+            <button class="secondary" id="purchaseDataSupplierBtn" onclick="switchPurchaseDataMode('supplier')">仕入れ先別</button>
+          </div>
+        </div>
+        <div class="hint" style="margin:0 0 6px;">これまでに登録された仕入れデータを、請求書単位（請求書番号ごと。番号がないものは仕入れ先と請求日ごと）で数えます。月は請求日（なければ仕入れ日・納品日）で分けます。金額は税込です。行をクリックすると、その請求書の一覧を開閉できます。</div>
+        <div class="card" id="purchaseDataSummary" style="padding:10px 14px;"></div>
+        <div class="card" style="overflow:auto;">
+          <table id="purchaseDataTable">
+            <thead id="purchaseDataTableHead"></thead>
+            <tbody id="purchaseDataTableBody"></tbody>
+          </table>
+          <div class="empty" id="purchaseDataEmptyMsg" style="display:none;">データがありません。</div>
         </div>
       </div>
 
@@ -4630,7 +4650,7 @@ function renderPurchases(){
 /* ---------- 仕入れ管理：ビュー切り替え(請求書／仕入れ先／中分類／納品確認) ---------- */
 function switchPurchaseView(view){
   purchaseView = view;
-  ["Invoice","Supplier","Bunrui","Delivery"].forEach(v=>{
+  ["Invoice","Supplier","Bunrui","Delivery","Data"].forEach(v=>{
     const key = v.toLowerCase();
     const btn = document.getElementById("purchaseView"+v+"Btn");
     if(btn) btn.classList.toggle("active", key===view);
@@ -4641,7 +4661,96 @@ function switchPurchaseView(view){
   else if(view==="supplier") renderPurchaseSupplierView();
   else if(view==="bunrui") renderPurchaseBunruiView();
   else if(view==="delivery") renderPurchaseDeliveryView();
+  else if(view==="data") renderPurchaseDataView();
   updatePurchaseDeliveryAlertBadge();
+}
+
+/* ---------- 仕入れ管理：データ管理ビュー（請求書単位の件数・金額。月別／仕入れ先別） ---------- */
+let purchaseDataMode = "month";
+const purchaseDataOpen = new Set();
+function switchPurchaseDataMode(mode){
+  purchaseDataMode = mode;
+  purchaseDataOpen.clear();
+  renderPurchaseDataView();
+}
+// 仕入れデータを請求書単位にまとめる（請求書番号が同じ＝1件。番号がないものは、仕入れ先＋請求日で1件）。
+function buildPurchaseInvoiceList(){
+  const map = new Map();
+  purchases.forEach(p=>{
+    const supplier = (p.supplier || "").toString().trim() || "（仕入れ先未設定）";
+    const inv = (p.invoiceNumber || "").toString().trim();
+    const bill = (p.billingDate || "").toString().trim();
+    const eff = bill || p.date || p.deliveryDate || "";
+    const key = supplier + "|" + (inv ? "inv:" + inv : (bill ? "bill:" + bill : "none:" + eff));
+    if(!map.has(key)) map.set(key, { key, supplier, invoiceNumber: inv, billingDate: bill, date: eff, lines: 0, amount: 0 });
+    const g = map.get(key);
+    g.lines += (p.items && p.items.length) ? p.items.length : 1;
+    g.amount += purchaseItemsTotal(p);
+    if(!g.billingDate && bill) g.billingDate = bill;
+    const e = bill || p.date || p.deliveryDate || "";
+    if(e && (!g.date || e < g.date)) g.date = e;
+  });
+  return Array.from(map.values()).map(g=>Object.assign(g, { monthKey: g.date ? g.date.slice(0,7) : "" }));
+}
+function togglePurchaseDataRow(key){
+  if(purchaseDataOpen.has(key)) purchaseDataOpen.delete(key); else purchaseDataOpen.add(key);
+  renderPurchaseDataView();
+}
+function renderPurchaseDataView(){
+  const mb = document.getElementById("purchaseDataMonthBtn"), sb = document.getElementById("purchaseDataSupplierBtn");
+  if(mb) mb.classList.toggle("active", purchaseDataMode === "month");
+  if(sb) sb.classList.toggle("active", purchaseDataMode === "supplier");
+  const invoices = buildPurchaseInvoiceList();
+  const round = v=>fmtNum(Math.round(v*100)/100);
+  const totalAmount = invoices.reduce((s,g)=>s+g.amount, 0);
+  const suppliers = new Set(invoices.map(g=>g.supplier));
+  const dates = invoices.map(g=>g.date).filter(Boolean).sort();
+  document.getElementById("purchaseDataSummary").innerHTML =
+    `<div style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px;">
+      <div>請求書 合計：<b>${fmtNum(invoices.length)}件</b></div>
+      <div>金額 合計（税込）：<b>${round(totalAmount)}円</b></div>
+      <div>仕入れ先：<b>${suppliers.size}社</b></div>
+      <div>期間：<b>${dates.length ? `${formatDateDisplay(dates[0])} 〜 ${formatDateDisplay(dates[dates.length-1])}` : "－"}</b></div>
+    </div>`;
+  const groups = new Map();
+  invoices.forEach(g=>{
+    const k = purchaseDataMode === "month" ? (g.monthKey || "（日付なし）") : g.supplier;
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(g);
+  });
+  const keys = Array.from(groups.keys()).sort((a,b)=> purchaseDataMode === "month" ? b.localeCompare(a) : a.localeCompare(b, "ja"));
+  const head = document.getElementById("purchaseDataTableHead");
+  const body = document.getElementById("purchaseDataTableBody");
+  const monthLabel = k=> /^\d{4}-\d{2}$/.test(k) ? `${k.slice(0,4)}年${parseInt(k.slice(5),10)}月` : k;
+  if(purchaseDataMode === "month"){
+    head.innerHTML = `<tr><th style="text-align:left;">月</th><th>請求書（件）</th><th>明細（行）</th><th>金額合計（税込）</th></tr>`;
+  } else {
+    head.innerHTML = `<tr><th style="text-align:left;">仕入れ先</th><th>請求書（件）</th><th>明細（行）</th><th>金額合計（税込）</th><th>最初の請求日</th><th>最後の請求日</th></tr>`;
+  }
+  if(!keys.length){ body.innerHTML = ""; document.getElementById("purchaseDataEmptyMsg").style.display = "block"; return; }
+  document.getElementById("purchaseDataEmptyMsg").style.display = "none";
+  const colspan = purchaseDataMode === "month" ? 4 : 6;
+  body.innerHTML = keys.map(k=>{
+    const list = groups.get(k);
+    const amount = list.reduce((s,g)=>s+g.amount, 0);
+    const lines = list.reduce((s,g)=>s+g.lines, 0);
+    const open = purchaseDataOpen.has(k);
+    const kJs = k.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    let cells = `<td style="text-align:left;font-weight:700;"><span>${open ? "▼" : "▶"}</span> ${escAttr(purchaseDataMode === "month" ? monthLabel(k) : k)}</td><td>${fmtNum(list.length)}</td><td>${fmtNum(lines)}</td><td>${round(amount)}</td>`;
+    if(purchaseDataMode === "supplier"){
+      const ds = list.map(g=>g.date).filter(Boolean).sort();
+      cells += `<td>${ds.length ? formatDateDisplay(ds[0]) : ""}</td><td>${ds.length ? formatDateDisplay(ds[ds.length-1]) : ""}</td>`;
+    }
+    let html = `<tr style="cursor:pointer;background:var(--bg);" onclick="togglePurchaseDataRow('${kJs}')" title="クリックで請求書の一覧を開閉">${cells}</tr>`;
+    if(open){
+      const sorted = list.slice().sort((a,b)=> (b.date||"").localeCompare(a.date||"") || a.supplier.localeCompare(b.supplier, "ja"));
+      html += `<tr><td colspan="${colspan}" style="padding:4px 10px 10px 28px;">
+        <table style="width:100%;"><thead><tr><th style="text-align:left;">請求書番号</th><th>請求日</th>${purchaseDataMode === "month" ? '<th style="text-align:left;">仕入れ先</th>' : '<th>月</th>'}<th>明細（行）</th><th>金額（税込）</th></tr></thead><tbody>
+        ${sorted.map(g=>`<tr><td class="text" style="text-align:left;">${g.invoiceNumber ? escAttr(g.invoiceNumber) : '<span style="color:var(--muted);">（番号なし）</span>'}</td><td>${g.date ? formatDateDisplay(g.date) : ""}</td>${purchaseDataMode === "month" ? `<td class="text" style="text-align:left;">${escAttr(g.supplier)}</td>` : `<td>${escAttr(g.monthKey ? monthLabel(g.monthKey) : "")}</td>`}<td>${fmtNum(g.lines)}</td><td>${round(g.amount)}</td></tr>`).join("")}
+        </tbody></table></td></tr>`;
+    }
+    return html;
+  }).join("") + `<tr style="font-weight:700;"><td style="text-align:left;">合計</td><td>${fmtNum(invoices.length)}</td><td>${fmtNum(invoices.reduce((s,g)=>s+g.lines,0))}</td><td>${round(totalAmount)}</td>${purchaseDataMode === "supplier" ? "<td></td><td></td>" : ""}</tr>`;
 }
 
 /* ---------- 仕入れ管理：グループ見出しの開閉（仕入れ先ビュー・中分類ビュー） ----------
@@ -5792,7 +5901,7 @@ const APP_ACCESS_REGISTRY = [
     views:[["all","全体","ingViewAllBtn"],["raw","原料","ingViewRawBtn"],["prep","仕込み/半製品","ingViewPrepBtn"],["material","資材","ingViewMaterialBtn"],["equip","備品","ingViewEquipBtn"],["uncategorized","未分類","ingViewUncategorizedBtn"]] },
   { page:"recipes", label:"原価・レシピ管理", views:[] },
   { page:"purchases", label:"請求書／仕入れ管理", cur:()=>purchaseView, go:v=>switchPurchaseView(v),
-    views:[["invoice","請求書","purchaseViewInvoiceBtn"],["supplier","仕入れ先","purchaseViewSupplierBtn"],["bunrui","中分類","purchaseViewBunruiBtn"],["delivery","納品確認","purchaseViewDeliveryBtn"]] },
+    views:[["invoice","請求書","purchaseViewInvoiceBtn"],["supplier","仕入れ先","purchaseViewSupplierBtn"],["bunrui","中分類","purchaseViewBunruiBtn"],["delivery","納品確認","purchaseViewDeliveryBtn"],["data","データ管理","purchaseViewDataBtn"]] },
   { page:"inventory", label:"在庫・棚卸", cur:()=>inventoryView, go:v=>switchInventoryView(v),
     views:[["products","商品","invViewProductsBtn"],["materials","原料・資材","invViewMaterialsBtn"],["facility","施設の在庫（自動取得）","invViewFacilityBtn"],["stock","在庫一覧","invViewStockBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
   { page:"sales", label:"売上管理", cur:()=>salesView, go:v=>switchSalesView(v),
