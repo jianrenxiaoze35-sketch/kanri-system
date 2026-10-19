@@ -3312,6 +3312,8 @@ const DEFAULT_OPTIONS = {
   bunrui: ["原料", "資材", "半製品", "仕込み", "商品", "備品", "消耗備品", "設備", "送料/その他", "イニシャルコスト", "値引", "求人", "コスト", "割引"],
   unit: ["g", "kg", "ml", "L", "個", "本", "枚", "袋", "m", "台", "式", "図", "個口", "CAN", "P", "PCS", "pack"],
   lotUnit: ["個", "本", "袋", "箱", "缶", "瓶", "パック", "ポーション", "g"],
+  // 単位（中）：在庫を数える単位（例：本）。初期値は単位（小）と同じ内容（初回に移し替える）
+  unitMid: ["g", "kg", "ml", "L", "個", "本", "枚", "袋", "m", "台", "式", "図", "個口", "CAN", "P", "PCS", "pack"],
   status: ["在庫〇", "未取り扱い"],
   storageLocation: ["倉庫", "厨房", "カウンター", "カウンターコールドテーブル", "厨房コールドテーブル", "厨房冷蔵庫", "厨房冷凍庫", "チェストストッカー"],
   supplier: ["仕入れ先A", "仕入れ先B", "仕入れ先C", "その他"],
@@ -3333,8 +3335,9 @@ const FIELD_LABELS = {
   creditAccount: "貸方科目（商品）",
   customer: "売り先（商品）",
   posSystem: "POSシステム（レジ締め）",
-  unit: "単位（原料・資材）",
-  lotUnit: "入り数単位（原料・資材）",
+  lotUnit: "単位 大（原料・資材）",
+  unitMid: "単位 中（原料・資材）",
+  unit: "単位 小（原料・資材）",
   status: "ステータス（原料・資材）",
   storageLocation: "保管場所（原料・資材）",
   supplier: "仕入れ先（原料・資材）",
@@ -3426,6 +3429,14 @@ registerBootStep(function(){
   } // end runOptionSupplements
   if(!appStore.getItem(OPTIONS_SUPPLEMENTS_FLAG)) appStore.setItem(OPTIONS_SUPPLEMENTS_FLAG, "1");
   if(runOptionSupplements) appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+  // 単位を大・中・小に分けた。単位（中）の選択肢は、初回だけ、単位（小）と同じ内容を移して、選べる内容を変えない。
+  const UNIT_MID_FLAG = "unit_mid_options_v1_done";
+  if(!appStore.getItem(UNIT_MID_FLAG)){
+    OPTIONS.unitMid = (OPTIONS.unit || []).slice();
+    (OPTIONS.lotUnit || []).forEach(u=>{ if(!OPTIONS.unitMid.includes(u)) OPTIONS.unitMid.push(u); });
+    appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+    appStore.setItem(UNIT_MID_FLAG, "1");
+  }
   // 小分類は「中分類の中に作る」形式へ変更。以前は紐付けの無い中分類では「すべての小分類が選べる」仕様だったため、
   // 紐付けの無い中分類には、現在の小分類をすべて入れて、選べる内容を変えずに新しい形式へ移す（一度だけ実行）。
   const NESTED_CATEGORY_FLAG = "bunrui_nested_categories_v1_done";
@@ -4185,7 +4196,7 @@ function openPackFieldReview(records){
   const diffs = collectPackFieldDiffs(records);
   if(!diffs.length) return false;
   packReviewState = { diffs, records };
-  const unitOpts = (OPTIONS.unit || []).concat(OPTIONS.lotUnit || []).filter((v,i,a)=>a.indexOf(v) === i);
+  const unitOpts = (OPTIONS.unit || []).concat(OPTIONS.unitMid || [], OPTIONS.lotUnit || []).filter((v,i,a)=>a.indexOf(v) === i);
   document.getElementById("packReviewUnits").innerHTML = unitOpts.map(u=>`<option value="${escAttr(u)}"></option>`).join("");
   const body = document.getElementById("packReviewBody");
   body.innerHTML = diffs.map((d, di)=>d.rows.map((r, ri)=>`
@@ -4769,7 +4780,7 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>大分類</label>${bulkSelect(OPTIONS.department, r.department, `updatePurchaseBulk(${i},'department',this.value)`)}</div>
         <div class="form-field"><label>小分類</label>${bulkSelect(filteredCategoryListForBunrui(r.bunrui, r.category), r.category, `updatePurchaseBulk(${i},'category',this.value)`)}</div>
         <div class="form-field"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, r.bunrui, `updatePurchaseBulk(${i},'bunrui',this.value)`)}</div>
-        <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unit, r.unit, `updatePurchaseBulk(${i},'unit',this.value)`)}</div>
+        <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.unit, `updatePurchaseBulk(${i},'unit',this.value)`)}</div>
         <div class="form-field"><label>資材／原料</label><select data-material-select data-row-index="${i}" onchange="updatePurchaseBulk(${i},'materialId',this.value)">${materialOptionsHtml}</select></div>
         <div class="form-field"><label>発注数(中)</label><input type="number" value="${r.qty ?? ''}" oninput="updatePurchaseBulk(${i},'qty',this.value)"></div>
         <div class="form-field"><label>金額(税込)</label><input type="number" value="${r.amount ?? ''}" oninput="updatePurchaseBulk(${i},'amount',this.value)"></div>
@@ -5075,7 +5086,7 @@ function renderPurchasesUnmatchedMaterials(){
         <div class="form-field" style="min-width:120px;"><label>大分類</label>${bulkSelect(OPTIONS.department, u.department, `updateUnmatchedMaterial(${i},'department',this.value)`)}</div>
         <div class="form-field" style="min-width:120px;"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, u.bunrui, `updateUnmatchedMaterial(${i},'bunrui',this.value)`)}</div>
         <div class="form-field" style="min-width:120px;"><label>小分類</label>${bulkSelect(filteredCategoryListForBunrui(u.bunrui, u.category), u.category, `updateUnmatchedMaterial(${i},'category',this.value)`)}</div>
-        <div class="form-field" style="min-width:100px;"><label>単位</label>${bulkSelect(OPTIONS.unit, u.unit, `updateUnmatchedMaterial(${i},'unit',this.value)`)}</div>
+        <div class="form-field" style="min-width:100px;"><label>単位</label>${bulkSelect(OPTIONS.unitMid, u.unit, `updateUnmatchedMaterial(${i},'unit',this.value)`)}</div>
         <div class="form-field" style="min-width:140px;"><label>仕入れ先</label>${bulkSelect(OPTIONS.supplier, u.supplier, `updateUnmatchedMaterial(${i},'supplier',this.value)`)}</div>
         ${productField}
         <div class="form-field" style="min-width:200px;"><label>または既存の資材から選択</label><select data-existing-material-select data-key="${i}" onchange="updateUnmatchedMaterial(${i},'existingMaterialId',this.value)">${materialOptionsHtml}</select></div>
@@ -6176,7 +6187,7 @@ function initSelects(){
   fillSelect("f_i_bunrui", OPTIONS.bunrui);
   fillSelect("f_i_subCategory", OPTIONS.category);
   fillSelect("f_i_unit", OPTIONS.unit);
-  fillSelect("f_i_midUnit", OPTIONS.unit);
+  fillSelect("f_i_midUnit", OPTIONS.unitMid);
   fillSelect("f_i_lotUnit", OPTIONS.lotUnit);
   fillSelect("f_i_status", OPTIONS.status);
   fillSelect("f_i_supplier", OPTIONS.supplier);
@@ -6185,7 +6196,7 @@ function initSelects(){
   fillSelect("f_pu_department", OPTIONS.department);
   fillSelect("f_pu_category", OPTIONS.category);
   fillSelect("f_pu_bunrui", OPTIONS.bunrui);
-  fillSelect("f_pu_unit", OPTIONS.unit);
+  fillSelect("f_pu_unit", OPTIONS.unitMid);
   fillSelect("f_pu_packUnit", OPTIONS.unit);
   fillSelect("f_pu_lotUnit", OPTIONS.lotUnit);
   fillSelect("f_welfare_department", OPTIONS.department);
@@ -6572,9 +6583,13 @@ const OPTION_DATA_TARGETS = {
   creditAccount: [{ label:"商品", rows:()=>products, fields:["creditAccount"], key:()=>STORAGE_KEY, whole:()=>products }],
   customer: [{ label:"商品", rows:()=>products, fields:["customer"], key:()=>STORAGE_KEY, whole:()=>products }],
   posSystem: [{ label:"商品", rows:()=>products, fields:["posSystem"], key:()=>STORAGE_KEY, whole:()=>products }],
-  unit: [
+  unit: [ // 単位（小）
     { label:"原料・資材・半製品", rows:()=>materials, fields:["unit"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
-    { label:"仕入れ", rows:()=>purchases, fields:["unit","packUnit"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
+    { label:"仕入れ", rows:()=>purchases, fields:["packUnit"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
+  ],
+  unitMid: [ // 単位（中）
+    { label:"原料・資材・半製品", rows:()=>materials, fields:["midUnit"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
+    { label:"仕入れ", rows:()=>purchases, fields:["unit"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
   ],
   lotUnit: [
     { label:"原料・資材・半製品", rows:()=>materials, fields:["lotUnit"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
@@ -8542,7 +8557,7 @@ function renderIngredients(){
         <td${cls("subCategory","text")}><select onchange="updateMaterialInline('${m.id}','subCategory',this.value)">${inlineSelectOptions(filteredCategoryListForBunrui(m.bunrui, m.subCategory), m.subCategory)}</select></td>
         <td${cls("packQty")}><input type="number" step="0.01" value="${m.packQty ?? ''}" onchange="updateMaterialInline('${m.id}','packQty',this.value)"></td>
         <td${cls("unit","text")}><select onchange="updateMaterialInline('${m.id}','unit',this.value)">${inlineSelectOptions(OPTIONS.unit, m.unit)}</select></td>
-        <td${cls("midUnit","text")}><select onchange="updateMaterialInline('${m.id}','midUnit',this.value)">${inlineSelectOptions(OPTIONS.unit, m.midUnit)}</select></td>
+        <td${cls("midUnit","text")}><select onchange="updateMaterialInline('${m.id}','midUnit',this.value)">${inlineSelectOptions(OPTIONS.unitMid, m.midUnit)}</select></td>
         <td${cls("packPrice")}>${fmtNum(Math.round(r.packPriceTaxDisplay*100)/100)}</td>
         <td${cls("lotQty")}><input type="number" step="0.01" value="${m.lotQty ?? ''}" onchange="updateMaterialInline('${m.id}','lotQty',this.value)"></td>
         <td${cls("lotUnit","text")}><select onchange="updateMaterialInline('${m.id}','lotUnit',this.value)">${inlineSelectOptions(OPTIONS.lotUnit, m.lotUnit)}</select></td>
@@ -8651,7 +8666,7 @@ function renderIngredientsBulkGrid(){
         <div class="form-field"><label>仕入れ先</label>${bulkSelect(OPTIONS.supplier, r.supplier, `updateIngredientBulk(${i},'supplier',this.value)`)}</div>
         <div class="form-field"><label>数値(小)</label><input type="number" value="${r.packQty ?? ''}" oninput="updateIngredientBulk(${i},'packQty',this.value)"></div>
         <div class="form-field"><label>単位(小)</label>${bulkSelect(OPTIONS.unit, r.unit, `updateIngredientBulk(${i},'unit',this.value)`)}</div>
-        <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unit, r.midUnit, `updateIngredientBulk(${i},'midUnit',this.value)`)}</div>
+        <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.midUnit, `updateIngredientBulk(${i},'midUnit',this.value)`)}</div>
         <div class="form-field"><label>価格(中)税込</label><input type="number" value="${r.packPrice ?? ''}" oninput="updateIngredientBulk(${i},'packPrice',this.value)"></div>
         <div class="form-field"><label>数値(中)</label><input type="number" value="${r.lotQty ?? ''}" oninput="updateIngredientBulk(${i},'lotQty',this.value)"></div>
         <div class="form-field"><label>単位(大)</label>${bulkSelect(OPTIONS.lotUnit, r.lotUnit, `updateIngredientBulk(${i},'lotUnit',this.value)`)}</div>
