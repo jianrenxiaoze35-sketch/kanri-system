@@ -2150,7 +2150,7 @@
     <table style="width:100%;">
       <thead>
         <tr>
-          <th>名称</th><th>中分類</th><th>小分類</th><th>使用量</th><th>在庫数<br>(合計)</th>
+          <th>名称</th><th>中分類</th><th>小分類</th><th>使用量<br>(小)</th><th>在庫数<br>(中)</th>
           <th>保管場所</th><th>ステータス</th><th>メーカー</th><th>単価</th>
         </tr>
       </thead>
@@ -2171,13 +2171,13 @@
       <div class="form-field"><label>対象の種類 *</label><select id="f_r_targetType" onchange="onRecipeTargetTypeChange()" autofocus><option value="product">商品</option><option value="material:半製品">半製品</option><option value="material:仕込み">仕込み</option></select></div>
       <div class="form-field"><label>対象 *</label><select id="f_r_target" onchange="renderRecipeItems()"></select></div>
     </div>
-    <div class="hint" style="margin-bottom:8px;">資材・原料を選ぶと自動で次の行が追加されます。使用量を入力してください（単価は登録済みの資材データから自動計算されます）。対象が「半製品」「仕込み」の場合、算出された原価合計を原料・資材・半製品マスタの「1P入り数」で割った金額が原価計算用単価として自動計算され、他のレシピでこの半製品・仕込みを使う際の単価に反映されます（1P入り数には、このレシピ1回分でできる出来高数量を入力してください）。対象が「商品」の場合、資材／原料の選択肢は対象商品と同じ大分類のものに絞り込まれます（大分類が未設定の資材・原料は、大分類にかかわらず選択肢に表示されます）。</div>
+    <div class="hint" style="margin-bottom:8px;">資材・原料を選ぶと自動で次の行が追加されます。使用量は「小」の単位（例：g）で入力してください（単価は登録済みの資材データから自動計算されます）。対象が「半製品」「仕込み」の場合、算出された原価合計を原料・資材・半製品マスタの「1P入り数」で割った金額が原価計算用単価として自動計算され、他のレシピでこの半製品・仕込みを使う際の単価に反映されます（1P入り数には、このレシピ1回分でできる出来高数量を入力してください）。対象が「商品」の場合、資材／原料の選択肢は対象商品と同じ大分類のものに絞り込まれます（大分類が未設定の資材・原料は、大分類にかかわらず選択肢に表示されます）。</div>
     <table class="bulk-table compact-table recipe-items-table" id="recipeItemsTable">
       <colgroup>
         <col style="width:44%"><col style="width:13%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:6%">
       </colgroup>
       <thead>
-        <tr><th>資材／原料</th><th>使用量</th><th>単位</th><th>単価</th><th>小計</th><th></th></tr>
+        <tr><th>資材／原料</th><th>使用量(小)</th><th>単位(小)</th><th>単価(小1つあたり)</th><th>小計</th><th></th></tr>
       </thead>
       <tbody id="recipeItemsBody"></tbody>
     </table>
@@ -9470,7 +9470,8 @@ let currentRecipeItems = [];
 // 「商品コード」（無ければ「商品名」で照合）が同じ行をまとめて1つのレシピとして登録する。
 // 資材/原料は「資材・原料名」列を原料・資材・半製品マスタの「名称」と完全一致で照合する。
 // レシピ名という独立した項目は無く、一覧・使用先の表示名には常に対象（商品名／半製品・仕込み名）を使用する。
-const RECIPE_IMPORT_HEADERS = ["商品コード", "商品名", "資材・原料名", "使用量"];
+// 使用量は「小」の単位（例：g）で入力する。旧い見出し「使用量」のExcelも取り込める。
+const RECIPE_IMPORT_HEADERS = ["商品コード", "商品名", "資材・原料名", "使用量(小)"];
 
 function downloadRecipeImportTemplate(){
   if(typeof XLSX === "undefined"){
@@ -9612,7 +9613,7 @@ function importRecipesExcel(event){
       const productName = (row["商品名"]||"").toString().trim();
       const materialName = (row["資材・原料名"]||"").toString().trim();
       if(!code && !productName && !materialName) return; // 完全な空行はスキップ
-      rows.push({ code, productName, materialName, usageRaw: row["使用量"], rowNo: rowIdx + 2 });
+      rows.push({ code, productName, materialName, usageRaw: (row["使用量(小)"] !== undefined && row["使用量(小)"] !== "") ? row["使用量(小)"] : row["使用量"], rowNo: rowIdx + 2 });
     });
     event.target.value = "";
     const plan = buildRecipeImportPlan(rows, null);
@@ -10117,7 +10118,7 @@ function openMaterialsSync(productId){
             <td class="text">${m.bunrui||""}</td>
             <td class="text">${m.subCategory||""}</td>
             <td>${fmtNum(usage)}${m.unit?(" "+m.unit):""}</td>
-            <td>${fmtNum(stockTotal)}</td>
+            <td>${fmtNum(stockTotal)}${m.midUnit?(" "+m.midUnit):""}</td>
             <td class="text">${(m.storageLocations||[]).join("、")}</td>
             <td class="text">${m.status||""}</td>
             <td class="text">${m.maker||""}</td>
