@@ -341,8 +341,8 @@
   #page-inventory .card > table th{z-index:1;box-shadow:0 1px 0 var(--border);}
   #page-inventory .card > table tbody tr:nth-child(even) td{background:#fbfcfb;}
   #page-inventory .card > table tbody tr:hover td{background:#f0f6f2;}
-  #invItemsView .card{max-height:72vh;}
-  #invItemsView input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+  
+  #settingsDisplayView input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
   .inv-storage-cell{cursor:pointer;min-height:18px;padding:2px 6px;border:1px dashed #b9c4be;border-radius:4px;background:#fffef7;}
   .inv-storage-cell:hover{border-color:var(--main);background:#f0f6f2;}
   #page-inventory .toolbar.inv-tabs{margin-bottom:10px;}
@@ -1787,6 +1787,35 @@
           </div>
           <div id="displaySettingsBody"></div>
         </div>
+        <div class="card" style="padding:14px 18px;margin-top:12px;">
+          <h3 style="margin:0;">在庫・棚卸に表示する品目（大分類・中分類・小分類の組み合わせ）</h3>
+        </div>
+        <div class="card" style="padding:8px 14px;">
+          <div class="toolbar" style="align-items:center;gap:8px;flex-wrap:wrap;">
+            <input type="text" id="invItemsSearch" class="search-box" placeholder="大分類・中分類・小分類で検索" oninput="renderInventoryItemsView()" style="min-width:200px;">
+            <select id="invItemsKind" onchange="renderInventoryItemsView()">
+              <option value="all">すべて</option><option value="material">原料・資材・半製品</option><option value="product">商品</option>
+            </select>
+            <button class="secondary" onclick="setInvItemsVisibleChecked(true)">表示中をすべてチェック</button>
+            <button class="secondary" onclick="setInvItemsVisibleChecked(false)">表示中をすべて外す</button>
+          </div>
+          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">大分類・中分類・小分類の組み合わせごとに、チェックを入れたものだけを、📊 在庫・棚卸ページ全体（棚卸表・在庫一覧・記録への確定・Excel入出力）に表示します。チェックを外した組み合わせの品目は、非表示になるだけで、データは消えません。対象は、ステータスが「在庫〇」の原料・資材・半製品と、商品です（「未取り扱い」の原料・資材・半製品は、チェックしても表示されません）。品目数は、その組み合わせにある対象の品目の数です。</div>
+        </div>
+        <div class="card">
+          <table style="min-width:0;">
+            <thead><tr><th style="width:60px;">表示</th><th>区分</th><th>大分類</th><th>中分類</th><th>小分類</th><th>品目数</th></tr></thead>
+            <tbody id="invItemsBody"></tbody>
+          </table>
+          <div class="empty" id="invItemsEmpty" style="display:none;">該当する組み合わせがありません。</div>
+        </div>
+        <div class="card">
+          <h3 style="margin:10px 12px 0;font-size:14px;">表示対象の商品の保管場所</h3>
+          <div class="hint" style="margin:4px 12px 0;">表示にチェックを入れた組み合わせの商品の、保管場所を登録できます（原料・資材・半製品の保管場所は、原料・資材・半製品マスタで登録します）。</div>
+          <table style="min-width:0;">
+            <thead><tr><th>商品コード</th><th>名称</th><th>大分類</th><th>小分類</th><th>保管場所</th></tr></thead>
+            <tbody id="invItemsProductBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 予算管理設定（予算管理：各種データ項目設定） -->
@@ -1815,44 +1844,14 @@
       <div class="topbar">
         <h2>在庫・棚卸 <span class="count-badge" id="inventoryCountBadge"></span></h2>
       </div>
-      <div class="hint" style="margin-bottom:12px;">「棚卸品管理」で、大分類・中分類・小分類の組み合わせごとに在庫・棚卸に表示するものを選び、月末に棚卸表で実数を記録・確定します。確定すると記録タブに保存され、原料・資材・半製品マスタの「在庫数(棚卸)」に反映されます。棚卸表の理論値・原料マスタの「在庫数(計算)」は、仕入れ管理に登録された仕入れ数量が自動的に積み上がる形で計算されます。</div>
+      <div class="hint" style="margin-bottom:12px;">⚙️設定の「表示設定」で、在庫・棚卸に表示する大分類・中分類・小分類の組み合わせを選び、月末に棚卸表で実数を記録・確定します。確定すると記録タブに保存され、原料・資材・半製品マスタの「在庫数(棚卸)」に反映されます。棚卸表の理論値・原料マスタの「在庫数(計算)」は、仕入れ管理に登録された仕入れ数量が自動的に積み上がる形で計算されます。</div>
 
       <div class="seg-tabs">
-        <button class="secondary" id="invViewItemsBtn" onclick="switchInventoryView('items')">棚卸品管理</button>
         <button class="secondary" id="invViewFacilityBtn" onclick="switchInventoryView('facility')">施設の在庫（自動取得）</button>
         <button class="secondary" id="invViewStockBtn" onclick="switchInventoryView('stock')">在庫一覧</button>
         <button class="secondary active" id="invViewSheetBtn" onclick="switchInventoryView('sheet')">棚卸表</button>
         <button class="secondary" id="invViewRecordsBtn" onclick="switchInventoryView('records')">記録</button>
         <button class="secondary" id="invViewSettingsBtn" onclick="switchInventoryView('settings')">設定</button>
-      </div>
-
-      <div id="invItemsView" style="display:none;">
-        <div class="card" style="padding:8px 14px;">
-          <div class="toolbar" style="align-items:center;gap:8px;flex-wrap:wrap;">
-            <input type="text" id="invItemsSearch" class="search-box" placeholder="大分類・中分類・小分類で検索" oninput="renderInventoryItemsView()" style="min-width:200px;">
-            <select id="invItemsKind" onchange="renderInventoryItemsView()">
-              <option value="all">すべて</option><option value="material">原料・資材・半製品</option><option value="product">商品</option>
-            </select>
-            <button class="secondary" onclick="setInvItemsVisibleChecked(true)">表示中をすべてチェック</button>
-            <button class="secondary" onclick="setInvItemsVisibleChecked(false)">表示中をすべて外す</button>
-          </div>
-          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">大分類・中分類・小分類の組み合わせごとに、チェックを入れたものだけを、在庫・棚卸全体（棚卸表・在庫一覧・記録への確定・Excel入出力）に表示します。チェックを外した組み合わせの品目は、非表示になるだけで、データは消えません。対象は、ステータスが「在庫〇」の原料・資材・半製品と、商品です（「未取り扱い」の原料・資材・半製品は、チェックしても表示されません）。品目数は、その組み合わせにある対象の品目の数です。</div>
-        </div>
-        <div class="card">
-          <table style="min-width:0;">
-            <thead><tr><th style="width:60px;">表示</th><th>区分</th><th>大分類</th><th>中分類</th><th>小分類</th><th>品目数</th></tr></thead>
-            <tbody id="invItemsBody"></tbody>
-          </table>
-          <div class="empty" id="invItemsEmpty" style="display:none;">該当する組み合わせがありません。</div>
-        </div>
-        <div class="card">
-          <h3 style="margin:10px 12px 0;font-size:14px;">表示対象の商品の保管場所</h3>
-          <div class="hint" style="margin:4px 12px 0;">表示にチェックを入れた組み合わせの商品の、保管場所を登録できます（原料・資材・半製品の保管場所は、原料・資材・半製品マスタで登録します）。</div>
-          <table style="min-width:0;">
-            <thead><tr><th>商品コード</th><th>名称</th><th>大分類</th><th>小分類</th><th>保管場所</th></tr></thead>
-            <tbody id="invItemsProductBody"></tbody>
-          </table>
-        </div>
       </div>
 
       <div id="invFacilityView" style="display:none;">
@@ -1893,7 +1892,7 @@
             <select id="invStockLevel" onchange="renderInventoryStockView()">
               <option value="all">在庫数：すべて</option><option value="low">在庫ゼロ以下のみ</option><option value="positive">在庫ありのみ</option>
             </select>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" id="invStockTargetOnly" checked onchange="renderInventoryStockView()">棚卸品管理で表示にした品目のみ</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" id="invStockTargetOnly" checked onchange="renderInventoryStockView()">表示設定で表示にした品目のみ</label>
             <button class="secondary" style="margin-left:auto;" onclick="exportInventoryStockCSV()">CSV出力</button>
           </div>
           <div class="hint" style="margin:6px 0 0;font-size:11.5px;">現在の在庫数(計算)＝直近の棚卸の数量＋その後の仕入れ数量－その後の売上での消費数量です（レシピ管理のレシピ・代替資材の設定に基づく）。見出しをクリックすると並べ替えられます。</div>
@@ -6030,7 +6029,7 @@ const APP_ACCESS_REGISTRY = [
   { page:"purchases", label:"請求書／仕入れ管理", cur:()=>purchaseView, go:v=>switchPurchaseView(v),
     views:[["invoice","請求書","purchaseViewInvoiceBtn"],["supplier","仕入れ先","purchaseViewSupplierBtn"],["bunrui","中分類","purchaseViewBunruiBtn"],["delivery","納品確認","purchaseViewDeliveryBtn"],["data","データ管理","purchaseViewDataBtn"]] },
   { page:"inventory", label:"在庫・棚卸", cur:()=>inventoryView, go:v=>switchInventoryView(v),
-    views:[["items","棚卸品管理","invViewItemsBtn"],["facility","施設の在庫（自動取得）","invViewFacilityBtn"],["stock","在庫一覧","invViewStockBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
+    views:[["facility","施設の在庫（自動取得）","invViewFacilityBtn"],["stock","在庫一覧","invViewStockBtn"],["sheet","棚卸表","invViewSheetBtn"],["records","記録","invViewRecordsBtn"],["settings","設定","invViewSettingsBtn"]] },
   { page:"sales", label:"売上管理", cur:()=>salesView, go:v=>switchSalesView(v),
     views:[["list","リストビュー","salesViewListBtn"],["table","テーブルビュー","salesViewTableBtn"],["hourly","時間帯別ビュー","salesViewHourlyBtn"]] },
   { page:"labor", label:"人件費管理", cur:()=>laborView, go:v=>switchLaborView(v),
@@ -8784,6 +8783,7 @@ function isHiddenNonMaterial(m){
 
 /* ---- 設定ページ：表示設定ビュー ---- */
 function renderDisplaySettings(){
+  try{ renderInventoryItemsView(); }catch(e){ console.warn(e); }
   const box = document.getElementById("displaySettingsBody");
   if(!box) return;
   const cats = Array.isArray(OPTIONS.category) ? OPTIONS.category.slice() : [];
@@ -19239,7 +19239,7 @@ function persistInventoryDraft(){
   appStore.setItem(INVENTORY_DRAFT_KEY, JSON.stringify(inventoryDraft));
 }
 
-// 在庫・棚卸に表示する品目は、「棚卸品管理」で、大分類・中分類・小分類の組み合わせごとにチェックしたもの。
+// 在庫・棚卸に表示する品目は、⚙️設定の「表示設定」で、大分類・中分類・小分類の組み合わせごとにチェックしたもの。
 // 商品の中分類は「商品」として扱う。
 const INVENTORY_COMBOS_KEY = "inventory_target_combos_v1";
 let inventoryCheckedCombos = new Set();
@@ -19445,7 +19445,7 @@ const INV_SHEET_HEADER_CELLS = "<th>小分類</th><th>名称</th><th>理論値</
 // editable=trueなら実数入力欄付き（棚卸表タブ）、falseなら確定済みの値のみを表示する読み取り専用（記録タブ）。
 function buildInventorySheetTablesHtml(items, editable){
   const grouped = groupInventoryItems(items);
-  if(!grouped.length) return `<div class="hint">在庫・棚卸の対象項目がありません。「棚卸品管理」タブで、表示する組み合わせを選択してください。</div>`;
+  if(!grouped.length) return `<div class="hint">在庫・棚卸の対象項目がありません。⚙️設定の「表示設定」で、表示する組み合わせを選択してください。</div>`;
   return grouped.map(deptGroup=>{
     const storageBlocksHtml = deptGroup.groups.map(sg=>{
       const rowDescs = [];
@@ -19540,7 +19540,7 @@ function exportInventoryTemplateExcel(){
   }
   const items = filterInventoryItemsForSheet(collectInventoryStocktakeItems()); // 表示中の区分（全て／商品／原料／資材／その他）
   if(!items.length){
-    alert("棚卸の対象項目がありません。「棚卸品管理」タブで、表示する組み合わせを選択してください。");
+    alert("棚卸の対象項目がありません。⚙️設定の「表示設定」で、表示する組み合わせを選択してください。");
     return;
   }
   const month = (document.getElementById("invTargetMonth") || {}).value || inventoryDraft.month || currentYearMonthStr();
@@ -19635,7 +19635,7 @@ function confirmInventoryStocktake(){
   const month = document.getElementById("invTargetMonth").value || inventoryDraft.month || currentYearMonthStr();
   const items = collectInventoryStocktakeItems();
   if(!items.length){
-    alert("在庫・棚卸対象の項目がありません。「棚卸品管理」タブで、表示する組み合わせを選択してください。");
+    alert("在庫・棚卸対象の項目がありません。⚙️設定の「表示設定」で、表示する組み合わせを選択してください。");
     return;
   }
   if(!confirm(`${month}分の棚卸を確定します。確定すると、原料・資材・半製品マスタの「在庫数(棚卸)」に実数（保管場所ごとの合計）が反映され、この棚卸表の入力内容はクリアされます。よろしいですか？`)) return;
@@ -19737,7 +19737,7 @@ document.addEventListener("click", function(){
   if(invProductStorageEditId) closeInvProductStorageEditor();
 });
 
-// 棚卸品管理：大分類・中分類・小分類の組み合わせごとに、在庫・棚卸に表示するかを決める。
+// 設定>表示設定：大分類・中分類・小分類の組み合わせごとに、在庫・棚卸に表示するかを決める。
 let _invComboRows = [];
 function buildInventoryComboRows(){
   const map = new Map();
@@ -19802,11 +19802,13 @@ function toggleInvCombo(i, checked){
   if(checked) inventoryCheckedCombos.add(r.key); else inventoryCheckedCombos.delete(r.key);
   persistInventoryCombos();
   renderInventoryActiveView();
+  renderInventoryItemsView();
 }
 function setInvItemsVisibleChecked(checked){
   invComboVisibleRows().forEach(r=>{ if(checked) inventoryCheckedCombos.add(r.key); else inventoryCheckedCombos.delete(r.key); });
   persistInventoryCombos();
   renderInventoryActiveView();
+  renderInventoryItemsView();
 }
 
 /* ---- 在庫一覧：原料・資材・半製品の、現在の在庫数(計算)の一覧 ---- */
@@ -20399,7 +20401,7 @@ function renderInventorySettingsView(){
 
 function switchInventoryView(view){
   inventoryView = view;
-  ["items","facility","stock","sheet","records","settings"].forEach(v=>{
+  ["facility","stock","sheet","records","settings"].forEach(v=>{
     document.getElementById("invView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
     document.getElementById("inv"+v.charAt(0).toUpperCase()+v.slice(1)+"View").style.display = v===view ? "" : "none";
   });
@@ -20407,8 +20409,7 @@ function switchInventoryView(view){
 }
 
 function renderInventoryActiveView(){
-  if(inventoryView==="items") renderInventoryItemsView();
-  else if(inventoryView==="stock") renderInventoryStockView();
+  if(inventoryView==="stock") renderInventoryStockView();
   else if(inventoryView==="facility") renderFacilityView();
   else if(inventoryView==="sheet") renderInventorySheet();
   else if(inventoryView==="records") renderInventoryRecords();
