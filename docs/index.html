@@ -3487,6 +3487,92 @@ registerBootStep(function(){
   }
   appStore.setItem(DEPARTMENT_CHANNEL_MIGRATION_FLAG, "1");
 });
+
+/* ---- 「＋ 新規入力」の処理 ---- */
+function askNewOptionValue(key, defaultBunrui){
+  return new Promise(resolve=>{
+    const label = (FIELD_LABELS[key] || key).replace(/（.*）$/, "");
+    const wrap = document.createElement("div");
+    wrap.className = "modal-overlay show";
+    const bunruiHtml = key === "category" ? `<div class="form-field" style="margin-top:8px;"><label>入れる中分類</label><select id="newOptBunrui"><option value="">（選んでください）</option>${(OPTIONS.bunrui||[]).map(b=>`<option value="${escAttr(b)}" ${b===defaultBunrui?"selected":""}>${escAttr(b)}</option>`).join("")}</select></div>` : "";
+    wrap.innerHTML = `<div class="modal" style="width:380px;max-width:94vw;">
+      <h3>${escAttr(label)}を新規入力</h3>
+      <div class="hint" style="margin-bottom:8px;">入力した内容は、⚙️設定の分類にも自動で追加されます。</div>
+      <input type="text" id="newOptText" style="width:100%;box-sizing:border-box;" placeholder="${escAttr(label)}を入力">
+      ${bunruiHtml}
+      <div class="modal-footer"><button class="secondary" id="newOptCancel">キャンセル</button><button id="newOptOk">追加</button></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const input = wrap.querySelector("#newOptText");
+    setTimeout(()=>input.focus(), 30);
+    const done = (v)=>{ wrap.remove(); resolve(v); };
+    wrap.querySelector("#newOptCancel").onclick = ()=>done(null);
+    const ok = ()=>{
+      const text = input.value.trim();
+      if(!text) return;
+      let bunrui = "";
+      if(key === "category"){
+        bunrui = wrap.querySelector("#newOptBunrui").value;
+        if(!bunrui){ alert("小分類を入れる中分類を選んでください。"); return; }
+      }
+      done({ text, bunrui });
+    };
+    wrap.querySelector("#newOptOk").onclick = ok;
+    input.addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); ok(); } });
+  });
+}
+// 新しい値を、設定の分類（OPTIONS。設定ページを開いていれば、その編集中の内容にも）へ追加して保存する。
+function registerNewOptionValue(key, value, bunrui){
+  const targets = [OPTIONS];
+  if(typeof draftOptions !== "undefined" && draftOptions && draftOptions !== OPTIONS) targets.push(draftOptions);
+  targets.forEach((o, ti)=>{
+    if(!Array.isArray(o[key])) o[key] = [];
+    if(!o[key].includes(value)){
+      o[key].push(value);
+      if(ti === 1 && typeof draftOrigin !== "undefined" && draftOrigin && draftOrigin[key]) draftOrigin[key].push(null);
+    }
+    if(key === "category" && bunrui){
+      if(!o.bunruiCategoryLinks || typeof o.bunruiCategoryLinks !== "object" || Array.isArray(o.bunruiCategoryLinks)) o.bunruiCategoryLinks = {};
+      if(!Array.isArray(o.bunruiCategoryLinks[bunrui])) o.bunruiCategoryLinks[bunrui] = [];
+      if(!o.bunruiCategoryLinks[bunrui].includes(value)) o.bunruiCategoryLinks[bunrui].push(value);
+    }
+  });
+  appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+}
+// 「＋ 新規入力…」が選ばれたら、元のonchange処理より先に（キャプチャ段階で）受け取る。
+document.addEventListener("change", async function(e){
+  const sel = e.target;
+  if(!sel || sel.tagName !== "SELECT" || sel.value !== NEW_OPTION_VALUE) return;
+  e.stopPropagation(); // 元のonchange処理に「＋ 新規入力」の値が渡らないようにする
+  const opt = sel.options[sel.selectedIndex];
+  const key = opt.dataset.optkey;
+  const prevValue = sel._prevValue !== undefined ? sel._prevValue : "";
+  const bunrui = opt.dataset.bunrui || "";
+  const res = await askNewOptionValue(key, bunrui);
+  if(!res){ sel.value = [...sel.options].some(o=>o.value === prevValue) ? prevValue : ""; return; }
+  const value = res.text;
+  const targetBunrui = res.bunrui || bunrui;
+  registerNewOptionValue(key, value, targetBunrui);
+  // 同じ項目の他のセレクトにも、新しい選択肢を足す（入力中の値を消さないよう、作り直さずに追加する）
+  document.querySelectorAll("select").forEach(s2=>{
+    const marker = [...s2.options].find(o=>o.value === NEW_OPTION_VALUE && o.dataset.optkey === key);
+    if(!marker) return;
+    if(key === "category" && (marker.dataset.bunrui || "") && marker.dataset.bunrui !== targetBunrui) return;
+    if(![...s2.options].some(o=>o.value === value)){
+      const o = document.createElement("option");
+      o.value = value; o.textContent = value;
+      s2.insertBefore(o, marker);
+    }
+  });
+  sel.value = value;
+  sel._prevValue = value;
+  sel.dispatchEvent(new Event("change", { bubbles: true }));
+}, true);
+document.addEventListener("focusin", function(e){
+  const t = e.target;
+  if(t && t.tagName === "SELECT" && t.value !== NEW_OPTION_VALUE) t._prevValue = t.value;
+}, true);
+
 /* ---- 設定に登録がない値の登録確認 ----
    商品マスタ・原料・資材・半製品マスタ・請求書／仕入れ管理に、設定（分類）にない値が入った（手入力・Excel/CSV取込など）ときは、
    保存のあとで「登録確認」画面を出し、チェックした値を設定の分類に登録できるようにする。
@@ -3682,6 +3768,23 @@ let purchasesUnmatchedDraft = [];
 function escAttr(v){
   return (v===undefined||v===null? "": String(v)).replace(/"/g,"&quot;");
 }
+/* ---- 選択式項目の「＋ 新規入力」 ----
+   設定の分類に登録できる選択式項目（部門・分類・単位・メーカー・仕入れ先など）は、選択肢の末尾に「＋ 新規入力…」を出す。
+   選ぶと入力画面が開き、入力した値は、設定の分類に自動で追加されて、その場で選択される。
+   システムの動作が値に依存する項目（ステータス・POSシステム・売上区分）は、新規入力の対象外。 */
+const NEW_OPTION_VALUE = "__new_option__";
+const NEW_OPTION_EXCLUDED_KEYS = ["status", "purchaseStatus", "posSystem", "salesCategory", "storageLocation"];
+function optKeyOfList(list){
+  if(!list) return "";
+  if(list._optKey) return list._optKey;
+  const k = Object.keys(OPTIONS).find(key=>OPTIONS[key] === list);
+  return (k && !NEW_OPTION_EXCLUDED_KEYS.includes(k)) ? k : "";
+}
+function newOptionHtml(list){
+  const key = optKeyOfList(list);
+  if(!key) return "";
+  return `<option value="${NEW_OPTION_VALUE}" data-optkey="${key}" data-bunrui="${escAttr(list._bunrui || "")}">＋ 新規入力…</option>`;
+}
 function bulkSelect(list, value, onchangeAttr){
   const opts = ['<option value=""></option>'].concat((list||[]).map(v=>`<option value="${escAttr(v)}" ${v===value?"selected":""}>${v}</option>`));
   // CSV/Excel取込などで選択肢に無い値が入っている場合、ネイティブselectは先頭（空欄）を表示してしまい
@@ -3689,7 +3792,7 @@ function bulkSelect(list, value, onchangeAttr){
   if(value && !(list||[]).includes(value)){
     opts.push(`<option value="${escAttr(value)}" selected>${escAttr(value)}（選択肢に無い値）</option>`);
   }
-  return `<select onchange="${onchangeAttr}">${opts.join("")}</select>`;
+  return `<select onchange="${onchangeAttr}">${opts.join("")}${newOptionHtml(list)}</select>`;
 }
 
 const STORAGE_KEY = "product_master_data_v1";
@@ -6346,7 +6449,7 @@ function setSelectValueKeep(id, value){
 function fillSelect(id, list){
   const el = document.getElementById(id);
   if(!el) return; // 対象の要素がDOMに存在しない場合は何もしない(存在しないIDを渡しても他のinitSelects()内の処理が止まらないようにする)
-  el.innerHTML = '<option value="">未選択</option>' + list.map(v=>`<option value="${v}">${v}</option>`).join("");
+  el.innerHTML = '<option value="">未選択</option>' + list.map(v=>`<option value="${v}">${v}</option>`).join("") + newOptionHtml(list);
 }
 
 // 中分類(bunrui)の値に応じて選択可能な小分類(category)を絞り込む。
@@ -6359,6 +6462,7 @@ function filteredCategoryListForBunrui(bunruiValue, preserveValue){
   const links = OPTIONS.bunruiCategoryLinks && Array.isArray(OPTIONS.bunruiCategoryLinks[bunruiValue]) ? OPTIONS.bunruiCategoryLinks[bunruiValue] : [];
   let list = links.slice();
   if(preserveValue && !list.includes(preserveValue)) list = list.concat([preserveValue]);
+  list._optKey = "category"; list._bunrui = bunruiValue; // 「＋ 新規入力」で、この中分類の中に追加する
   return list;
 }
 
@@ -8641,7 +8745,7 @@ function inlineSelectOptions(list, value){
   if(value && !(list||[]).includes(value)){
     opts += `<option value="${escAttr(value)}" selected>${escAttr(value)}</option>`;
   }
-  return opts;
+  return opts + newOptionHtml(list);
 }
 
 /* ---- 原料・資材・備品に該当しない項目の整理 ----
