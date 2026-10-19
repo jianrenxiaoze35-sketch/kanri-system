@@ -1663,30 +1663,12 @@
 
         <div class="card">
           <h3 style="margin-top:0;">🗄 ストレージ使用量</h3>
-          <div class="hint">ブラウザの保存容量（localStorage）には上限（目安5〜10MB）があり、超えるとCSV取り込みなどの保存操作が失敗します（「CSV読み込み失敗」等のエラーはこれが原因のことがあります）。使用量を確認し、古い日別データを削除して空き容量を確保できます。</div>
+          <div class="hint">ブラウザの保存容量（localStorage）には上限（目安5〜10MB）があり、超えるとCSV取り込みなどの保存操作が失敗します（「CSV読み込み失敗」等のエラーはこれが原因のことがあります）。使用量を確認できます。</div>
           <div class="toolbar" style="margin-top:10px;">
             <button class="secondary" onclick="renderStorageUsage()">📊 使用量を確認</button>
           </div>
           <div id="storageUsageResult" style="margin-top:8px;"></div>
-          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">
-            <div class="hint" style="margin-bottom:6px;">下で選んだ日より前の「レジ締め・売上集計」日別データを、自動バックアップ（JSONダウンロード）した上で削除します。</div>
-            <div class="toolbar">
-              <span class="hint">基準日（この日より前を削除）：</span>
-              <input type="date" id="storageUsageCutoffDate">
-              <button class="secondary" onclick="cleanupOldRegiDailyData()">🗑 バックアップして古いデータを削除</button>
-            </div>
-            <div id="storageUsageCleanupResult" class="hint" style="margin-top:6px;"></div>
-          </div>
-          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">
-            <div class="hint" style="margin-bottom:6px;">古いデータの削除を毎回手動で行わなくて済むよう、基準日数より古い伝票明細データを、時間帯別集計・売上金額を「売上管理」へ反映した上で自動的に削除できます（伝票単位の明細のみが対象。時間帯別・売上金額・商品未マッチ確認などに使う数値は残ります）。1日1回、ページを開いたときにバックグラウンドで実行します。<b style="color:var(--danger);">有効にすると、②売上集計・その他決済確認などで、基準日数より前のデータが見られなくなります。通常はオフのままにしてください。</b></div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;">
-              <input type="checkbox" id="set_autoCleanupEnabled" onchange="saveRegiAutoCleanupSettings()"> 自動整理を有効にする
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-              基準日数：<input type="number" id="set_autoCleanupDays" min="1" style="width:70px;" onchange="saveRegiAutoCleanupSettings()">日より前を自動削除
-            </label>
-            <div id="regiAutoCleanupStatus" class="hint" style="margin-top:6px;"></div>
-          </div>
+          <div class="hint" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">保存したデータ（funfo伝票・スマレジ明細・レジ締めなど）は、恒久的に残します。削除や自動整理の機能はありません。</div>
         </div>
       </div>
     </div>
@@ -14425,7 +14407,7 @@ let regiView = "regi";
 let lastRegiTheoryTotal = 0, lastRegiActualTotal = 0;
 const REGI_DEFAULT_SETTINGS = {
   regiTheoryTemplate: null, regiTheoryTemplateSavedAt: null,
-  autoCleanupEnabled: false, autoCleanupDays: 30,
+  
   storeName: "千石蔵ビアホール", partner: "国稀酒造株式会社", email: "", cc: "",
   subjectTemplate: "【{{storeName}}】{{date}} 売上集計報告",
   bodyTemplate:
@@ -17522,31 +17504,6 @@ function renderRegiSettingsView(){
   document.getElementById("set_otherPayCc").value = regiSettings.otherPayCc || "";
   document.getElementById("set_otherPaySubjectTemplate").value = regiSettings.otherPaySubjectTemplate || "";
   document.getElementById("set_otherPayBodyTemplate").value = regiSettings.otherPayBodyTemplate || "";
-  document.getElementById("set_autoCleanupEnabled").checked = !!(regiSettings.autoCleanupEnabled && regiSettings.autoCleanupConfirmed);
-  document.getElementById("set_autoCleanupDays").value = regiSettings.autoCleanupDays || REGI_DEFAULT_SETTINGS.autoCleanupDays;
-  renderRegiAutoCleanupStatus();
-}
-function renderRegiAutoCleanupStatus(){
-  const el = document.getElementById("regiAutoCleanupStatus");
-  if(!el) return;
-  if(!_regiAutoCleanupLastResult){ el.textContent = "（本日はまだ自動整理を実行していません）"; return; }
-  const r = _regiAutoCleanupLastResult;
-  el.textContent = r.count > 0
-    ? `最終実行：${r.ranAt}　${r.count}日分（${r.from}〜${r.to}）の明細を整理しました`
-    : `最終実行：${r.ranAt}　対象日はありませんでした`;
-}
-function saveRegiAutoCleanupSettings(){
-  const wantOn = document.getElementById("set_autoCleanupEnabled").checked;
-  if(wantOn && !regiSettings.autoCleanupConfirmed){
-    if(!confirm("自動整理を有効にすると、基準日数より古いfunfo伝票・スマレジ明細・レジ締めの日別データが、毎日自動で削除されます（②売上集計や、その他決済確認に過去のデータが出なくなります）。\n\n本当に有効にしますか？")){
-      document.getElementById("set_autoCleanupEnabled").checked = false;
-      return;
-    }
-    regiSettings.autoCleanupConfirmed = true;
-  }
-  regiSettings.autoCleanupEnabled = wantOn;
-  regiSettings.autoCleanupDays = Math.max(1, Number(document.getElementById("set_autoCleanupDays").value) || REGI_DEFAULT_SETTINGS.autoCleanupDays);
-  persistRegiSettings();
 }
 // フォームの現在の入力内容をregiSettingsに反映して保存する（確認ダイアログなし）。
 // 各入力欄のonchangeから呼ばれ、入力欄から離れるたびに自動保存されるようにする
@@ -17910,132 +17867,12 @@ function renderStorageUsage(){
     `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:12.5px;"><span>${escAttr(name)}</span><span>${fmtBytes(size)}</span></div>`
   ).join("");
   const dates = Object.keys(dailyDates).sort();
-  const cutoffEl = document.getElementById("storageUsageCutoffDate");
-  if(cutoffEl && !cutoffEl.value && dates.length) cutoffEl.value = dates[0];
   box.innerHTML = `
     <div style="font-weight:700;margin-bottom:4px;">保存データ合計：約 ${fmtBytes(total)}（IndexedDBに保存。上限の目安 数百MB〜）</div>
     ${catRows}
     <div class="hint" style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);">うち、レジ締め・売上集計の日別データ（funfo伝票・スマレジ明細）：${dates.length}日分${dates.length?`（最古：${dates[0]} 〜 最新：${dates[dates.length-1]}）`:""}<br>ブラウザの保存容量（上限の目安 5〜10MB。以前ここが逼迫する原因でした）は現在 約 ${fmtBytes(lsTotal)} のみ使用しており、余裕があります。</div>
   `;
 }
-/* 対象日リストについて、削除前に時間帯別集計・売上金額・商品数を「売上管理」へ確実に反映（同期）する。
-   通常はCSV取込時に自動反映済みのはずなので、既に反映済みの日はスキップして高速化する
-   （反映済みかどうかを確認せず全日付でrecomputeAggregate()＝描画処理込みのフル再計算を行うと、
-   日数が多い場合にブラウザが長時間フリーズしてしまうため）。
-   手動の「ストレージ整理」ボタンと自動整理（日次バックグラウンド実行）の両方から共通で使う。 */
-function syncBeforePurgeRegiDailyData(targetDates){
-  const savedDate = regiCurrentDate;
-  const savedState = regiSalesState;
-  const backup = {};
-  let resyncedCount = 0;
-  targetDates.forEach(d=>{
-    const sk = regiSalesKey(d), ck = regiCloseKey(d);
-    const sv = regiDailyStore.getItem(sk);
-    if(sv!=null){
-      try{ backup[sk] = JSON.parse(sv); }catch(e){}
-      const existingDay = salesDays.find(x=>x.date===d);
-      // 売上金額・時間帯別集計(hourlySummary)が既に同期済みでも、会計回数(restaurantTxnCount/
-      // shopTxnCount)がまだ保存されていない日は「未同期」扱いにして再同期する。この判定が売上金額
-      // 系のみだった場合、会計回数だけが一度も保存されないまま生データが削除されてしまう
-      // （persistSalesTxnCountsが呼ばれないため、削除後は会計回数が永久に「-」になる）不具合があった。
-      const alreadySynced = !!(existingDay && existingDay.hourlySummary
-        && (existingDay.restaurantSales || existingDay.shopSales || (existingDay.items && existingDay.items.length))
-        && (existingDay.restaurantTxnCount != null || existingDay.shopTxnCount != null));
-      if(!alreadySynced){
-        try{
-          regiCurrentDate = d;
-          regiSalesState = migrateRegiSalesState(JSON.parse(sv));
-          recomputeAggregate();
-          resyncedCount++;
-        }catch(e){}
-      }
-    }
-    const cv = regiDailyStore.getItem(ck); if(cv!=null){ try{ backup[ck] = JSON.parse(cv); }catch(e){} }
-  });
-  regiCurrentDate = savedDate;
-  regiSalesState = savedState;
-  return { backup, resyncedCount };
-}
-
-function purgeRegiDailyDataKeys(targetDates){
-  targetDates.forEach(d=>{
-    regiDailyStore.removeItem(regiSalesKey(d));
-    regiDailyStore.removeItem(regiCloseKey(d));
-  });
-}
-
-function cleanupOldRegiDailyData(){
-  const cutoff = document.getElementById("storageUsageCutoffDate").value;
-  const resultEl = document.getElementById("storageUsageCleanupResult");
-  if(!cutoff){ alert("削除対象の基準日を選択してください（この日より前のデータを削除します）"); return; }
-  const { dailyDates } = getStorageUsageBreakdown();
-  const targetDates = Object.keys(dailyDates).filter(d=>d < cutoff).sort();
-  if(!targetDates.length){ if(resultEl) resultEl.textContent = "対象日がありません。"; return; }
-  if(!confirm(`${targetDates.length}日分（${targetDates[0]} 〜 ${targetDates[targetDates.length-1]}）のレジ締め・売上集計データを削除します。\n\n削除前に、各日の売上金額・商品数・時間帯別集計を「売上管理」ページへ保存（安全ネット）した上で、自動でバックアップファイル（JSON）もダウンロードします。よろしいですか？`)) return;
-
-  // 削除前の安全ネット同期（時間帯別集計への反映）自体がlocalStorage.setItemを行うため、既に容量上限に
-  // 達している状況ではこの内部処理が失敗することがある。その場合でも「保存できませんでした」という
-  // 紛らわしい案内は出さず（削除処理はこの後も問題なく進められるため）、削除処理は必ず最後まで実行する。
-  let backup = {}, resyncedCount = 0, syncFailed = false;
-  _suppressQuotaAlert = true;
-  try{
-    ({ backup, resyncedCount } = syncBeforePurgeRegiDailyData(targetDates));
-  }catch(e){
-    console.warn("syncBeforePurgeRegiDailyData failed:", e);
-    syncFailed = true;
-  } finally {
-    _suppressQuotaAlert = false;
-  }
-
-  const blob = new Blob([JSON.stringify(backup, null, 1)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `レジ締め_削除前バックアップ_${targetDates[0]}_${targetDates[targetDates.length-1]}.json`;
-  a.click();
-
-  purgeRegiDailyDataKeys(targetDates);
-  const syncNote = syncFailed ? "（保存容量が不足していたため、時間帯別集計への反映は一部行えていない可能性があります。バックアップファイルには元データが保存されています）" : `（売上管理へ反映済み・バックアップ済み。うち${resyncedCount}日分は未反映だったため追加で反映しました）`;
-  if(resultEl) resultEl.innerHTML = `<span style="color:var(--main);">✅ ${targetDates.length}日分のデータを削除しました${syncNote}。</span>`;
-  renderStorageUsage();
-}
-
-/* 基準日数より古いレジ締め生データ(funfo伝票・スマレジ明細)を、時間帯別集計を売上管理へ確実に
-   反映した上でバックグラウンドで自動削除する。1日1回のみ実行し、確認ダイアログやファイルダウン
-   ロードは行わない（削除前に必ずhourlySummaryへ同期するため、時間帯別・売上金額・商品未マッチ確認
-   など通常業務で使う数値は失われない。伝票単位の明細のみが対象になる）。 */
-let _regiAutoCleanupLastResult = null;
-function autoCleanupOldRegiDailyData(){
-  try{
-    // 以前は初期設定で有効になっており、30日より前のデータが自動で消えていた。利用者が確認して有効にした場合のみ動かす。
-    if(!regiSettings.autoCleanupEnabled || !regiSettings.autoCleanupConfirmed) return;
-    const days = Number(regiSettings.autoCleanupDays) || 30;
-    const today = todayStr();
-    const lastRun = appStore.getItem("regi_auto_cleanup_last_run_v1");
-    if(lastRun === today) return; // 1日1回のみ
-    const cutoff = addDays(today, -days);
-    const { dailyDates } = getStorageUsageBreakdown();
-    const targetDates = Object.keys(dailyDates).filter(d=>d < cutoff).sort();
-    appStore.setItem("regi_auto_cleanup_last_run_v1", today);
-    if(!targetDates.length){
-      _regiAutoCleanupLastResult = { ranAt: today, count: 0 };
-      return;
-    }
-    // バックグラウンドの自動整理中は、同期処理の保存失敗で予期せずアラートが表示されないようにしつつ、
-    // 同期に失敗しても削除（容量の確保）自体は必ず実行する。
-    let resyncedCount = 0;
-    _suppressQuotaAlert = true;
-    try{
-      ({ resyncedCount } = syncBeforePurgeRegiDailyData(targetDates));
-    }catch(e){
-      console.warn("syncBeforePurgeRegiDailyData failed:", e);
-    } finally {
-      _suppressQuotaAlert = false;
-    }
-    purgeRegiDailyDataKeys(targetDates);
-    _regiAutoCleanupLastResult = { ranAt: today, count: targetDates.length, resyncedCount, from: targetDates[0], to: targetDates[targetDates.length-1] };
-  }catch(e){ console.warn("autoCleanupOldRegiDailyData failed:", e); }
-}
-
 function importRegiAllData(){
   const f = document.getElementById("regiImportAllFile").files[0];
   if(!f){ alert("ファイルを選択してください"); return; }
@@ -18805,7 +18642,6 @@ function printRegi(){
 
 registerBootStep(function(){
   switchRegiView("regi");
-  try{ autoCleanupOldRegiDailyData(); }catch(e){ console.warn("autoCleanupOldRegiDailyData failed:", e); }
 });
 
 /* ===================== 在庫・棚卸 ===================== */
