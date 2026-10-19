@@ -1836,7 +1836,7 @@
             <button class="secondary" onclick="setInvItemsVisibleChecked(true)">表示中をすべてチェック</button>
             <button class="secondary" onclick="setInvItemsVisibleChecked(false)">表示中をすべて外す</button>
           </div>
-          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">大分類・中分類・小分類の組み合わせごとに、チェックを入れたものだけを、在庫・棚卸全体（棚卸表・在庫一覧・記録への確定・Excel入出力）に表示します。チェックを外した組み合わせの品目は、非表示になるだけで、データは消えません。品目数は、その組み合わせにあるマスタの品目の数です。</div>
+          <div class="hint" style="margin:6px 0 0;font-size:11.5px;">大分類・中分類・小分類の組み合わせごとに、チェックを入れたものだけを、在庫・棚卸全体（棚卸表・在庫一覧・記録への確定・Excel入出力）に表示します。チェックを外した組み合わせの品目は、非表示になるだけで、データは消えません。対象は、ステータスが「在庫〇」の原料・資材・半製品と、商品です（「未取り扱い」の原料・資材・半製品は、チェックしても表示されません）。品目数は、その組み合わせにある対象の品目の数です。</div>
         </div>
         <div class="card">
           <table style="min-width:0;">
@@ -19246,7 +19246,8 @@ let inventoryCheckedCombos = new Set();
 function invComboKey(dept, bunrui, cat){ return JSON.stringify([dept || "", bunrui || "", cat || ""]); }
 function materialComboKey(m){ return invComboKey(m.department, m.bunrui, m.subCategory); }
 function productComboKey(p){ return invComboKey(p.department, "商品", p.category); }
-function isMaterialStocktakeTarget(m){ return inventoryCheckedCombos.has(materialComboKey(m)); }
+// 原料・資材・半製品は、ステータスが「在庫〇」であることが前提（仕入れ管理に仕入れデータがあれば自動で「在庫〇」になる）。
+function isMaterialStocktakeTarget(m){ return m.status === "在庫〇" && inventoryCheckedCombos.has(materialComboKey(m)); }
 function isProductStocktakeTarget(p){ return inventoryCheckedCombos.has(productComboKey(p)); }
 function persistInventoryCombos(){
   appStore.setItem(INVENTORY_COMBOS_KEY, JSON.stringify({ checked: [...inventoryCheckedCombos] }));
@@ -19746,7 +19747,7 @@ function buildInventoryComboRows(){
     const r = map.get(key);
     if(kind === "material") r.mat++; else r.prod++;
   };
-  materials.forEach(m=>{ if(!isHiddenNonMaterial(m)) add("material", m.department, m.bunrui, m.subCategory); });
+  materials.forEach(m=>{ if(m.status === "在庫〇" && !isHiddenNonMaterial(m)) add("material", m.department, m.bunrui, m.subCategory); });
   products.forEach(p=>add("product", p.department, "商品", p.category));
   // チェック済みなのに、いまは品目がない組み合わせも、外せるように残す
   inventoryCheckedCombos.forEach(key=>{
