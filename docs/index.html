@@ -2380,9 +2380,9 @@
         <div class="section-title">単位・価格</div>
         <div class="form-field"><label>数値(小)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">中1つの内容量（例：1000）</span></label><input type="number" id="f_i_packQty" step="0.01" oninput="recalcIngredient()"></div>
         <div class="form-field"><label>単位(小)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">例：g</span></label><select id="f_i_unit" onchange="recalcIngredient()"></select></div>
+        <div class="form-field"><label>数値(中)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">大1つに入る中の数（例：12）</span></label><input type="number" id="f_i_lotQty" step="0.01"></div>
         <div class="form-field"><label>単位(中)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">在庫はこの単位で数えます（例：本）</span></label><select id="f_i_midUnit"></select></div>
         <div class="form-field"><label>価格(中)税込<br><span id="f_i_recipeCostNote" style="display:none;font-size:10.5px;font-weight:normal;color:var(--muted);">※レシピの原価から自動計算されるため、この入力値は使用されません</span></label><input type="number" id="f_i_packPrice" step="1" oninput="recalcIngredient()"></div>
-        <div class="form-field"><label>数値(中)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">大1つに入る中の数（例：12）</span></label><input type="number" id="f_i_lotQty" step="0.01"></div>
         <div class="form-field"><label>単位(大)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">例：箱</span></label><select id="f_i_lotUnit"></select></div>
         <div class="form-field"><label>価格(大)税込</label><input type="number" id="f_i_lotPrice" step="1" oninput="recalcIngredient()"></div>
         <input type="hidden" id="f_i_unitPrice">
@@ -3720,14 +3720,14 @@ const INGREDIENT_SORT_COLUMNS = [
   { key: "subCategory", label: "小分類", type: "text" },
   { key: "packQty", label: "数値(小)", type: "num" },
   { key: "unit", label: "単位(小)", type: "text" },
+  { key: "lotQty", label: "数値(中)", type: "num" },
   { key: "midUnit", label: "単位(中)", type: "text" },
   { key: "packPriceTaxDisplay", label: "価格(中)<br>税込", type: "num" },
-  { key: "lotQty", label: "数値(中)", type: "num" },
   { key: "lotUnit", label: "単位(大)", type: "text" },
   { key: "lotPriceTax", label: "価格(大)<br>税込", type: "num" },
   { key: "lotTotalAmount", label: "価格(大)<br>合計金額", type: "num" },
-  { key: "purchaseHistoryTotalAmount", label: "総額<br>(按分込み)", type: "num" },
   { key: "purchaseHistoryAllocatedAmount", label: "うちその他<br>経費按分", type: "num" },
+  { key: "purchaseHistoryTotalAmount", label: "総額<br>(按分込み)", type: "num" },
   { key: "purchaseHistoryTotalQty", label: "総数<br>(単位:中)", type: "num" },
   { key: "status", label: "ステータス", type: "text" },
   { key: "storageLocationsText", label: "保管場所", type: "text" },
@@ -8728,14 +8728,14 @@ function renderIngredients(){
         <td${cls("subCategory","text")}><select onchange="updateMaterialInline('${m.id}','subCategory',this.value)">${inlineSelectOptions(filteredCategoryListForBunrui(m.bunrui, m.subCategory), m.subCategory)}</select></td>
         <td${cls("packQty")}><input type="number" step="0.01" value="${m.packQty ?? ''}" onchange="updateMaterialInline('${m.id}','packQty',this.value)"></td>
         <td${cls("unit","text")}><select onchange="updateMaterialInline('${m.id}','unit',this.value)">${inlineSelectOptions(OPTIONS.unit, m.unit)}</select></td>
+        <td${cls("lotQty")}><input type="number" step="0.01" value="${m.lotQty ?? ''}" onchange="updateMaterialInline('${m.id}','lotQty',this.value)"></td>
         <td${cls("midUnit","text")}><select onchange="updateMaterialInline('${m.id}','midUnit',this.value)">${inlineSelectOptions(OPTIONS.unitMid, m.midUnit)}</select></td>
         <td${cls("packPrice")}>${fmtNum(Math.round(r.packPriceTaxDisplay*100)/100)}</td>
-        <td${cls("lotQty")}><input type="number" step="0.01" value="${m.lotQty ?? ''}" onchange="updateMaterialInline('${m.id}','lotQty',this.value)"></td>
         <td${cls("lotUnit","text")}><select onchange="updateMaterialInline('${m.id}','lotUnit',this.value)">${inlineSelectOptions(OPTIONS.lotUnit, m.lotUnit)}</select></td>
         <td${cls("lotPrice")}>${fmtNum(r.lotPriceTax)}</td>
         <td>${fmtNum(Math.round(r.lotTotalAmount*100)/100)}</td>
-        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalAmount*100)/100)}</td>
         <td class="calc" title="${escAttr(r.allocatedTooltip || "その他経費の按分はありません")}">${fmtNum(Math.round(r.purchaseHistoryAllocatedAmount*100)/100)}</td>
+        <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalAmount*100)/100)}</td>
         <td class="calc">${fmtNum(Math.round(r.purchaseHistoryTotalQty*100)/100)}${m.midUnit ? `<span style="color:var(--muted);font-size:11px;"> ${escAttr(m.midUnit)}</span>` : ""}</td>
         <td${cls("status","text")}><select title="仕入れデータの有無により自動的に上書きされる場合があります" onchange="updateMaterialInline('${m.id}','status',this.value)">${inlineSelectOptions(OPTIONS.status, m.status)}</select></td>
         <td${cls("storageLocations","text")}><div style="cursor:pointer;min-height:16px;" onclick="event.stopPropagation();openIngredientStorageEditor('${m.id}',this)" title="クリックして保管場所を選択">${(m.storageLocations||[]).join("、") || '<span style="color:var(--muted);">（未選択・クリックして選択）</span>'}</div></td>
@@ -8837,9 +8837,9 @@ function renderIngredientsBulkGrid(){
         <div class="form-field"><label>仕入れ先</label>${bulkSelect(OPTIONS.supplier, r.supplier, `updateIngredientBulk(${i},'supplier',this.value)`)}</div>
         <div class="form-field"><label>数値(小)</label><input type="number" value="${r.packQty ?? ''}" oninput="updateIngredientBulk(${i},'packQty',this.value)"></div>
         <div class="form-field"><label>単位(小)</label>${bulkSelect(OPTIONS.unit, r.unit, `updateIngredientBulk(${i},'unit',this.value)`)}</div>
+        <div class="form-field"><label>数値(中)</label><input type="number" value="${r.lotQty ?? ''}" oninput="updateIngredientBulk(${i},'lotQty',this.value)"></div>
         <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.midUnit, `updateIngredientBulk(${i},'midUnit',this.value)`)}</div>
         <div class="form-field"><label>価格(中)税込</label><input type="number" value="${r.packPrice ?? ''}" oninput="updateIngredientBulk(${i},'packPrice',this.value)"></div>
-        <div class="form-field"><label>数値(中)</label><input type="number" value="${r.lotQty ?? ''}" oninput="updateIngredientBulk(${i},'lotQty',this.value)"></div>
         <div class="form-field"><label>単位(大)</label>${bulkSelect(OPTIONS.lotUnit, r.lotUnit, `updateIngredientBulk(${i},'lotUnit',this.value)`)}</div>
         <div class="form-field"><label>価格(大)税込</label><input type="number" value="${r.lotPrice ?? ''}" oninput="updateIngredientBulk(${i},'lotPrice',this.value)"></div>
         <div class="form-field span2"><label>保管場所</label>
@@ -8900,7 +8900,7 @@ function saveIngredientsBulk(){
 
 /* ---------- 原料・資材・半製品マスタ CSV書き出し ---------- */
 function exportIngredientsCSV(){
-  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","単位(中)","価格(中)税込","数値(中)","単位(大)","価格(大)税込","価格(大)合計金額","総額(按分込み)","うちその他経費按分","総数(中)","ステータス","保管場所","在庫数(仕入累計・中)","単位(中)(在庫)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
+  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","数値(中)","単位(中)","価格(中)税込","単位(大)","価格(大)税込","価格(大)合計金額","うちその他経費按分","総額(按分込み)","総数(中)","ステータス","保管場所","在庫数(仕入累計・中)","単位(中)(在庫)","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
   const list = materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=>{
@@ -8933,10 +8933,10 @@ function exportIngredientsCSV(){
     const stockFromLot = purchaseHistory.totalQty || 0; // 発注数は「中」単位
     return [
       m.name||"", m.department||"", m.bunrui||"", m.subCategory||"",
-      m.packQty ?? "", m.unit||"", m.midUnit||"", Math.round(packPriceTaxDisplay*100)/100,
-      m.lotQty ?? "", m.lotUnit||"", lotPriceTax,
+      m.packQty ?? "", m.unit||"", m.lotQty ?? "", m.midUnit||"", Math.round(packPriceTaxDisplay*100)/100,
+      m.lotUnit||"", lotPriceTax,
       Math.round(lotTotalAmount*100)/100,
-      Math.round(purchaseHistory.totalAmount*100)/100, Math.round((purchaseHistory.allocatedAmount||0)*100)/100, Math.round(purchaseHistory.totalQty*100)/100,
+      Math.round((purchaseHistory.allocatedAmount||0)*100)/100, Math.round(purchaseHistory.totalAmount*100)/100, Math.round(purchaseHistory.totalQty*100)/100,
       m.status||"", (m.storageLocations||[]).join("、"),
       Math.round(stockFromLot*100)/100, m.midUnit||"", m.stockCount ?? "", stockTotal,
       m.maker||"", m.supplier||"", usedProductNames.join("、")
