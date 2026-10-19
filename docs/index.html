@@ -2034,7 +2034,7 @@
 <div class="modal-overlay" id="packReviewOverlay">
   <div class="modal" style="width:760px;max-width:96vw;">
     <h3>マスタへの反映の確認</h3>
-    <div class="hint" style="margin-bottom:10px;">アップロード・保存した仕入れデータの、内容量(小)・単位(小)・単位(中)・ロット入数(大)・単位(大)が、原料・資材・半製品マスタ（数値(小)・単位(小)・単位(中)・数値(中)・単位(大)）の値と違います。反映する値を確認し、単位の間違いなどはここで修正してください。チェックを外した項目は、マスタに反映しません。<br>※ 修正した値は、アップロードした仕入れ明細にも反映されます。</div>
+    <div class="hint" style="margin-bottom:10px;">アップロード・保存した仕入れデータの、内容量(小)・単位(小)・単位(中)・ロット入数(大)・単位(大)・メーカーが、原料・資材・半製品マスタ（数値(小)・単位(小)・単位(中)・数値(中)・単位(大)・メーカー）の値と違います。反映する値を確認し、単位の間違いなどはここで修正してください。チェックを外した項目は、マスタに反映しません。<br>※ 修正した値は、アップロードした仕入れ明細にも反映されます。</div>
     <div style="max-height:56vh;overflow:auto;">
       <table class="bulk-table compact-table" style="min-width:0;width:100%;">
         <thead><tr><th style="width:30%;">資材・原料</th><th>項目</th><th>現在のマスタ</th><th>反映する値（修正できます）</th><th>反映</th></tr></thead>
@@ -2042,6 +2042,7 @@
       </table>
     </div>
     <datalist id="packReviewUnits"></datalist>
+    <datalist id="packReviewMakers"></datalist>
     <div class="modal-footer">
       <button class="secondary" onclick="closePackFieldReview()">反映しない</button>
       <button onclick="applyPackFieldReview()">マスタに反映する</button>
@@ -3658,6 +3659,7 @@ function closeOptionRegistration(doRegister){
 }
 // メーカーを分類の選択肢にした。初回だけ、すでに入っているメーカー名を、選択肢として登録する。
 registerBootStep(function(){
+  snapshotMaterialMakers(); // マスタ→仕入れ管理のメーカー反映の基準（起動時点のメーカー）
   const FLAG = "maker_options_seed_v1_done";
   if(appStore.getItem(FLAG)) return;
   const set = new Set(Array.isArray(OPTIONS.maker) ? OPTIONS.maker : []);
@@ -4354,7 +4356,8 @@ const PACK_REVIEW_FIELDS = [
   { field: "unit",    label: "単位(小)", type: "unit" },
   { field: "midUnit", label: "単位(中)", type: "unit" },
   { field: "lotQty",  label: "数値(中)", type: "num" },
-  { field: "lotUnit", label: "単位(大)", type: "lotUnit" }
+  { field: "lotUnit", label: "単位(大)", type: "lotUnit" },
+  { field: "maker",   label: "メーカー", type: "maker" }
 ];
 function singleMaterialIdOfPurchase(p){
   const ids = new Set((p.items||[]).map(it=>it.materialId).filter(Boolean));
@@ -4366,6 +4369,7 @@ function purchasePackValue(p, field){
   if(field === "packQty") return packFieldHasValue(p.packQty) ? { value: parseFloat(p.packQty), src: "packQty" } : null;
   if(field === "unit") return packFieldHasValue(p.packUnit) ? { value: String(p.packUnit).trim(), src: "packUnit" } : null;
   if(field === "lotQty") return packFieldHasValue(p.lotQty) ? { value: parseFloat(p.lotQty), src: "lotQty" } : null;
+  if(field === "maker") return packFieldHasValue(p.maker) ? { value: String(p.maker).trim(), src: "maker" } : null;
   if(field === "midUnit") return packFieldHasValue(p.unit) ? { value: String(p.unit).trim(), src: "unit" } : null;
   if(field === "lotUnit") return packFieldHasValue(p.lotUnit) ? { value: String(p.lotUnit).trim(), src: "lotUnit" } : null;
   return null;
@@ -4408,6 +4412,7 @@ function openPackFieldReview(records){
   packReviewState = { diffs, records };
   const unitOpts = (OPTIONS.unit || []).concat(OPTIONS.unitMid || [], OPTIONS.lotUnit || []).filter((v,i,a)=>a.indexOf(v) === i);
   document.getElementById("packReviewUnits").innerHTML = unitOpts.map(u=>`<option value="${escAttr(u)}"></option>`).join("");
+  document.getElementById("packReviewMakers").innerHTML = (OPTIONS.maker || []).map(u=>`<option value="${escAttr(u)}"></option>`).join("");
   const body = document.getElementById("packReviewBody");
   body.innerHTML = diffs.map((d, di)=>d.rows.map((r, ri)=>`
     <tr>
@@ -4416,7 +4421,7 @@ function openPackFieldReview(records){
       <td style="color:var(--muted);">${(r.current === undefined || r.current === null || r.current === "" || r.current === 0) ? "（未設定）" : escAttr(String(r.current))}</td>
       <td>${r.type === "num"
         ? `<input type="number" step="0.01" value="${escAttr(String(r.next))}" data-di="${di}" data-ri="${ri}" style="width:90px;">`
-        : `<input type="text" list="packReviewUnits" value="${escAttr(String(r.next))}" data-di="${di}" data-ri="${ri}" style="width:100px;">`}</td>
+        : `<input type="text" list="${r.field === "maker" ? "packReviewMakers" : "packReviewUnits"}" value="${escAttr(String(r.next))}" data-di="${di}" data-ri="${ri}" style="width:100px;">`}</td>
       <td><input type="checkbox" checked data-chk-di="${di}" data-chk-ri="${ri}"></td>
     </tr>`).join("")).join("");
   document.getElementById("packReviewOverlay").classList.add("show");
@@ -8220,8 +8225,34 @@ function saveProductsBulk(){
 }
 
 /* ===================== 原料・資材・半製品マスタ ===================== */
+// メーカーは、マスタと仕入れ管理で双方向に反映する。マスタ側で変えたメーカーは、その資材だけを仕入れた
+// 仕入れ明細にも反映する（仕入れ管理 → マスタは、保存後の「マスタへの反映の確認」で反映する）。
+let _materialMakerSnapshot = null;
+function snapshotMaterialMakers(){
+  _materialMakerSnapshot = new Map(materials.map(m=>[m.id, (m.maker || "").toString().trim()]));
+}
+function syncMakerFromMaterialsToPurchases(){
+  if(!_materialMakerSnapshot){ snapshotMaterialMakers(); return; }
+  const changed = new Map();
+  materials.forEach(m=>{
+    const now = (m.maker || "").toString().trim();
+    if(_materialMakerSnapshot.has(m.id) && _materialMakerSnapshot.get(m.id) !== now) changed.set(m.id, now);
+  });
+  snapshotMaterialMakers();
+  if(!changed.size) return;
+  let touched = false;
+  purchases.forEach(p=>{
+    const mid = singleMaterialIdOfPurchase(p);
+    if(mid && changed.has(mid) && (p.maker || "") !== changed.get(mid)){ p.maker = changed.get(mid); touched = true; }
+  });
+  if(touched){
+    try{ appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases)); }catch(e){ console.warn("メーカーの反映に失敗", e); }
+    try{ renderPurchases(); }catch(e){}
+  }
+}
 function saveIngredients(){
   scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
+  syncMakerFromMaterialsToPurchases();
   appStore.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
   invalidateSalesMaterialConsumptionCache(); // 資材が変われば、資材IDに紐づく売上消費量の集計も無効になるため
   renderIngredients();
