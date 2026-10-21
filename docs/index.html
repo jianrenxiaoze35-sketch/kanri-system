@@ -1866,7 +1866,7 @@
             <div id="facSrc" style="font-size:12.5px;flex:1;min-width:240px;"></div>
             <button onclick="loadFacilityStock(true)">⟳ 更新</button>
             <button class="secondary" onclick="assignItemCodes()">品目コードを自動付番</button>
-            <button class="secondary" onclick="recordFacilityStocktake()">最新の棚卸を記録に保存</button>
+            <button class="secondary" onclick="recordFacilityStocktake()">月末棚卸を記録に取り込む</button>
             <button class="secondary" onclick="exportFacilityCodesCSV()">Notion用の品目コード一覧（CSV）</button>
           </div>
           <div class="hint" style="margin:6px 0 0;font-size:11.5px;">飲食（ビアホール）の在庫数と最新の棚卸を在庫入力アプリ（Notion）から、醸造原料・包装資材（M／P）の在庫をブルワリーアプリの台帳から、自動で読みます。数はここでは入力しません（数の正は Notion と台帳）。原料・資材マスタとは「紐づけ → 品目コード → 正式名称 → 名称」の順に照合し、合わないものは下の「未照合」で手で紐づけます。金額は Notion の「1ロット価格 ÷ ロット入り数 × 在庫数」、台帳の「単価 × 在庫」の参考値です。台帳を読むには、設定 › データ保存 に読み取りキーを入れます。</div>
@@ -20566,7 +20566,7 @@ function renderInventoryRecords(){
   const list = inventoryStocktakeRecords.slice().sort((a,b)=> b.month.localeCompare(a.month) || String(b.confirmedAt).localeCompare(String(a.confirmedAt)));
   body.innerHTML = list.map(r=>`
     <tr>
-      <td class="text">${r.month}</td>
+      <td class="text">${r.month}${r.kubunTotals ? `<div style="font-size:11px;color:var(--muted);white-space:normal;">在庫入力アプリ・台帳から取込　棚卸資産 ${fmtNum(r.assetTotal||0)} 円<br>${r.kubunTotals.map(x=>`${x.k} ${fmtNum(x.amount)}`).join("　")}</div>` : ""}</td>
       <td class="text">${(r.confirmedAt||"").slice(0,16).replace("T"," ")}</td>
       <td>${r.itemCount}</td>
       <td>${r.diffCount}</td>
@@ -20631,6 +20631,23 @@ function exportInventoryRecordExcel(id){
 
   const wsDetail = XLSX.utils.aoa_to_sheet(detail);
   wsDetail["!cols"] = [{wch:12},{wch:16},{wch:10},{wch:14},{wch:12},{wch:40},{wch:6},{wch:9},{wch:8},{wch:9},{wch:9},{wch:12},{wch:13},{wch:8},{wch:7}];
+  // 月末棚卸の取り込み（段4）の記録だけ：品目コード別の金額と、区分ごとの小計
+  let wsCode = null, wsKubun = null;
+  if(record.kubunTotals){
+    const label = Object.fromEntries(STOCKTAKE_KUBUN.map(g=>[g.k, g.label]));
+    const byCode = [["品目コード","区分","名称","単位(中)","数えた日時","実数","単価","金額","金額の種類","読み先"]];
+    (record.items||[]).slice().sort((a,b)=>STOCKTAKE_KUBUN.findIndex(g=>g.k===a.kubun) - STOCKTAKE_KUBUN.findIndex(g=>g.k===b.kubun) || String(a.itemCode||"\uffff").localeCompare(String(b.itemCode||"\uffff")) || String(a.name).localeCompare(String(b.name), "ja")).forEach(it=>{
+      byCode.push([it.itemCode || "", label[it.kubun] || it.kubun || "", it.name || "", unitOf(it), it.countedAt || "", round(it.aggregateActual),
+        it.unitPrice == null ? "" : round(it.unitPrice), it.amount == null ? "" : it.amount, it.priceKind || "", it.sourceType === "ledger" ? "ブルワリー台帳" : "在庫入力アプリ"]);
+    });
+    wsCode = XLSX.utils.aoa_to_sheet(byCode);
+    wsCode["!cols"] = [{wch:10},{wch:14},{wch:40},{wch:8},{wch:16},{wch:9},{wch:10},{wch:12},{wch:8},{wch:14}];
+    wsCode["!autofilter"] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:byCode.length-1, c:byCode[0].length-1} }) };
+    const kt = [["区分","品目数","金額","棚卸資産の計に入れるか"]].concat(record.kubunTotals.map(x=>[`${x.k} ${x.label}`, x.n, x.amount, x.inTotal ? "入れる" : "入れない（別の行）"]));
+    kt.push(["棚卸資産の計（F・C・M・P）", "", record.assetTotal || 0, ""]);
+    wsKubun = XLSX.utils.aoa_to_sheet(kt);
+    wsKubun["!cols"] = [{wch:26},{wch:8},{wch:14},{wch:22}];
+  }
   wsDetail["!autofilter"] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:detail.length-1, c:detail[0].length-1} }) };
   const wsSummary = XLSX.utils.aoa_to_sheet(summary);
   wsSummary["!cols"] = [{wch:12},{wch:10},{wch:14},{wch:12},{wch:40},{wch:6},{wch:24},{wch:9},{wch:10},{wch:8}];
@@ -20647,6 +20664,8 @@ function exportInventoryRecordExcel(id){
   ]);
   info["!cols"] = [{wch:12},{wch:90}];
   const wb = XLSX.utils.book_new();
+  if(wsKubun) XLSX.utils.book_append_sheet(wb, wsKubun, "区分別小計");
+  if(wsCode) XLSX.utils.book_append_sheet(wb, wsCode, "品目コード別");
   XLSX.utils.book_append_sheet(wb, wsSummary, "品目別集計");
   XLSX.utils.book_append_sheet(wb, wsDetail, "棚卸明細");
   XLSX.utils.book_append_sheet(wb, info, "情報");
@@ -20966,34 +20985,95 @@ function exportFacilityCodesCSV(){
   URL.revokeObjectURL(a.href);
 }
 
-// 在庫入力アプリの最新の棚卸を、このシステムの「記録」に1件として保存する（原料・資材マスタの在庫数は変えない）
-function recordFacilityStocktake(){
-  const tana = facilityStock && facilityStock.tana;
-  if(!tana || !tana.rows || !tana.rows.length){ alert("在庫入力アプリに棚卸の記録がありません（先に「更新」を押してください）。"); return; }
-  const sourceKey = "notion:" + tana.date;
+// 月末棚卸の取り込み（構造設計 §10 段4）：在庫入力アプリの tanaAll（棚卸／売店棚卸／備品棚卸の、その月の品目ごとの一番新しい数）と、
+// その月が今月ならブルワリー台帳の在庫（M／P）を、品目コードつきで「記録」に1件として保存する。原料・資材マスタの在庫数は変えない。
+// 区分ごとの小計を記録に持つ。棚卸資産の計は F・C・M・P。売店（G）は売価しか無く、備品（E）は資産の性質が違うので別の行（§11-f）。
+const STOCKTAKE_KUBUN = [
+  { k: "F", label: "食材" }, { k: "C", label: "消耗品" }, { k: "M", label: "醸造原料" }, { k: "P", label: "包装資材" },
+  { k: "G", label: "売店（売価換算）" }, { k: "E", label: "備品（別計上）" }, { k: "S", label: "その他" }
+];
+const STOCKTAKE_ASSET_KUBUN = ["F","C","M","P"];
+function stocktakeKubunTotals(items){
+  const sum = {};
+  items.forEach(it=>{
+    const k = it.kubun || "S";
+    const x = sum[k] = sum[k] || { n: 0, amount: 0 };
+    x.n++; x.amount += it.amount || 0;
+  });
+  return STOCKTAKE_KUBUN.filter(g=>sum[g.k]).map(g=>({ k: g.k, label: g.label, n: sum[g.k].n, amount: Math.round(sum[g.k].amount), inTotal: STOCKTAKE_ASSET_KUBUN.includes(g.k) }));
+}
+async function recordFacilityStocktake(){
+  const def = (facilityStock && facilityStock.tana && facilityStock.tana.date ? facilityStock.tana.date : todayStr()).slice(0,7);
+  const month = (prompt("取り込む月を入れてください（例 2026-10）。その月に数えた中で、品目ごとに一番新しい数を取り込みます。", def) || "").trim();
+  if(!month) return;
+  if(!/^\d{4}-\d{2}$/.test(month)){ alert("月は 2026-10 の形で入れてください。"); return; }
+  let tana;
+  try{
+    const res = await fetch(`${FACILITY_STOCK_API}?action=tanaAll&month=${encodeURIComponent(month)}`, { method: "GET" });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    tana = await res.json();
+    if(!tana || !tana.ok) throw new Error((tana && tana.error) || "応答の形式が違います");
+  }catch(e){ alert(`在庫入力アプリから棚卸を読めませんでした（${(e && e.message) || e}）。`); return; }
+  const rows = tana.rows || [];
+  const useLedger = month === currentYearMonthStr() && facilityStock && facilityStock.ledger && facilityStock.ledger.items.length;
+  if(!rows.length && !useLedger){ alert(`${month} の棚卸は在庫入力アプリにありません。${(tana.months||[]).length ? `\n棚卸のある月：${tana.months.join("、")}` : ""}`); return; }
+
+  const sourceKey = "facility:" + month;
   const existing = inventoryStocktakeRecords.find(r=>r.source === sourceKey);
-  if(existing && !confirm(`${tana.date} の棚卸はすでに記録に保存されています。最新の内容で置き換えますか？`)) return;
-  if(!existing && !confirm(`在庫入力アプリの ${tana.date} の棚卸（${tana.rows.length}品目）を、記録に保存しますか？\n原料・資材マスタの在庫数は変わりません。`)) return;
-  const match = buildFacilityMatcher("notion");
-  const items = tana.rows.map(r=>{
-    const { m } = match({ id: r.itemId, code: r.code, formal: r.formal, name: r.name });
-    const key = "notion:" + (r.itemId || r.name);
+  const counts = {};
+  rows.forEach(r=>{ counts[r.kubun || "F"] = (counts[r.kubun || "F"] || 0) + 1; });
+  const ledgerNote = useLedger ? `\nブルワリー台帳の在庫（M／P・いまの数）：${facilityStock.ledger.items.length}品目` : (month === currentYearMonthStr() ? "\nブルワリー台帳は読めていないので入りません（先に「更新」。キー未設定なら 設定 › データ保存）。" : "\nブルワリー台帳は「いまの数」しか読めないので、過去の月には入れません。");
+  const detail = Object.keys(counts).sort().map(k=>`${k}：${counts[k]}品目`).join("　") || "（在庫入力アプリの棚卸なし）";
+  if(!confirm(`${existing ? `${month} の棚卸はすでに記録にあります。最新の内容で置き換えます。\n\n` : ""}${month} の棚卸を記録に取り込みます。\n在庫入力アプリ：${detail}${ledgerNote}\n\n原料・資材マスタの在庫数は変わりません。よろしいですか？`)) return;
+
+  const notionMatch = buildFacilityMatcher("notion");
+  const items = rows.map(r=>{
+    const { m } = notionMatch({ id: r.itemId, code: r.code, formal: r.formal, name: r.name });
+    const code = (m && m.itemCode) || normalizeItemCode(r.code) || "";
+    const kubun = (/^([A-Z])-/.exec(code) || [])[1] || r.kubun || "F";
+    const unitPrice = r.price != null && r.lotQty ? r.price / r.lotQty : null;
+    const key = "tana:" + kubun + ":" + (r.itemId || r.name);
     return {
-      key, materialKey: key, sourceType: "notion", sourceId: r.itemId || "",
-      department: (m && m.department) || "レストラン", storageGroup: (r.locations && r.locations[0]) || "（保管場所未設定）",
-      bunruiGroup: r.category || "（中分類未設定）", category: r.category || "", maker: r.maker || "", name: (m && m.name) || r.name,
+      key, materialKey: key, sourceType: "notion", sourceId: r.itemId || "", itemCode: code, kubun, priceKind: r.priceKind || "原価",
+      department: (m && m.department) || ({ G: "Shop", E: "備品" }[kubun] || "レストラン"), storageGroup: (r.locations && r.locations[0]) || "（保管場所未設定）",
+      bunruiGroup: r.category || "（中分類未設定）", category: r.category || "", maker: "", name: (m && m.name) || r.name,
       theoretical: r.before, packQty: 0, lotQty: r.lotQty || 0,
-      actual: r.value || 0, lotActual: 0, aggregateActual: r.value || 0, diff: r.diff
+      actual: r.value || 0, lotActual: 0, aggregateActual: r.value || 0, diff: r.diff, countedAt: r.at,
+      unitPrice, amount: unitPrice != null && r.value != null ? Math.round(unitPrice * r.value) : null
     };
   });
+  if(useLedger){
+    const ledgerMatch = buildFacilityMatcher("ledger");
+    facilityStock.ledger.items.forEach(raw=>{
+      const it = Object.assign({}, raw, { category: raw.cat || "" });
+      const { m } = ledgerMatch(it);
+      const row = { src: "ledger", it, m, code: (m && m.itemCode) || normalizeItemCode(raw.code) || "" };
+      const kubun = facilityRowPrefix(row);
+      const price = Number(raw.price), stock = Number(raw.stock);
+      const unitPrice = raw.price != null && raw.price !== "" && isFinite(price) ? price : null;
+      const key = "ledger:" + raw.id;
+      items.push({
+        key, materialKey: key, sourceType: "ledger", sourceId: raw.id, itemCode: row.code, kubun, priceKind: "原価",
+        department: (m && m.department) || "製造", storageGroup: "ブルワリー台帳", bunruiGroup: raw.cat || "（中分類未設定）", category: raw.cat || "",
+        maker: "", name: (m && m.name) || raw.name, theoretical: isFinite(stock) ? stock : null, packQty: 0, lotQty: 0,
+        actual: isFinite(stock) ? stock : 0, lotActual: 0, aggregateActual: isFinite(stock) ? stock : 0, diff: null,
+        countedAt: String(facilityStock.ledger.at || "").slice(0,16), unitPrice,
+        amount: unitPrice != null && isFinite(stock) ? Math.round(unitPrice * stock) : null
+      });
+    });
+  }
+  const kubunTotals = stocktakeKubunTotals(items);
   const record = {
     id: existing ? existing.id : String(Date.now()) + Math.random().toString(36).slice(2,7),
-    month: tana.date.slice(0,7), confirmedAt: new Date().toISOString(), source: sourceKey,
-    itemCount: items.length, diffCount: items.filter(x=>x.diff!=null && x.diff!==0).length, items
+    month, confirmedAt: new Date().toISOString(), source: sourceKey,
+    itemCount: items.length, diffCount: items.filter(x=>x.diff!=null && x.diff!==0).length, items,
+    kubunTotals, assetTotal: kubunTotals.filter(x=>x.inTotal).reduce((t,x)=>t+x.amount, 0)
   };
   inventoryStocktakeRecords = inventoryStocktakeRecords.filter(r=>r.source !== sourceKey).concat([record]);
   appStore.setItem(INVENTORY_RECORDS_KEY, JSON.stringify(inventoryStocktakeRecords));
-  alert(`${tana.date} の棚卸（${items.length}品目）を記録に保存しました。「記録」タブから印刷・Excel出力できます。`);
+  alert(`${month} の棚卸（${items.length}品目）を記録に保存しました。\n棚卸資産の計（F・C・M・P）：${fmtNum(record.assetTotal)} 円\n` +
+    kubunTotals.map(x=>`${x.k} ${x.label}：${x.n}品目 ${fmtNum(x.amount)} 円${x.inTotal ? "" : "（計に入れない）"}`).join("\n") +
+    `\n\n「記録」タブから印刷・Excel出力できます。`);
 }
 
 function deleteInventoryRecord(id){
