@@ -15410,17 +15410,31 @@ function renderRegiSalesActiveView(){
 }
 
 /* ---- funfo ---- */
+// 重複する伝票を弾く。同じファイル名、または、同じ日付・同じ伝票番号・同じ金額の伝票は、重複とみなす
+// （ファイル名を変えて取り込み直しても、二重に集計されないようにするため）。
+function funfoSlipDuplicateReason(slip, existingSlips){
+  for(const e of existingSlips){
+    if(e.fileName && e.fileName === slip.fileName) return "同じファイル名";
+    if(slip.slipNo && e.slipNo === slip.slipNo && (Number(e.total)||0) === (Number(slip.total)||0)
+       && normalizeFunfoDateToISO(e.date, e.fileName) === normalizeFunfoDateToISO(slip.date, slip.fileName)) return `同じ伝票番号（${slip.slipNo}）・同じ日付・同じ金額`;
+  }
+  return "";
+}
 async function importFunfoFiles(event){
   const files = Array.from(event.target.files);
+  const rejected = [];
   for(const f of files){
     try{
       const slip = await parseFunfoFile(f);
+      const why = funfoSlipDuplicateReason(slip, regiSalesState.funfoSlips);
+      if(why){ rejected.push(`${f.name}（${why}）`); continue; }
       regiSalesState.funfoSlips.push(slip);
     }catch(err){
       console.error(err);
       alert("読み込み失敗: " + f.name);
     }
   }
+  if(rejected.length) alert(`重複のため、取り込まなかった伝票が${rejected.length}件あります。\n\n${rejected.slice(0,15).join("\n")}${rejected.length>15?"\n…":""}`);
   persistRegiSales();
   recomputeAggregate();
   renderFunfoSlips();
@@ -15754,14 +15768,14 @@ function applyBulkFunfoSlipsByDate(byDate){
   const dates = Object.keys(byDate).filter(d=>byDate[d] && byDate[d].length).sort();
   const savedDate = regiCurrentDate;
   let addedCount = 0, dupCount = 0;
+  const dupNames = [];
   dates.forEach(d=>{
     regiCurrentDate = d;
     regiSalesState = migrateRegiSalesState(JSON.parse(regiDailyStore.getItem(regiSalesKey(d)) || "null"));
-    const existing = new Set(regiSalesState.funfoSlips.map(s=>s.fileName));
     byDate[d].forEach(slip=>{
-      if(existing.has(slip.fileName)){ dupCount++; return; }
+      const why = funfoSlipDuplicateReason(slip, regiSalesState.funfoSlips);
+      if(why){ dupCount++; dupNames.push(`${slip.fileName}（${why}）`); return; }
       regiSalesState.funfoSlips.push(slip);
-      existing.add(slip.fileName);
       addedCount++;
     });
     recomputeAggregate();
@@ -15769,7 +15783,7 @@ function applyBulkFunfoSlipsByDate(byDate){
   regiCurrentDate = savedDate;
   regiSalesState = migrateRegiSalesState(JSON.parse(regiDailyStore.getItem(regiSalesKey(savedDate)) || "null"));
   renderRegiActiveView();
-  return { dateCount: dates.length, dates, addedCount, dupCount };
+  return { dateCount: dates.length, dates, addedCount, dupCount, dupNames };
 }
 async function bulkImportFunfoFiles(event){
   const files = Array.from(event.target.files);
@@ -15824,6 +15838,7 @@ async function bulkImportSmaregiFiles(event){
   const byDate = {};
   const meta = {};
   const errors = [];
+  const seenSmaregiSig = new Map(); // 明細の特徴 → 最初に取り込んだファイル名
   for(const f of files){
     try{
       const buf = await readFileAsArrayBuffer(f);
@@ -15840,7 +15855,22 @@ async function bulkImportSmaregiFiles(event){
         continue;
       }
       const rowsByDate = {};
-      parsed.rows.forEach(r=>{ (rowsByDate[r.date] = rowsByDate[r.date] || []).push(r); });
+      // 先に取り込んだファイルと同じ明細（同じ取引ID・商品・数量・金額・時刻）は、重複として弾く
+      // （同じファイルを2回選んだ、期間が重なるファイルを取り込んだ、などで二重に集計されないようにするため）。
+      // 同じファイルの中にある同じ明細は、正しい明細なので弾かない。
+      const sigOf = r=>[r.txId||"", r.code||"", r.name||"", r.qty, r.amount, r.time||"", r.bucket||""].join("|");
+      const sigCount = new Map();
+      parsed.rows.forEach(r=>{ const k = sigOf(r); sigCount.set(k, (sigCount.get(k)||0) + 1); });
+      let dupRows = 0;
+      parsed.rows.forEach(r=>{
+        const seen = seenSmaregiSig.get(sigOf(r));
+        if(seen !== undefined && seen !== f.name){ dupRows++; return; }
+        (rowsByDate[r.date] = rowsByDate[r.date] || []).push(r);
+      });
+      parsed.rows.forEach(r=>{ if(!seenSmaregiSig.has(sigOf(r))) seenSmaregiSig.set(sigOf(r), f.name); });
+      if(dupRows){
+        errors.push(`${f.name}：先に取り込んだファイルと同じ明細が${dupRows}件あったため、その分は重複として弾きました${dupRows === parsed.rows.length ? "（ファイル全体が重複）" : ""}`);
+      }
       Object.entries(rowsByDate).forEach(([d, rows])=>{
         if(!d){ errors.push(`${f.name}：一部の明細で日付を特定できませんでした`); return; }
         byDate[d] = (byDate[d] || []).concat(rows);
@@ -15864,7 +15894,10 @@ function renderBulkUploadResult(info){
   let html = `<div style="margin-top:8px;padding:10px 12px;background:#f7f9f8;border:1px solid var(--border);border-radius:6px;font-size:12.5px;">`;
   html += `<div style="font-weight:700;margin-bottom:4px;">${label}：${info.fileCount}ファイルを処理しました</div>`;
   if(info.kind==="funfo"){
-    html += `<div>${info.dateCount}日分に振り分け・${info.addedCount}件を追加しました${info.dupCount?`（重複${info.dupCount}件はスキップ）`:""}。</div>`;
+    html += `<div>${info.dateCount}日分に振り分け・${info.addedCount}件を追加しました。</div>`;
+    if(info.dupCount){
+      html += `<div style="margin-top:6px;color:#c0392b;">⚠ 重複のため弾いた伝票（${info.dupCount}件）<ul style="margin:4px 0 0 18px;padding:0;">${(info.dupNames||[]).slice(0,30).map(e=>`<li>${escAttr(e)}</li>`).join("")}${(info.dupNames||[]).length>30?"<li>…</li>":""}</ul></div>`;
+    }
   } else {
     html += `<div>${info.dateCount}日分に振り分け・${info.rowCount}件の明細を反映しました。</div>`;
   }
