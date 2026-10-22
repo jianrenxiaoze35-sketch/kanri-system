@@ -1285,13 +1285,18 @@
         <div class="card" id="regiBulkDeleteCard">
           <details>
             <summary style="cursor:pointer;font-weight:700;">選択した日のデータを一括削除</summary>
-            <div class="hint" style="margin:8px 0;">指定した期間の、②売上集計のデータ（funfo伝票・スマレジ明細など）を、まとめて削除します。重複して取り込んだ日などの、やり直しに使います。削除の前に、その期間のデータをバックアップファイル（JSON）として自動でダウンロードします。①レジ締めの入力と、売上管理に反映済みの集計は、消えません。</div>
+            <div class="hint" style="margin:8px 0;">指定した期間の、②売上集計のデータを、まとめて削除します。funfo伝票とスマレジ明細のどちらを削除するかを選べます（片方だけ選ぶと、もう片方は残ります）。重複して取り込んだ日などの、やり直しに使います。削除の前に、その期間のデータをバックアップファイル（JSON）として自動でダウンロードします。①レジ締めの入力と、売上管理に反映済みの集計は、消えません。</div>
             <div class="toolbar" style="flex-wrap:wrap;align-items:center;gap:8px;">
               <input type="date" id="regiBulkDeleteFrom" onchange="renderRegiBulkDeletePreview()">
               <span>〜</span>
               <input type="date" id="regiBulkDeleteTo" onchange="renderRegiBulkDeletePreview()">
               <button class="secondary" onclick="setRegiBulkDeleteToCurrent()">表示中の日にする</button>
               <button class="danger" onclick="runRegiBulkDelete()">🗑 この期間のデータを削除</button>
+            </div>
+            <div class="toolbar" style="margin-top:6px;gap:14px;align-items:center;">
+              <span class="hint" style="margin:0;">削除するデータ：</span>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="regiBulkDeleteFunfo" checked onchange="renderRegiBulkDeletePreview()">funfo伝票</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="regiBulkDeleteSmaregi" checked onchange="renderRegiBulkDeletePreview()">スマレジ明細</label>
             </div>
             <div id="regiBulkDeletePreview" class="hint" style="margin-top:6px;"></div>
           </details>
@@ -15436,6 +15441,9 @@ function regiBulkDeleteDates(){
   if(d <= to) return { dates: [], error: "期間が長すぎます（400日以内にしてください）。" };
   return { dates, error: "" };
 }
+function regiBulkDeleteWants(){
+  return { funfo: document.getElementById("regiBulkDeleteFunfo").checked, smaregi: document.getElementById("regiBulkDeleteSmaregi").checked };
+}
 function regiBulkDeleteTargets(){
   const { dates, error } = regiBulkDeleteDates();
   const targets = [];
@@ -15444,7 +15452,9 @@ function regiBulkDeleteTargets(){
     if(raw == null) return;
     let st = null;
     try{ st = JSON.parse(raw); }catch(e){}
-    targets.push({ date: d, raw, funfo: ((st && st.funfoSlips) || []).length, smaregi: ((st && st.smaregi && st.smaregi.rows) || []).length });
+    const funfo = ((st && st.funfoSlips) || []).length, smaregi = ((st && st.smaregi && st.smaregi.rows) || []).length;
+    const wantF = regiBulkDeleteWants().funfo, wantS = regiBulkDeleteWants().smaregi;
+    if((wantF && funfo) || (wantS && smaregi) || (!st)) targets.push({ date: d, raw, funfo: wantF ? funfo : 0, smaregi: wantS ? smaregi : 0 });
   });
   return { targets, error };
 }
@@ -15459,6 +15469,8 @@ function renderRegiBulkDeletePreview(){
   const { targets, error } = regiBulkDeleteTargets();
   if(error){ el.innerHTML = `<span style="color:var(--danger);">${escAttr(error)}</span>`; return; }
   if(!document.getElementById("regiBulkDeleteFrom").value){ el.textContent = "削除する期間（開始日〜終了日）を選んでください。"; return; }
+  const w = regiBulkDeleteWants();
+  if(!w.funfo && !w.smaregi){ el.innerHTML = '<span style="color:var(--danger);">削除するデータ（funfo伝票・スマレジ明細）を、1つ以上選んでください。</span>'; return; }
   if(!targets.length){ el.textContent = "この期間に、削除できるデータはありません。"; return; }
   const f = targets.reduce((s,t)=>s+t.funfo, 0), m = targets.reduce((s,t)=>s+t.smaregi, 0);
   el.innerHTML = `削除の対象：<b>${targets.length}日分</b>（${targets[0].date}${targets.length>1 ? " 〜 " + targets[targets.length-1].date : ""}）　funfo伝票 ${f}枚・スマレジ明細 ${m}行`;
@@ -15466,10 +15478,13 @@ function renderRegiBulkDeletePreview(){
 function runRegiBulkDelete(){
   const { targets, error } = regiBulkDeleteTargets();
   if(error){ alert(error); return; }
+  const want = regiBulkDeleteWants();
+  if(!want.funfo && !want.smaregi){ alert("削除するデータ（funfo伝票・スマレジ明細）を、1つ以上選んでください。"); return; }
+  const kindLabel = want.funfo && want.smaregi ? "funfo伝票とスマレジ明細" : (want.funfo ? "funfo伝票" : "スマレジ明細");
   if(!targets.length){ alert("この期間に、削除できるデータはありません。"); return; }
   const f = targets.reduce((s,t)=>s+t.funfo, 0), m = targets.reduce((s,t)=>s+t.smaregi, 0);
   const range = targets[0].date + (targets.length > 1 ? " 〜 " + targets[targets.length-1].date : "");
-  if(!confirm(`${targets.length}日分（${range}）の②売上集計のデータを削除します。\nfunfo伝票 ${f}枚・スマレジ明細 ${m}行\n\n削除の前に、バックアップファイル（JSON）をダウンロードします。この操作は取り消せません。削除しますか？`)) return;
+  if(!confirm(`${targets.length}日分（${range}）の②売上集計の「${kindLabel}」を削除します。\nfunfo伝票 ${f}枚・スマレジ明細 ${m}行\n\n削除の前に、バックアップファイル（JSON）をダウンロードします。この操作は取り消せません。削除しますか？`)) return;
   // バックアップ（削除する日のデータ）を先に保存する
   const backup = {};
   targets.forEach(t=>{ try{ backup[regiSalesKey(t.date)] = JSON.parse(t.raw); }catch(e){ backup[regiSalesKey(t.date)] = t.raw; } });
@@ -15479,11 +15494,22 @@ function runRegiBulkDelete(){
   a.download = `売上集計_削除前バックアップ_${targets[0].date}_${targets[targets.length-1].date}.json`;
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
-  targets.forEach(t=>regiDailyStore.removeItem(regiSalesKey(t.date)));
+  const savedDate = regiCurrentDate;
+  targets.forEach(t=>{
+    if(want.funfo && want.smaregi){ regiDailyStore.removeItem(regiSalesKey(t.date)); return; }
+    // 片方だけ削除する日は、その日のデータを開いて、選んだ分だけ空にして、集計し直す
+    regiCurrentDate = t.date;
+    regiSalesState = migrateRegiSalesState(JSON.parse(regiDailyStore.getItem(regiSalesKey(t.date)) || "null"));
+    if(want.funfo) regiSalesState.funfoSlips = [];
+    if(want.smaregi) regiSalesState.smaregi = { rows: [], fileName: "", totalRowsInFile: 0, returnRows: 0, amountCol: "" };
+    recomputeAggregate();
+    persistRegiSales();
+  });
+  regiCurrentDate = savedDate;
   regiSalesState = migrateRegiSalesState(JSON.parse(regiDailyStore.getItem(regiSalesKey(regiCurrentDate)) || "null"));
   try{ renderRegiActiveView(); }catch(e){}
   renderRegiBulkDeletePreview();
-  alert(`${targets.length}日分の②売上集計のデータを削除しました。バックアップファイルは、ダウンロードフォルダに保存されています。`);
+  alert(`${targets.length}日分の②売上集計の「${kindLabel}」を削除しました。バックアップファイルは、ダウンロードフォルダに保存されています。`);
 }
 
 /* ---- funfo ---- */
