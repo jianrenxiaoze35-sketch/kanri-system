@@ -16628,10 +16628,12 @@ function syncRegiFunfoCardHeight(){
 function renderPosSystemSummary(){
   const el = document.getElementById("posSystemSummary");
   if(!el) return;
-  const pst = regiSalesState.posSystemTotals || {};
-  const fm = pst.funfoMethod || { cash: 0, square: 0, funfo: 0, other: 0 };
-  const channelFinal = pst.channelFinal || { funfo: {cash:0,other:0}, smaregi: {cash:0,other:0}, unclassified: {cash:0,other:0} };
-  const manualAdj = pst.manualAdjustment || { funfo: {cash:0,other:0}, smaregi: {cash:0,other:0} };
+  // 保存済みのposSystemTotals（過去の計算時点の値）は使わず、常に、いまの伝票・CSV・集計結果から計算し直す
+  // （手動での追加・編集や、計算ロジックの修正が、その日を開き直したときにも必ず反映されるように）。
+  const fresh = computeSystemCashOtherTotals(regiSalesState);
+  const fm = fresh.funfoMethod || { cash: 0, square: 0, funfo: 0, other: 0 };
+  const channelFinal = { funfo: fresh.funfo, smaregi: fresh.smaregi, unclassified: fresh.unclassified };
+  const manualAdj = fresh.manualAdjustment;
   // funfo・スマレジの「現金／その他」は、集計結果(agg＝値引き除外・未マッチ除外・手動追加/編集を
   // すべて反映した最終値)の商品部門別合計（レストラン＝funfo、Shop＝スマレジ）をそのまま実績として使う。
   const funfoCash = channelFinal.funfo.cash;
@@ -16658,9 +16660,14 @@ function renderPosSystemSummary(){
     const c = v=> v === null ? `<td style="${td}color:var(--muted);text-align:center;${style}">未表示</td>` : `<td style="${td}${style}">${fmtNum(v)}円</td>`;
     return `<tr><td style="padding:6px 10px;border:1px solid var(--border);${style}">${label}</td>${c(cash)}${c(square)}${c(funfoAmt)}${c(otherTotal)}${c(total)}</tr>`;
   };
-  const funfoSquare = fm.square, funfoFunfo = fm.funfo;
-  const funfoOtherTotal = funfoSquare + funfoFunfo;
-  const funfoOtherGap = funfoOther - funfoOtherTotal; // 集計結果の最終値のその他との差（Square・funfo以外の支払い方法、手動調整など）
+  // その他決済の「集計結果の最終値」（手動での追加・編集を反映した値）を、Square＋funfoの内訳にする。
+  // Squareは伝票の支払い方法（元データ）の合計、funfoは最終値からSquareを引いた残り
+  // （＝funfo伝票の元データ＋手動調整額＋Square・funfo以外の支払い方法）。こうして、手動調整額が表に反映され、
+  // その他決済合計＝Square＋funfo＝集計結果の最終値になる。
+  const funfoSquare = fm.square;
+  const funfoOtherTotal = funfoOther;
+  const funfoFunfo = funfoOtherTotal - funfoSquare;
+  const funfoOtherGap = funfoFunfo - fm.funfo; // funfo列に含まれる、元データのfunfo以外の分（手動調整額など）
 
   el.innerHTML = `<table style="border-collapse:collapse;font-size:13px;min-width:560px;">
     <tr style="background:var(--bg);">
@@ -16689,7 +16696,7 @@ function renderPosSystemSummary(){
       <td style="padding:5px 10px;border:1px solid var(--border);text-align:right;">その他 ${fmtNum(adjSmaregiOther)}円</td>
     </tr>
   </table>
-  ${Math.abs(funfoOtherGap) >= 1 ? `<p class="hint" style="margin-top:6px;color:var(--danger);">※ funfoのその他決済の集計結果の最終値（${fmtNum(funfoOther)}円）と、Square＋funfo（${fmtNum(funfoOtherTotal)}円）に、${fmtNum(Math.round(funfoOtherGap))}円の差があります（Square・funfo以外の支払い方法、手動での追加・編集など）。表の計算は、Square＋funfoです。</p>` : ""}
+  ${Math.abs(funfoOtherGap) >= 1 ? `<p class="hint" style="margin-top:6px;color:var(--danger);">※ funfo行のfunfo（${fmtNum(Math.round(funfoFunfo))}円）には、funfo伝票の元データ（${fmtNum(Math.round(fm.funfo))}円）のほかに、手動調整額やSquare・funfo以外の支払い方法による差額 ${fmtNum(Math.round(funfoOtherGap))}円が含まれています（その他決済合計は、手動での追加・編集を反映した集計結果の最終値です）。</p>` : ""}
   ${unclassifiedCash || unclassifiedOther ? '<p class="hint" style="margin-top:6px;color:var(--danger);">※「大分類未設定・要確認」は、商品マスタの「大分類」が「レストラン」「Shop」いずれにも該当しない明細の金額です（上記のfunfo／スマレジの金額には含まれていません）。該当明細の大分類設定をご確認ください。</p>' : ""}
   ${!hasData ? '<p class="hint" style="margin-top:8px;">まだデータがありません。funfo伝票またはスマレジCSVをアップロードしてください。</p>' : ""}`;
 }
