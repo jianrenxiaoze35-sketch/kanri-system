@@ -18104,6 +18104,13 @@ function computeOtherPayCheckAll(monthKey){
   const per = OTHERPAY_CHECK_COMPANIES.map(c=>({ c, res: computeOtherPayCheck(monthKey, c.id) }));
   const rows = [];
   per.forEach(({ c, res })=>res.rows.forEach(x=>rows.push(Object.assign({}, x, { company: c.label }))));
+  // 日付・時間の順に並べる（時間が無い行は、その日の最後。同じ日時なら会社の順）
+  const key = x=>{ const r = x.l || x.r || {}; const t = checkTimeToMin(r.time); return [r.date || "9999-99-99", t === null ? 9999 : t]; };
+  const ci = x=>OTHERPAY_CHECK_COMPANIES.findIndex(c=>c.label === x.company);
+  rows.sort((a, b)=>{
+    const ka = key(a), kb = key(b);
+    return ka[0].localeCompare(kb[0]) || (ka[1] - kb[1]) || (ci(a) - ci(b));
+  });
   const usable = per.filter(x=>!x.res.unavailable);
   return {
     rows, per,
