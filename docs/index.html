@@ -18099,6 +18099,21 @@ function computeOtherPayCheck(monthKey, company){
   const count = t=>rows.filter(x=>x.type === t).length;
   return { rows, L, R, unavailable: false, leftOnly: count("leftOnly"), rightOnly: count("rightOnly"), pairs: count("pair") };
 }
+// 3社（funfo・Square・PAYGATE）を合わせたビュー。照合は会社ごとに行い（会社をまたいで対応づけない）、結果を並べる。
+function computeOtherPayCheckAll(monthKey){
+  const per = OTHERPAY_CHECK_COMPANIES.map(c=>({ c, res: computeOtherPayCheck(monthKey, c.id) }));
+  const rows = [];
+  per.forEach(({ c, res })=>res.rows.forEach(x=>rows.push(Object.assign({}, x, { company: c.label }))));
+  const usable = per.filter(x=>!x.res.unavailable);
+  return {
+    rows, per,
+    // 合計は、照合できた会社（PAYGATEの日別内訳が未取込なら除く）だけで出す
+    L: usable.reduce((a, x)=>a.concat(x.res.L), []), R: usable.reduce((a, x)=>a.concat(x.res.R), []),
+    unavailable: usable.length === 0, partlyUnavailable: usable.length < per.length,
+    leftOnly: per.reduce((t, x)=>t + x.res.leftOnly, 0), rightOnly: per.reduce((t, x)=>t + x.res.rightOnly, 0),
+    pairs: per.reduce((t, x)=>t + x.res.pairs, 0)
+  };
+}
 function otherPayCheckMonth(){
   const el = document.getElementById("otherPayCheckMonth");
   if(el && !el.value) el.value = todayStr().slice(0, 7);
@@ -18112,13 +18127,16 @@ function renderOtherPayCheckView(){
   // 決済会社ごとのアラート件数（3社分）と、選択の切り替え
   const results = {};
   OTHERPAY_CHECK_COMPANIES.forEach(c=>{ results[c.id] = computeOtherPayCheck(monthKey, c.id); });
-  document.getElementById("otherPayCheckCompanyChips").innerHTML = OTHERPAY_CHECK_COMPANIES.map(c=>{
+  const isAll = otherPayCheckCompany === "all";
+  const allRes = computeOtherPayCheckAll(monthKey);
+  results.all = allRes;
+  document.getElementById("otherPayCheckCompanyChips").innerHTML = [{ id: "all", label: "すべて（3社合計）" }].concat(OTHERPAY_CHECK_COMPANIES).map(c=>{
     const r = results[c.id], n = r.leftOnly + r.rightOnly;
     const sel = c.id === otherPayCheckCompany;
     return `<button type="button" class="${sel ? "" : "secondary"}" style="padding:4px 12px;" onclick="setOtherPayCheckCompany('${c.id}')">${c.label}${r.unavailable ? "" : (n ? ` <span style="color:${sel ? "#ffd2cc" : "#c0392b"};font-weight:700;">⚠${n}</span>` : ` <span style="opacity:.8;">✓</span>`)}</button>`;
   }).join("");
   const res = results[otherPayCheckCompany];
-  const company = OTHERPAY_CHECK_COMPANIES.find(c=>c.id === otherPayCheckCompany);
+  const company = isAll ? { id: "all", label: "3社" } : OTHERPAY_CHECK_COMPANIES.find(c=>c.id === otherPayCheckCompany);
   // アラート
   const alertBox = document.getElementById("otherPayCheckAlert");
   const totalAlerts = OTHERPAY_CHECK_COMPANIES.reduce((t,c)=>t + results[c.id].leftOnly + results[c.id].rightOnly, 0);
@@ -18130,9 +18148,11 @@ function renderOtherPayCheckView(){
   // 注記
   const noteEl = document.getElementById("otherPayCheckNote");
   const notes = [];
-  if(res.unavailable) notes.push("PAYGATEの日別内訳（電子マネー取引履歴・バーコード決済取引履歴・クレジット処理結果）が取り込まれていないため、取引単位の照合ができません。アラートは出していません。");
-  if(!res.unavailable && !res.R.length) notes.push(`⑤その他決済集計に、${company.label}の${monthKey}の決済データがありません（CSVを取り込んでいるか確認してください）。`);
-  if(!res.L.length) notes.push(`②売上集計に、${company.label}に該当する${monthKey}のその他決済がありません。`);
+  if(isAll && res.partlyUnavailable && !res.unavailable) notes.push("PAYGATEの日別内訳が取り込まれていないため、PAYGATEは取引単位の照合ができません（下の表では「照合不可」と表示し、合計にも含めていません）。");
+  if(isAll){ OTHERPAY_CHECK_COMPANIES.forEach(c=>{ const r = results[c.id]; if(!r.unavailable && !r.R.length) notes.push(`⑤その他決済集計に、${c.label}の${monthKey}の決済データがありません。`); if(!r.L.length) notes.push(`②売上集計に、${c.label}に該当する${monthKey}のその他決済がありません。`); }); }
+  else if(res.unavailable) notes.push("PAYGATEの日別内訳（電子マネー取引履歴・バーコード決済取引履歴・クレジット処理結果）が取り込まれていないため、取引単位の照合ができません。アラートは出していません。");
+  if(!isAll && !res.unavailable && !res.R.length) notes.push(`⑤その他決済集計に、${company.label}の${monthKey}の決済データがありません（CSVを取り込んでいるか確認してください）。`);
+  if(!isAll && !res.L.length) notes.push(`②売上集計に、${company.label}に該当する${monthKey}のその他決済がありません。`);
   noteEl.innerHTML = notes.map(n=>`<div style="color:#a8740a;">${escAttr(n)}</div>`).join("");
   // 表
   const tdS = "padding:3px 8px;border:1px solid var(--border);";
@@ -18144,7 +18164,8 @@ function renderOtherPayCheckView(){
   const label = { pair: ["✅ 一致", "#1a8a3d", ""], leftOnly: ["⚠ レジのみ（端末データなし）", "#c0392b", "background:#fdecea;"], rightOnly: ["⚠ 端末のみ（レジデータなし）", "#c0392b", "background:#fff3e0;"], unchecked: ["－ 照合不可", "var(--muted)", ""] };
   body.innerHTML = res.rows.map(x=>{
     const [txt, color, bg] = label[x.type];
-    return `<tr style="${bg}"><td style="${tdS}font-weight:700;color:${color};white-space:nowrap;">${txt}</td>${cell(x.l, false)}${cell(x.r, true)}</tr>`;
+    const tag = isAll && x.company ? `<span style="font-weight:400;color:var(--muted);">【${escAttr(x.company)}】</span> ` : "";
+    return `<tr style="${bg}"><td style="${tdS}font-weight:700;color:${color};white-space:nowrap;">${tag}${txt}</td>${cell(x.l, false)}${cell(x.r, true)}</tr>`;
   }).join("");
   if(res.rows.length){
     const lt = res.L.reduce((t,r)=>t + r.amount, 0), rt = res.R.reduce((t,r)=>t + r.amount, 0);
@@ -18159,6 +18180,17 @@ function exportOtherPayCheckToExcel(){
   const monthKey = otherPayCheckMonth();
   const wb = XLSX.utils.book_new();
   const names = { pair: "一致", leftOnly: "レジのみ（端末データなし）", rightOnly: "端末のみ（レジデータなし）", unchecked: "照合不可" };
+  {
+    const all = computeOtherPayCheckAll(monthKey);
+    const aoa = [["決済会社", "状態", "②日付", "②時間", "②決済方法", "②金額", "⑤日付", "⑤時間", "⑤決済方法", "⑤金額", "⑤振込日"]];
+    all.rows.forEach(x=>{
+      aoa.push([x.company, names[x.type], x.l ? x.l.date : "", x.l ? x.l.time : "", x.l ? x.l.brand : "", x.l ? Math.round(x.l.amount) : "",
+        x.r ? x.r.date : "", x.r ? x.r.time : "", x.r ? x.r.brand : "", x.r ? Math.round(x.r.amount) : "", x.r ? x.r.payDate : ""]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{wch:10},{wch:26},{wch:11},{wch:8},{wch:18},{wch:10},{wch:11},{wch:8},{wch:18},{wch:10},{wch:11}];
+    XLSX.utils.book_append_sheet(wb, ws, "すべて");
+  }
   OTHERPAY_CHECK_COMPANIES.forEach(c=>{
     const res = computeOtherPayCheck(monthKey, c.id);
     const aoa = [["状態", "②日付", "②時間", "②決済方法", "②金額", "⑤日付", "⑤時間", "⑤決済方法", "⑤金額", "⑤振込日"]];
