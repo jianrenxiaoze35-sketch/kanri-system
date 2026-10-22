@@ -1733,6 +1733,7 @@
         <div class="toolbar">
           <button class="secondary" onclick="cloudFlush()">⬆ 今すぐ保存</button>
           <button class="secondary" onclick="appReloadAfterSync()">🔄 最新を読み込み直す</button>
+          <button class="secondary" onclick="cloudShowEditLog()">📝 編集ログを見る</button>
           <button class="secondary" onclick="cloudChangePass()">🔑 合言葉を変更</button>
           <button class="secondary" onclick="cloudForgetPass()">🚪 この端末からログアウト</button>
         </div>
@@ -1744,6 +1745,7 @@
           <button class="secondary" onclick="breweryKeyClear()">この端末から消す</button>
           <span id="breweryKeyStatus" style="font-size:12.5px;"></span>
         </div>
+        <div id="cloudEditLog"></div>
         <h4 style="margin:14px 0 4px;font-size:13px;">このブラウザ内の控え</h4>
         <div class="hint">クラウド版に切り替える前のデータや、クラウドに接続できないあいだにこのブラウザで変更したデータは、ここに控えとして残ります。</div>
         <div id="cloudSnapshotInfo" style="margin-top:6px;"></div>
@@ -2702,9 +2704,10 @@ const regiDailyStore = {
   setItem(key, value){
     if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
     key = deptStoreKey(key);
-    const _changed = _regiDailyCache.get(key) !== value;
+    const _prev = _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null;
+    const _changed = _prev !== value;
     _regiDailyCache.set(key, value);
-    if(_changed) cloudOnChange(key);
+    if(_changed) cloudOnChange(key, _prev);
     regiIdbPut(key, value).then(()=>{
       // 保存に成功したら、次に失敗した際は改めてアラートを表示できるようフラグを戻す
       _regiIdbWriteErrorAlerted = false;
@@ -2720,8 +2723,9 @@ const regiDailyStore = {
     if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
     key = deptStoreKey(key);
     const _had = _regiDailyCache.has(key);
+    const _prev = _had ? _regiDailyCache.get(key) : null;
     _regiDailyCache.delete(key);
-    if(_had) cloudOnChange(key);
+    if(_had) cloudOnChange(key, _prev);
     regiIdbDelete(key).catch(err=>console.error("regiDailyStore: IndexedDBからの削除に失敗しました:", key, err));
   },
   keys(){ return deptVisibleKeys(); },
@@ -2894,9 +2898,77 @@ function cloudNewVer(){ return Date.now().toString(36) + Math.random().toString(
 /* ---- 書き込み ---- */
 async function cloudBuildItem(key){
   const baseVer = _cloudRemote.get(key) || "";
-  if(!_regiDailyCache.has(key)) return {k: key, del: true, baseVer};
+  const sum = cloudChangeSummary(key, _cloudBaseValues.has(key) ? _cloudBaseValues.get(key) : undefined, _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null);
+  if(!_regiDailyCache.has(key)) return {k: key, del: true, baseVer, sum};
   const {enc, payload} = await cloudEncode(_regiDailyCache.get(key));
-  return {k: key, ver: cloudNewVer(), enc, d: payload, baseVer};
+  return {k: key, ver: cloudNewVer(), enc, d: payload, baseVer, sum};
+}
+
+/* ---- 編集ログ ----
+   保存のたびに「誰が（ログイン中の氏名・部門）・どの項目を・どう変えたか」をGASへ送り、
+   スプレッドシートの「log」シートに残す。設定ページの「📝 編集ログを見る」で新しい順に見られる。 */
+function cloudWho(){
+  try{
+    const name = (currentAccount && currentAccount.name) || "";
+    const dept = ((DEPARTMENTS.find(d=>d.id === currentDeptId) || {}).name) || "";
+    return {name, dept};
+  }catch(e){ return {name: "", dept: ""}; }
+}
+function cloudLogKeyLabel(key){
+  const k = String(key || "");
+  const m = k.match(/^(dept:[^:]+:)?(regi_sales_v1_|regi_close_v1_)(\d{4})-(\d{2})-(\d{2})$/);
+  if(m) return `${m[2] === "regi_sales_v1_" ? "売上集計" : "レジ締め"} ${Number(m[4])}/${Number(m[5])}${m[1] ? `（${m[1].slice(5, -1)}）` : ""}`;
+  return cloudKeyLabel(k);
+}
+function cloudChangeSummary(key, before, after){
+  const label = cloudLogKeyLabel(key);
+  try{
+    if(before === undefined) return label + "：変更";
+    if(after === null) return label + "：削除";
+    if(before === null) return label + "：新規作成";
+    let a, b;
+    try{ a = JSON.parse(before); b = JSON.parse(after); }catch(e){ return label + "：値を変更"; }
+    const parts = [];
+    if(Array.isArray(a) && Array.isArray(b)){
+      const idOf = x => (x && typeof x === "object") ? String(x.id ?? x.code ?? x.date ?? x.name ?? JSON.stringify(x)) : JSON.stringify(x);
+      const nameOf = x => (x && typeof x === "object") ? String(x.name || x.title || x.date || x.code || x.id || "") : String(x);
+      const ma = new Map(a.map(x => [idOf(x), x])), mb = new Map(b.map(x => [idOf(x), x]));
+      const added = [...mb.keys()].filter(k => !ma.has(k));
+      const removed = [...ma.keys()].filter(k => !mb.has(k));
+      const changed = [...mb.keys()].filter(k => ma.has(k) && JSON.stringify(ma.get(k)) !== JSON.stringify(mb.get(k)));
+      const names = (ks, m) => ks.slice(0, 3).map(k => nameOf(m.get(k))).filter(Boolean).join("、") + (ks.length > 3 ? ` ほか${ks.length - 3}件` : "");
+      if(added.length) parts.push(`追加${added.length}件（${names(added, mb)}）`);
+      if(removed.length) parts.push(`削除${removed.length}件（${names(removed, ma)}）`);
+      if(changed.length){
+        const x = ma.get(changed[0]), y = mb.get(changed[0]);
+        const fields = (x && y && typeof x === "object" && typeof y === "object") ? Object.keys(Object.assign({}, x, y)).filter(f => JSON.stringify(x[f]) !== JSON.stringify(y[f])).slice(0, 5) : [];
+        parts.push(`変更${changed.length}件（${names(changed, mb)}${fields.length ? "：" + fields.join("・") : ""}）`);
+      }
+    } else if(a && b && typeof a === "object" && typeof b === "object"){
+      const fields = Object.keys(Object.assign({}, a, b)).filter(f => JSON.stringify(a[f]) !== JSON.stringify(b[f]));
+      if(fields.length) parts.push(`変更：${fields.slice(0, 8).join("・")}${fields.length > 8 ? ` ほか${fields.length - 8}項目` : ""}`);
+    } else {
+      parts.push("値を変更");
+    }
+    return label + "：" + (parts.join("／") || "変更なし");
+  }catch(e){ return label + "：変更"; }
+}
+async function cloudShowEditLog(){
+  const el = document.getElementById("cloudEditLog");
+  if(!el) return;
+  if(_cloudMode !== "cloud"){ el.innerHTML = '<div class="hint">クラウドに接続しているときだけ見られます。</div>'; return; }
+  el.innerHTML = '<div class="hint">読み込み中…</div>';
+  try{
+    const res = await cloudApi("logList", {limit: 300});
+    const rows = res.rows || [];
+    if(!rows.length){ el.innerHTML = '<div class="hint">まだ記録はありません（2026-10-22 から記録しています）。</div>'; return; }
+    const td = 'style="text-align:left;vertical-align:top;padding:4px 8px;border-bottom:1px solid var(--border);"';
+    el.innerHTML = `<div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:8px;"><table style="min-width:0;width:100%;font-size:12px;border-collapse:collapse;"><thead><tr><th ${td}>日時</th><th ${td}>氏名</th><th ${td}>操作</th><th ${td}>内容</th></tr></thead><tbody>` +
+      rows.map(r => `<tr><td ${td}><span style="white-space:nowrap">${cloudEsc(new Date(r.at).toLocaleString("ja-JP"))}</span></td><td ${td}><span style="white-space:nowrap">${cloudEsc(r.name || "（未ログイン）")}</span>${r.dept ? `<div class="hint" style="margin:0">${cloudEsc(r.dept)}</div>` : ""}</td><td ${td}><span style="white-space:nowrap">${cloudEsc(r.op)}</span></td><td ${td}><span style="white-space:normal">${cloudEsc(r.sum || cloudLogKeyLabel(r.k))}</span></td></tr>`).join("") +
+      `</tbody></table></div><div class="hint" style="margin-top:4px;">新しい順に最大300件。全件はスプレッドシート「商品管理システム データ」の「log」シートにあります。</div>`;
+  }catch(err){
+    el.innerHTML = `<div class="hint" style="color:var(--danger)">読み込めませんでした（${cloudEsc((err && err.code) || err)}）</div>`;
+  }
 }
 // itemsを約4MBずつに分けて送る。競合したキーは確認のうえ強制上書き、または読み込み直し。
 async function cloudSendItems(items, force){
@@ -2911,9 +2983,9 @@ async function cloudSendItems(items, force){
   const conflicts = [];
   for(const batch of batches){
     if(_cloudReloading) return;
-    const res = await cloudApi("put", {items: batch, force: !!force});
-    res.saved.forEach(s=>_cloudRemote.set(s.k, s.ver));
-    (res.deleted || []).forEach(k=>_cloudRemote.delete(k));
+    const res = await cloudApi("put", {items: batch, force: !!force, who: cloudWho()});
+    res.saved.forEach(s=>{ _cloudRemote.set(s.k, s.ver); _cloudBaseValues.delete(s.k); });
+    (res.deleted || []).forEach(k=>{ _cloudRemote.delete(k); _cloudBaseValues.delete(k); });
     if(res.meta) _cloudKnownWriteAt = res.meta.lastWriteAt;
     res.conflicts.forEach(c=>conflicts.push(Object.assign({}, c, {item: batch.find(b=>b.k === c.k)})));
   }
@@ -2923,7 +2995,10 @@ async function cloudSendItems(items, force){
   if(!ok){ cloudReloadDiscard(); return; }
   await cloudSendItems(conflicts.map(c=>c.item), true);
 }
-function cloudOnChange(key){
+// 編集ログ用：前回クラウドへ送ってから最初に変わる前の値（キー→文字列。null＝無かった）
+const _cloudBaseValues = new Map();
+function cloudOnChange(key, prev){
+  if(_cloudMode === "cloud" && arguments.length > 1 && !_cloudBaseValues.has(key)) _cloudBaseValues.set(key, prev === undefined ? null : prev);
   if(_cloudMode === "cloud" && _cloudUnreadableKeys.has(key)){
     // クラウド上に読み込めなかったデータがある項目は、上書きしない（データを守るため、保存を止める）
     _cloudBlockedWrites.add(key);

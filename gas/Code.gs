@@ -43,6 +43,7 @@ function doPost(e) {
       case 'meta': return json_({ ok: true, meta: meta_() });
       case 'load': return json_(load_());
       case 'put': return json_(put_(req));
+      case 'logList': return json_(logList_(req));
       case 'changePass': return json_(changePass_(req));
       default: return json_({ ok: false, error: 'unknown_action' });
     }
@@ -190,10 +191,72 @@ function put_(req) {
       p.setProperty('LAST_WRITE_AT', at);
       p.setProperty('LAST_TAB', req.tab || '');
     }
+    appendLog_(req, at, accepted, conflicts, pos);
     return { ok: true, saved: saved, deleted: accepted.filter(function (it) { return it.del; }).map(function (it) { return it.k; }), conflicts: conflicts, meta: meta_() };
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---- 編集ログ ----
+ * シート「log」：1行 = 1項目の保存1回。誰が（画面のログイン名）・いつ・どの項目を・どう変えたか。
+ *   A:日時 B:氏名 C:部門 D:端末(tab) E:項目キー F:操作 G:変更内容 H:旧ver I:新ver J:サイズ(文字)
+ * 氏名・部門・変更内容は画面側が送ってくる値（GAS側では本人確認できない）。
+ * 行が増えすぎたら古いものから消す（LOG_MAX_ROWS を超えたら LOG_TRIM_ROWS 行）。 */
+const LOG_SHEET = 'log';
+const LOG_HEADER = ['日時', '氏名', '部門', '端末', '項目', '操作', '変更内容', '旧ver', '新ver', 'サイズ'];
+const LOG_MAX_ROWS = 60000;
+const LOG_TRIM_ROWS = 10000;
+function logSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(LOG_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(LOG_SHEET);
+    sh.getRange(1, 1, 1, LOG_HEADER.length).setValues([LOG_HEADER]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function appendLog_(req, at, accepted, conflicts, pos) {
+  try {
+    const who = req.who || {};
+    const name = String(who.name || ''), dept = String(who.dept || ''), tab = String(req.tab || '');
+    const rows = [];
+    accepted.forEach(function (it) {
+      const prev = pos[it.k];
+      const op = it.del ? '削除' : (prev ? (req.force ? '上書き（確認済み）' : '更新') : '新規');
+      rows.push([at, name, dept, tab, it.k, op, String(it.sum || '').slice(0, 500), prev ? prev.ver : '', it.del ? '' : String(it.ver || ''), it.del ? 0 : String(it.d || '').length]);
+    });
+    conflicts.forEach(function (c) {
+      rows.push([at, name, dept, tab, c.k, '保留（他の端末が先に更新）', '', c.ver, '', 0]);
+    });
+    if (!rows.length) return;
+    const sh = logSheet_();
+    const start = sh.getLastRow() + 1;
+    const range = sh.getRange(start, 1, rows.length, LOG_HEADER.length);
+    range.setNumberFormat('@');
+    range.setValues(rows);
+    if (sh.getLastRow() > LOG_MAX_ROWS + 1) sh.deleteRows(2, LOG_TRIM_ROWS);
+  } catch (err) {
+    // ログの失敗で保存そのものを失敗させない
+    console.error('appendLog_ failed: ' + err);
+  }
+}
+/** 新しい順に最大 limit 件（既定300・上限2000）。key を渡すとその項目だけ。 */
+function logList_(req) {
+  const limit = Math.min(Math.max(Number(req.limit) || 300, 1), 2000);
+  const sh = logSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) return { ok: true, rows: [] };
+  const take = Math.min(last - 1, req.key ? last - 1 : limit * 3);
+  const vals = sh.getRange(last - take + 1, 1, take, LOG_HEADER.length).getValues();
+  const rows = [];
+  for (let i = vals.length - 1; i >= 0 && rows.length < limit; i--) {
+    const r = vals[i];
+    if (req.key && String(r[4]) !== String(req.key)) continue;
+    rows.push({ at: String(r[0]), name: String(r[1]), dept: String(r[2]), tab: String(r[3]), k: String(r[4]), op: String(r[5]), sum: String(r[6]), size: Number(r[9]) || 0 });
+  }
+  return { ok: true, rows: rows };
 }
 
 function json_(obj) {
