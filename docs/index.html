@@ -668,7 +668,7 @@
             <tr>
               <th><input type="checkbox" id="purchaseSelectAllCheckbox" onchange="toggleSelectAllPurchases(this.checked)"></th>
               <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
-              <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数(中)</th><th>単位(中)</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
+              <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
               <th>仕入れ先</th><th>メモ</th>
               <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(大)</th><th>単位(大)</th><th>メーカー</th>
               <th class="actions-col">操作</th>
@@ -737,7 +737,7 @@
               <tr>
                 <th><input type="checkbox" disabled></th>
                 <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
-                <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数(中)</th><th>単位(中)</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
+                <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(大)</th><th>単位(大)</th><th>メーカー</th>
                 <th class="actions-col">操作</th>
@@ -757,7 +757,7 @@
               <tr>
                 <th><input type="checkbox" disabled></th>
                 <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
-                <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数(中)</th><th>単位(中)</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
+                <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(大)</th><th>単位(大)</th><th>メーカー</th>
                 <th class="actions-col">操作</th>
@@ -2231,12 +2231,13 @@
       <div class="form-field"><label>大分類</label><select id="f_pu_department"></select></div>
       <div class="form-field"><label>小分類</label><select id="f_pu_category" onchange="refreshPurchaseAllocBox()"></select></div>
       <div class="form-field"><label>中分類</label><select id="f_pu_bunrui" onchange="refreshPurchaseCategoryOptions()"></select></div>
-      <div class="form-field"><label>単位(中)</label><select id="f_pu_unit"></select></div>
+      <div class="form-field"><label>単位(中)</label><select id="f_pu_unit" onchange="renderPurchaseItems()"></select></div>
+      <div class="form-field"><label>発注数の単位区分<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">請求書の発注数が、大・中・小のどれか</span></label><select id="f_pu_qtyLevel" onchange="renderPurchaseItems()"><option value="中">中（本など）</option><option value="大">大（箱など）</option><option value="小">小（gなど）</option></select></div>
       <div class="form-field"><label>仕入れ先</label><select id="f_pu_supplier"></select></div>
       <div class="form-field span3"><label>メモ</label><input type="text" id="f_pu_memo"></div>
-      <div class="form-field"><label>内容量(小)</label><input type="number" id="f_pu_packQty" step="0.01"></div>
+      <div class="form-field"><label>内容量(小)</label><input type="number" id="f_pu_packQty" step="0.01" oninput="renderPurchaseItems()"></div>
       <div class="form-field"><label>単位(小)</label><select id="f_pu_packUnit"></select></div>
-      <div class="form-field"><label>ロット入数(大)</label><input type="number" id="f_pu_lotQty" step="0.01"></div>
+      <div class="form-field"><label>ロット入数(大)</label><input type="number" id="f_pu_lotQty" step="0.01" oninput="renderPurchaseItems()"></div>
       <div class="form-field"><label>単位(大)</label><select id="f_pu_lotUnit"></select></div>
       <div class="form-field"><label>メーカー</label><select id="f_pu_maker"></select></div>
     </div>
@@ -2265,7 +2266,7 @@
         <col style="width:38%"><col style="width:16%"><col style="width:12%"><col style="width:14%"><col style="width:16%"><col style="width:6%">
       </colgroup>
       <thead>
-        <tr><th>資材／原料</th><th>発注数(中)</th><th>単位(中)</th><th>価格税込(中)(自動)</th><th>金額(税込)</th><th></th></tr>
+        <tr><th>資材／原料</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)(自動)</th><th>金額(税込)</th><th></th></tr>
       </thead>
       <tbody id="purchaseItemsBody"></tbody>
     </table>
@@ -4111,6 +4112,7 @@ function openPurchaseForm(purchase){
   document.getElementById("f_pu_bunrui").value = purchase ? (purchase.bunrui || "") : "";
   refreshPurchaseCategoryOptions(purchase ? (purchase.category || "") : "");
   document.getElementById("f_pu_unit").value = purchase ? (purchase.unit || "") : "";
+  document.getElementById("f_pu_qtyLevel").value = purchase ? purchaseQtyLevel(purchase) : "中";
   document.getElementById("f_pu_memo").value = purchase ? (purchase.memo || "") : "";
   document.getElementById("f_pu_packQty").value = purchase ? (purchase.packQty || "") : "";
   document.getElementById("f_pu_packUnit").value = purchase ? (purchase.packUnit || "") : "";
@@ -4226,6 +4228,11 @@ function applyMaterialDefaultsToPurchaseForm(materialId){
   setIfBlank("f_pu_maker", m.maker);
 }
 
+// 入力中の仕入れ（フォームの値）を、発注数の単位区分の換算に使う形にまとめる
+function purchaseFormLike(){
+  const v = id=>{ const el = document.getElementById(id); return el ? el.value : ""; };
+  return { qtyLevel: v("f_pu_qtyLevel"), lotQty: v("f_pu_lotQty"), packQty: v("f_pu_packQty"), unit: v("f_pu_unit"), lotUnit: v("f_pu_lotUnit"), packUnit: v("f_pu_packUnit") };
+}
 function updatePurchaseItem(i, field, value){
   currentPurchaseItems[i][field] = value;
   if(field === "materialId"){
@@ -4234,7 +4241,7 @@ function updatePurchaseItem(i, field, value){
     return;
   }
   const it = currentPurchaseItems[i];
-  const qty = parseFloat(it.qty) || 0;
+  const qty = (parseFloat(it.qty) || 0) * purchaseQtyMidFactor(purchaseFormLike());
   const amount = parseFloat(it.amount) || 0;
   const unitPrice = qty ? amount / qty : 0;
   const unitPriceCell = document.getElementById(`pi-unitprice-${i}`);
@@ -4247,14 +4254,17 @@ function renderPurchaseItems(){
   body.innerHTML = currentPurchaseItems.map((it,i)=>{
     const matOptions = ['<option value=""></option>'].concat(materials.map(m=>`<option value="${m.id}" ${m.id===it.materialId?"selected":""}>${escAttr(m.name)||"(名称未設定)"}（${m.bunrui||""}${m.subCategory?"/"+m.subCategory:""}）</option>`));
     const m = materials.find(x=>x.id===it.materialId);
-    const qty = parseFloat(it.qty) || 0;
+    const formLike = purchaseFormLike();
+    const qty = (parseFloat(it.qty) || 0) * purchaseQtyMidFactor(formLike);
     const amount = parseFloat(it.amount) || 0;
     const unitPrice = qty ? amount / qty : 0;
+    // 発注数の単位：区分に応じた単位。フォームに未入力なら、資材マスタの単位（中・大・小）を使う
+    const lvUnit = purchaseQtyUnitText(formLike) || (m ? (purchaseQtyLevel(formLike) === "大" ? (m.lotUnit||"") : purchaseQtyLevel(formLike) === "小" ? (m.unit||"") : (m.midUnit||"")) : "");
     return `
       <tr>
         <td><select onchange="updatePurchaseItem(${i},'materialId',this.value)">${matOptions.join("")}</select></td>
         <td><input type="number" value="${it.qty ?? ''}" oninput="updatePurchaseItem(${i},'qty',this.value)"></td>
-        <td class="text" style="text-align:center;">${m ? (m.unit||"") : ""}</td>
+        <td class="text" style="text-align:center;">${escAttr(lvUnit)}</td>
         <td class="unit-price" id="pi-unitprice-${i}">${unitPrice ? fmtNum(Math.round(unitPrice*100)/100) : ""}</td>
         <td><input type="number" value="${it.amount ?? ''}" oninput="updatePurchaseItem(${i},'amount',this.value)"></td>
         <td class="actions-col"><button class="danger row-remove" onclick="removePurchaseItem(${i})">×</button></td>
@@ -4293,6 +4303,7 @@ function savePurchase(){
   const category = document.getElementById("f_pu_category").value;
   const bunrui = document.getElementById("f_pu_bunrui").value;
   const unit = document.getElementById("f_pu_unit").value;
+  const qtyLevel = document.getElementById("f_pu_qtyLevel").value || "中";
   const memo = document.getElementById("f_pu_memo").value.trim();
   const packQty = parseFloat(document.getElementById("f_pu_packQty").value) || 0;
   const packUnit = document.getElementById("f_pu_packUnit").value;
@@ -4313,7 +4324,7 @@ function savePurchase(){
     .map(it=>({ materialId: it.materialId || "", qty: (hasValidQty(it) ? parseFloat(it.qty) : (isOtherExpense && !it.materialId ? 1 : 0)), amount: parseFloat(it.amount) || 0 }));
 
   const record = {
-    id, date, supplier, status, itemName, invoiceNumber, deliveryDate, billingDate, department, category, bunrui, unit, memo, packQty, packUnit, lotQty, lotUnit, maker, items,
+    id, date, supplier, status, itemName, invoiceNumber, deliveryDate, billingDate, department, category, bunrui, unit, qtyLevel, memo, packQty, packUnit, lotQty, lotUnit, maker, items,
     quotationFile: currentQuotationFile,
     invoiceFile: currentInvoiceFile,
     // その他経費の按分先（空＝請求書内の全ての通常行へ均等に按分）。その他経費の行でのみ有効。
@@ -4369,6 +4380,23 @@ function purchaseGroupKey(p){
   return { key: "none", label: "請求日未設定（請求書番号未登録）" };
 }
 
+/* ---- 発注数の単位区分（大・中・小） ----
+   発注数は、請求書に書かれている数をそのまま入れ、その単位が大・中・小のどれかを選ぶ（既定は中）。
+   在庫・単価の計算は「中」で行うため、大＝数値(中)（ロット入数(大)）を掛け、小＝内容量(小)で割って、中に換算する。 */
+function purchaseQtyLevel(p){ return (p && (p.qtyLevel === "大" || p.qtyLevel === "小")) ? p.qtyLevel : "中"; }
+function purchaseQtyMidFactor(p){
+  const lv = purchaseQtyLevel(p);
+  if(lv === "大"){ const n = parseFloat(p.lotQty); return n > 0 ? n : 1; }
+  if(lv === "小"){ const n = parseFloat(p.packQty); return n > 0 ? 1 / n : 1; }
+  return 1;
+}
+// 発注数の単位（文字）：区分に応じて、単位(大)・単位(中)・単位(小)のどれかを使う
+function purchaseQtyUnitText(p){
+  const lv = purchaseQtyLevel(p);
+  const u = lv === "大" ? p.lotUnit : (lv === "小" ? p.packUnit : p.unit);
+  return u ? `${u}${lv === "中" ? "" : "（" + lv + "）"}` : (lv === "中" ? "" : `（${lv}）`);
+}
+function purchaseItemQtyMid(p, it){ return (parseFloat(it.qty) || 0) * purchaseQtyMidFactor(p); }
 function purchaseItemsTotal(p){
   return (p.items||[]).reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
 }
@@ -4454,7 +4482,7 @@ function computeMaterialOtherExpenseDetail(){
     g.regular.forEach(p=>{
       (p.items||[]).forEach(it=>{
         if(!it.materialId) return;
-        purchasedQty[it.materialId] = (purchasedQty[it.materialId]||0) + (parseFloat(it.qty)||0);
+        purchasedQty[it.materialId] = (purchasedQty[it.materialId]||0) + purchaseItemQtyMid(p, it);
       });
     });
     g.regular.forEach(p=>{
@@ -4486,7 +4514,7 @@ function computeMaterialPurchaseHistoryTotals(){
       if(!it.materialId) return;
       if(!result[it.materialId]) result[it.materialId] = { totalAmount: 0, totalQty: 0, merchandiseAmount: 0, allocatedAmount: 0 };
       result[it.materialId].merchandiseAmount += parseFloat(it.amount) || 0;
-      result[it.materialId].totalQty += parseFloat(it.qty) || 0;
+      result[it.materialId].totalQty += purchaseItemQtyMid(p, it);
     });
   });
   const alloc = computeMaterialOtherExpenseDetail().totals;
@@ -4510,7 +4538,7 @@ function computeMaterialPurchaseStats(){
   purchases.forEach(p=>{
     (p.items||[]).forEach(it=>{
       if(!it.materialId) return;
-      const qty = parseFloat(it.qty) || 0;
+      const qty = purchaseItemQtyMid(p, it); // 中に換算した数量
       if(!qty) return;
       const amount = parseFloat(it.amount) || 0;
       if(!stats[it.materialId]) stats[it.materialId] = { totalQty: 0, totalAmount: 0 };
@@ -4736,7 +4764,8 @@ function renderPurchaseRow(p, otherExpenseShare, extraRowStyle){
   const isOtherExpense = isOtherExpensePurchase(p);
   const totalQty = (p.items||[]).reduce((s,it)=>s + (parseFloat(it.qty)||0), 0);
   const totalAmount = purchaseItemsTotal(p);
-  const unitPrice = totalQty ? totalAmount / totalQty : 0;
+  const totalQtyMid = totalQty * purchaseQtyMidFactor(p);
+  const unitPrice = totalQtyMid ? totalAmount / totalQtyMid : 0; // 価格税込(中)＝中1つあたり
   const statusColor = p.status==="納品ミス" ? "var(--danger)" : (p.status==="納品済み" ? "#2a8f4d" : "var(--muted)");
   const statusCell = p.status ? `<span style="color:${statusColor};font-weight:600;">${p.status}</span>` : "";
   let targetText = "按分済み";
@@ -4769,7 +4798,7 @@ function renderPurchaseRow(p, otherExpenseShare, extraRowStyle){
       <td>${p.bunrui || ""}</td>
       <td>${p.category || ""}</td>
       <td>${fmtNum(Math.round(totalQty*100)/100)}</td>
-      <td>${p.unit || ""}</td>
+      <td>${escAttr(purchaseQtyUnitText(p))}</td>
       <td>${unitPrice ? fmtNum(Math.round(unitPrice*100)/100) : ""}</td>
       <td>${fmtNum(Math.round(totalAmount*100)/100)}</td>
       <td>${allocatedCell}</td>
@@ -5165,7 +5194,7 @@ function purchaseDraftFromRecord(p){
   return {
     id: p.id, date: p.date || "", supplier: p.supplier || "",
     status: p.status || "", itemName: p.itemName || "", invoiceNumber: p.invoiceNumber || "", deliveryDate: p.deliveryDate || "",
-    billingDate: p.billingDate || "", department: p.department || "", category: p.category || "", bunrui: p.bunrui || "", unit: p.unit || "",
+    billingDate: p.billingDate || "", department: p.department || "", category: p.category || "", bunrui: p.bunrui || "", unit: p.unit || "", qtyLevel: purchaseQtyLevel(p),
     memo: p.memo || "",
     packQty: p.packQty ?? "", packUnit: p.packUnit || "", lotQty: p.lotQty ?? "", lotUnit: p.lotUnit || "", maker: p.maker || "",
     materialId: primary.materialId || "", qty: primary.qty ?? "", amount: primary.amount ?? "",
@@ -5189,7 +5218,7 @@ function closePurchasesBulk(){
 }
 
 function addPurchaseBulkRow(){
-  purchasesBulkDraft.push({ id:"", date: todayStr(), supplier:"", status:"発注済み", itemName:"", invoiceNumber:"", deliveryDate:"", billingDate:"", bunrui:"", unit:"", memo:"", packQty:"", packUnit:"", lotQty:"", lotUnit:"", maker:"", materialId:"", qty:"", amount:"", extraItems:[], quotationFile:null, invoiceFile:null });
+  purchasesBulkDraft.push({ id:"", date: todayStr(), supplier:"", status:"発注済み", itemName:"", invoiceNumber:"", deliveryDate:"", billingDate:"", bunrui:"", unit:"", qtyLevel:"中", memo:"", packQty:"", packUnit:"", lotQty:"", lotUnit:"", maker:"", materialId:"", qty:"", amount:"", extraItems:[], quotationFile:null, invoiceFile:null });
   renderPurchasesBulkGrid();
 }
 
@@ -5263,7 +5292,8 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, r.bunrui, `updatePurchaseBulk(${i},'bunrui',this.value)`)}</div>
         <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.unit, `updatePurchaseBulk(${i},'unit',this.value)`)}</div>
         <div class="form-field"><label>資材／原料</label><select data-material-select data-row-index="${i}" onchange="updatePurchaseBulk(${i},'materialId',this.value)">${materialOptionsHtml}</select></div>
-        <div class="form-field"><label>発注数(中)</label><input type="number" value="${r.qty ?? ''}" oninput="updatePurchaseBulk(${i},'qty',this.value)"></div>
+        <div class="form-field"><label>発注数の単位区分</label><select onchange="updatePurchaseBulk(${i},'qtyLevel',this.value)">${["中","大","小"].map(l=>`<option value="${l}" ${(r.qtyLevel||"中")===l?"selected":""}>${l}${l==="大"?"（箱など）":l==="小"?"（gなど）":"（本など）"}</option>`).join("")}</select></div>
+        <div class="form-field"><label>発注数</label><input type="number" value="${r.qty ?? ''}" oninput="updatePurchaseBulk(${i},'qty',this.value)"></div>
         <div class="form-field"><label>金額(税込)</label><input type="number" value="${r.amount ?? ''}" oninput="updatePurchaseBulk(${i},'amount',this.value)"></div>
         <div class="form-field"><label>仕入れ先</label>${bulkSelect(OPTIONS.supplier, r.supplier, `updatePurchaseBulk(${i},'supplier',this.value)`)}</div>
         <div class="form-field"><label>メモ</label><input type="text" value="${escAttr(r.memo)}" oninput="updatePurchaseBulk(${i},'memo',this.value)"></div>
@@ -5323,7 +5353,7 @@ function savePurchasesBulk(){
       id, date: r.date, supplier: r.supplier || "",
       status: r.status || "", itemName: (r.itemName||"").toString().trim(),
       invoiceNumber: (r.invoiceNumber||"").toString().trim(), deliveryDate: r.deliveryDate || "",
-      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "",
+      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: (r.qtyLevel === "大" || r.qtyLevel === "小") ? r.qtyLevel : "中",
       memo: (r.memo||"").toString().trim(),
       packQty: parseFloat(r.packQty) || 0, packUnit: r.packUnit || "", lotQty: parseFloat(r.lotQty) || 0, lotUnit: r.lotUnit || "", maker: (r.maker||"").toString().trim(),
       items,
@@ -5352,15 +5382,15 @@ function savePurchasesBulk(){
 function exportPurchasesCSV(){
   // 請求書取り込みテンプレートの見出し（発注数(中)・単位(中)・価格税込(中)・金額合計税込・内容量(小)・単位(小)・
   // ロット入数(大)・単位(大)）に合わせる。取込側は旧い見出し名でも読み込める（PURCHASE_*_HEADER_ALIASES参照）。
-  const headers = ["ステータス","仕入れ日","納品日","請求日","請求書番号","品名","大分類","中分類","小分類","発注数(中)","単位(中)","価格税込(中)","金額合計税込","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(大)","単位(大)","メーカー"];
+  const headers = ["ステータス","仕入れ日","納品日","請求日","請求書番号","品名","大分類","中分類","小分類","発注数","単位(中)","価格税込(中)","金額合計税込","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(大)","単位(大)","メーカー","発注数の単位区分"];
   const rows = [];
   purchases.forEach(p=>{
     const items = (p.items && p.items.length) ? p.items : [{ materialId:"", qty:"", amount:"" }];
     items.forEach(it=>{
       const qtyNum = parseFloat(it.qty) || 0;
       const amountNum = parseFloat(it.amount) || 0;
-      const unitPrice = qtyNum ? Math.round((amountNum / qtyNum) * 100) / 100 : "";
-      rows.push([p.status||"", p.date||"", p.deliveryDate||"", p.billingDate||"", p.invoiceNumber||"", p.itemName||"", p.department||"", p.bunrui||"", p.category||"", it.qty ?? "", p.unit||"", unitPrice, it.amount ?? "", p.supplier||"", p.memo||"", p.packQty ?? "", p.packUnit||"", p.lotQty ?? "", p.lotUnit||"", p.maker||""]);
+      const unitPrice = qtyNum ? Math.round((amountNum / (qtyNum * purchaseQtyMidFactor(p))) * 100) / 100 : "";
+      rows.push([p.status||"", p.date||"", p.deliveryDate||"", p.billingDate||"", p.invoiceNumber||"", p.itemName||"", p.department||"", p.bunrui||"", p.category||"", it.qty ?? "", p.unit||"", unitPrice, it.amount ?? "", p.supplier||"", p.memo||"", p.packQty ?? "", p.packUnit||"", p.lotQty ?? "", p.lotUnit||"", p.maker||"", purchaseQtyLevel(p)]);
     });
   });
   let csv = "﻿" + [headers, ...rows].map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\r\n");
@@ -5454,6 +5484,7 @@ function mergeImportedPurchaseRows(rows){
   let skippedCount = 0;
   const importedDraft = [];
   rows.forEach(r=>{
+    applyImportedQtyLevel(r, r.qtyLevelRaw);
     const key = purchaseImportDedupKey(r);
     if(seenKeys.has(key)){
       skippedCount++;
@@ -5470,7 +5501,7 @@ function mergeImportedPurchaseRows(rows){
       id:"", date: r.date || "", supplier: r.supplier || "",
       // CSV・Excelで取り込む仕入れは、既に届いた請求書・納品書をもとに登録するものとして扱い、ステータスは自動で「納品済み」にする
       status: "納品済み", itemName: r.itemName || "", invoiceNumber: r.invoiceNumber || "", deliveryDate: r.deliveryDate || "",
-      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "",
+      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: r.qtyLevel || "中",
       memo: r.memo || "",
       packQty: r.packQty || "", packUnit: r.packUnit || "", lotQty: r.lotQty || "", lotUnit: r.lotUnit || "", maker: r.maker || "",
       materialId: material ? material.id : "", qty: r.qty ?? "", amount: r.amount ?? "",
@@ -5914,11 +5945,36 @@ const PURCHASE_UNIT_PRICE_HEADER_ALIASES = ["価格税込(中)", "1P価格税込
 // 項目名変更(数量→発注数、単位→単位(ロット)、1P入り数→1P内容量、単位(1P入り数)→単位(1P)、
 // ロット入り数→ロット入数、入数単位→単位(ロット入数))後も、旧い見出し名のCSV/Excelファイルを
 // 引き続き取り込めるよう、新旧どちらの見出し名でも列を認識できるようにする。
-const PURCHASE_QTY_HEADER_ALIASES = ["発注数(中)", "発注数", "数量"];
-const PURCHASE_UNIT_HEADER_ALIASES = ["単位(中)", "単位(ロット)", "単位"];
+const PURCHASE_QTY_HEADER_ALIASES = ["発注数", "発注数(中)", "数量"];
+const PURCHASE_UNIT_HEADER_ALIASES = ["単位(中)", "発注数の単位", "単位(ロット)", "単位"];
 const PURCHASE_PACK_QTY_HEADER_ALIASES = ["内容量(小)", "1P内容量", "1P入り数"];
 const PURCHASE_PACK_UNIT_HEADER_ALIASES = ["単位(小)", "単位(1P)", "単位(1P入り数)"];
 const PURCHASE_LOT_QTY_HEADER_ALIASES = ["ロット入数(大)", "ロット入数", "ロット入り数"];
+const PURCHASE_QTY_LEVEL_HEADER_ALIASES = ["発注数の単位区分", "発注数単位区分", "単位区分"];
+// 取り込んだ行の「発注数の単位区分（大・中・小）」を決める。見出しで指定があればそれを使い、無ければ、単位の文字から推測する
+// （単位(大)・単位(小)と同じなら大・小、設定の単位（大・中・小）の選択肢にあればその区分、どれでもなければ中）。
+// 大・小のときは、発注数の単位の文字を、単位(大)・単位(小)の側へ移す（単位(中)に箱などが入らないようにするため）。
+function applyImportedQtyLevel(r, explicit){
+  const ex = (explicit || "").toString().trim();
+  let level = (ex === "大" || ex === "中" || ex === "小") ? ex : "";
+  const u = (r.unit || "").toString().trim();
+  if(!level){
+    if(!u) level = "中";
+    else if(r.lotUnit && u === r.lotUnit) level = "大";
+    else if(r.packUnit && u === r.packUnit) level = "小";
+    else if((OPTIONS.unitMid || []).includes(u)) level = "中";
+    else if((OPTIONS.lotUnit || []).includes(u)) level = "大";
+    else if((OPTIONS.unit || []).includes(u)) level = "小";
+    else level = "中";
+  }
+  if(level !== "中" && u && !(OPTIONS.unitMid || []).includes(u)){
+    if(level === "大" && !r.lotUnit) r.lotUnit = u;
+    if(level === "小" && !r.packUnit) r.packUnit = u;
+    if((level === "大" && r.lotUnit === u) || (level === "小" && r.packUnit === u)) r.unit = "";
+  }
+  r.qtyLevel = level;
+  return r;
+}
 const PURCHASE_LOT_UNIT_HEADER_ALIASES = ["単位(大)", "単位(ロット入数)", "入数単位"];
 // 分類の表記ゆれ（旧名称など）を現在の分類名に正規化する
 const PURCHASE_BUNRUI_IMPORT_ALIASES = { "送料": "送料/その他" };
@@ -5969,6 +6025,7 @@ function importPurchasesCSV(event){
       iBunrui = colIndex("中分類"), iSupplier = colIndex("仕入れ先"), iMemo = colIndex("メモ"), iMaker = colIndex("メーカー");
     // 項目名変更(数量→発注数 等)の前後どちらの見出し名でも読み込めるよう、別名一覧から一致した列を使う
     const iUnit = firstColIndex(PURCHASE_UNIT_HEADER_ALIASES);
+    const iQtyLevel = firstColIndex(PURCHASE_QTY_LEVEL_HEADER_ALIASES);
     const iQty = firstColIndex(PURCHASE_QTY_HEADER_ALIASES);
     const iPackQty = firstColIndex(PURCHASE_PACK_QTY_HEADER_ALIASES);
     const iPackUnit = firstColIndex(PURCHASE_PACK_UNIT_HEADER_ALIASES);
@@ -5999,7 +6056,8 @@ function importPurchasesCSV(event){
         deliveryDate: normalizeImportedDateStr(cell(cols, iDeliveryDate)), billingDate: normalizeImportedDateStr(cell(cols, iBillingDate)), invoiceNumber: cell(cols, iInvoiceNumber),
         memo: cell(cols, iMemo),
         packQty: cell(cols, iPackQty), packUnit: cell(cols, iPackUnit),
-        lotQty: cell(cols, iLotQty), lotUnit: cell(cols, iLotUnit), maker: cell(cols, iMaker)
+        lotQty: cell(cols, iLotQty), lotUnit: cell(cols, iLotUnit), maker: cell(cols, iMaker),
+        qtyLevelRaw: iQtyLevel >= 0 ? cell(cols, iQtyLevel) : ""
       };
     }).filter(r=>r.date || r.billingDate || r.deliveryDate || r.itemName);
     if(!rows.length){
@@ -6078,7 +6136,8 @@ function importPurchasesExcel(event){
         packUnit: (pickRowValue(row, PURCHASE_PACK_UNIT_HEADER_ALIASES)||"").toString().trim(),
         lotQty: (pickRowValue(row, PURCHASE_LOT_QTY_HEADER_ALIASES)||"").toString().trim(),
         lotUnit: (pickRowValue(row, PURCHASE_LOT_UNIT_HEADER_ALIASES)||"").toString().trim(),
-        maker: (row["メーカー"]||"").toString().trim()
+        maker: (row["メーカー"]||"").toString().trim(),
+        qtyLevelRaw: (pickRowValue(row, PURCHASE_QTY_LEVEL_HEADER_ALIASES)||"").toString().trim()
       };
     }).filter(r=>r.date || r.billingDate || r.deliveryDate || r.itemName);
     if(!rows.length){
@@ -10344,7 +10403,7 @@ function sumPurchasedQtySinceDate(materialId, sinceDate){
       if(!(d && d > sinceDate)) return;
     }
     (p.items||[]).forEach(it=>{
-      if(it.materialId === materialId) total += parseFloat(it.qty) || 0;
+      if(it.materialId === materialId) total += purchaseItemQtyMid(p, it);
     });
   });
   return total;
@@ -10402,7 +10461,7 @@ function allocateAlternativeConsumption(index, groupEvents){
     const d = purchaseEffectiveDate(p);
     (p.items||[]).forEach(it=>{
       if(!ids.has(it.materialId)) return;
-      (purchasedBy[it.materialId] = purchasedBy[it.materialId] || []).push({ date: d, qty: parseFloat(it.qty) || 0 });
+      (purchasedBy[it.materialId] = purchasedBy[it.materialId] || []).push({ date: d, qty: purchaseItemQtyMid(p, it) });
     });
   });
   const stockAt = (id, date)=>{
