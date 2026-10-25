@@ -5499,6 +5499,31 @@ function purchaseImportDedupKey(r){
   ].join("|");
 }
 
+// 取り込んだ行（r）の空白の項目を、品名が一致した原料・資材・半製品マスタ（m）の値で補う。
+// ファイルに値がある項目は、そのまま残す。補った項目の件数は summary に数える。
+const PURCHASE_FILL_FROM_MATERIAL = [
+  { row: "department", mat: "department", label: "大分類" },
+  { row: "bunrui", mat: "bunrui", label: "中分類" },
+  { row: "category", mat: "subCategory", label: "小分類" },
+  { row: "supplier", mat: "supplier", label: "仕入れ先" },
+  { row: "packQty", mat: "packQty", label: "内容量(小)" },
+  { row: "packUnit", mat: "unit", label: "単位(小)" },
+  { row: "lotQty", mat: "lotQty", label: "ロット入数(中)" },
+  { row: "unit", mat: "midUnit", label: "単位(中)" },
+  { row: "lotUnit", mat: "lotUnit", label: "単位(大)" },
+  { row: "maker", mat: "maker", label: "メーカー" }
+];
+function fillPurchaseRowBlanksFromMaterial(r, m, summary){
+  const blank = v=> v === undefined || v === null || String(v).trim() === "" || Number(v) === 0 && typeof v === "number";
+  PURCHASE_FILL_FROM_MATERIAL.forEach(f=>{
+    const mv = m[f.mat];
+    if(mv === undefined || mv === null || String(mv).trim() === "" || mv === 0) return;
+    if(!blank(r[f.row])) return;
+    r[f.row] = mv;
+    if(summary) summary[f.label] = (summary[f.label] || 0) + 1;
+  });
+}
+
 function mergeImportedPurchaseRows(rows){
   const baseDraft = purchases.map(purchaseDraftFromRecord);
   const fuzzyMatches = [];
@@ -5509,18 +5534,30 @@ function mergeImportedPurchaseRows(rows){
   })));
   let skippedCount = 0;
   const importedDraft = [];
+  const filledSummary = {}; // 空白を、マスタの値で補った項目ごとの件数
   rows.forEach(r=>{
+    // 重複の判定は、補完する前の値と、補完した後の値の、どちらでも行う（以前に補完せずに取り込んだ行とも照合できるように）
+    const key0 = purchaseImportDedupKey(r);
+    if(seenKeys.has(key0)){
+      skippedCount++;
+      return;
+    }
+    // 送料/その他・イニシャルコスト・値引、および小分類が送料・イニシャルコスト・サービス料・割引の行は
+    // 特定の資材に紐づかない費用のため、品名から資材を探したり未登録資材として案内したりしない
+    const isOtherExpense = isOtherExpenseByBunruiCategory(normalizeImportedBunrui(r.bunrui), r.category);
+    const { material, method } = isOtherExpense ? { material: null, method: "none" } : resolvePurchaseMaterialForItemName(r.itemName);
+    // アップロードされたファイルの空白は、登録済みの原料・資材・半製品マスタ（品名が一致する資材）の値で補う
+    // （経費管理の値で補う処理は、経費管理の作成後に追加する：fillPurchaseRowBlanksFromExpense）。
+    if(material) fillPurchaseRowBlanksFromMaterial(r, material, filledSummary);
+    else if(isOtherExpense && typeof fillPurchaseRowBlanksFromExpense === "function") fillPurchaseRowBlanksFromExpense(r, filledSummary);
     applyImportedQtyLevel(r, r.qtyLevelRaw);
     const key = purchaseImportDedupKey(r);
     if(seenKeys.has(key)){
       skippedCount++;
       return;
     }
+    seenKeys.add(key0);
     seenKeys.add(key);
-    // 送料/その他・イニシャルコスト・値引、および小分類が送料・イニシャルコスト・サービス料・割引の行は
-    // 特定の資材に紐づかない費用のため、品名から資材を探したり未登録資材として案内したりしない
-    const isOtherExpense = isOtherExpenseByBunruiCategory(normalizeImportedBunrui(r.bunrui), r.category);
-    const { material, method } = isOtherExpense ? { material: null, method: "none" } : resolvePurchaseMaterialForItemName(r.itemName);
     if(material && method === "fuzzy") fuzzyMatches.push({ itemName: r.itemName, materialName: material.name });
     const unresolvedName = (!isOtherExpense && !material && r.itemName) ? r.itemName : "";
     importedDraft.push({
@@ -5548,8 +5585,10 @@ function mergeImportedPurchaseRows(rows){
     fuzzyWrap.style.display = "none";
   }
   document.getElementById("purchasesBulkModalOverlay").classList.add("show");
-  if(skippedCount > 0){
-    alert(`重複のため${skippedCount}件を取り込みませんでした。`);
+  const filledLines = Object.keys(filledSummary).map(k=>`${k}：${filledSummary[k]}件`);
+  if(skippedCount > 0 || filledLines.length){
+    alert((skippedCount > 0 ? `重複のため${skippedCount}件を取り込みませんでした。\n` : "") +
+      (filledLines.length ? `ファイルの空白を、登録済みの原料・資材・半製品マスタの値で補いました。\n${filledLines.join("\n")}\n（内容は、一括編集画面で確認・修正できます）` : ""));
   }
 }
 
