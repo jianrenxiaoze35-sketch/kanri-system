@@ -2232,7 +2232,7 @@
       <div class="form-field"><label>小分類</label><select id="f_pu_category" onchange="refreshPurchaseAllocBox()"></select></div>
       <div class="form-field"><label>中分類</label><select id="f_pu_bunrui" onchange="refreshPurchaseCategoryOptions()"></select></div>
       <div class="form-field"><label>単位(中)</label><select id="f_pu_unit" onchange="renderPurchaseItems()"></select></div>
-      <div class="form-field"><label>発注数の単位区分<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">発注数が、発注数(セットなど)・大・中・小のどれか</span></label><select id="f_pu_qtyLevel" onchange="renderPurchaseItems()"><option value="中">中（缶・本など）</option><option value="発注">発注数（セットなど）</option><option value="大">大（箱など）</option><option value="小">小（mlなど）</option></select></div>
+      <div class="form-field"><label>発注数の単位区分<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">発注数が、発注数(セットなど)・大・中・小のどれか</span></label><select id="f_pu_qtyLevel" onchange="renderPurchaseItems()"><option value="中">中（缶・本など）</option><option value="発注">発注数（セットなど）</option><option value="大">大（箱など）</option><option value="小">小（mlなど）</option><option value="なし">なし</option></select></div>
       <div class="form-field"><label>発注数の単位<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">区分が「発注数」のとき（例：セット）</span></label><input type="text" id="f_pu_orderUnit" oninput="renderPurchaseItems()"></div>
       <div class="form-field"><label>仕入れ先</label><select id="f_pu_supplier"></select></div>
       <div class="form-field span3"><label>メモ</label><input type="text" id="f_pu_memo"></div>
@@ -2410,7 +2410,7 @@
         <div class="form-field"><label>価格(中)税込<br><span id="f_i_recipeCostNote" style="display:none;font-size:10.5px;font-weight:normal;color:var(--muted);">※レシピの原価から自動計算されるため、この入力値は使用されません</span></label><input type="number" id="f_i_packPrice" step="1" oninput="recalcIngredient()"></div>
         <div class="form-field"><label>数値(大)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">発注数の1単位（1セット）の大の数（例：2）</span></label><input type="number" id="f_i_largeQty" step="0.01"></div>
         <div class="form-field"><label>単位(大)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">例：箱</span></label><select id="f_i_lotUnit"></select></div>
-        <div class="form-field"><label>在庫を数える単位<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">在庫数・棚卸は、この単位で数えます</span></label><select id="f_i_stockLevel"><option value="中">中（缶・本など）</option><option value="大">大（箱など）</option><option value="小">小（mlなど）</option></select></div>
+        <div class="form-field"><label>在庫を数える単位<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">在庫数・棚卸は、この単位で数えます</span></label><select id="f_i_stockLevel"><option value="中">中（缶・本など）</option><option value="大">大（箱など）</option><option value="小">小（mlなど）</option><option value="なし">なし</option></select></div>
         <div class="form-field"><label>価格(大)税込</label><input type="number" id="f_i_lotPrice" step="1" oninput="recalcIngredient()"></div>
         <input type="hidden" id="f_i_unitPrice">
 
@@ -4403,27 +4403,29 @@ function unitSmallPer(o, lv){
   if(lv === "発注") return s * m * L;
   if(lv === "大") return s * m;
   if(lv === "中") return s;
-  return 1;
+  return 1; // 小、および「なし」（単位の換算をしない。数をそのまま使う）
 }
 // レシピの品目の使用量の単位（大・中・小。既定は小）1つあたりの、小の数
-function recipeItemLevel(it){ return (it && (it.usageLevel === "大" || it.usageLevel === "中")) ? it.usageLevel : "小"; }
+function recipeItemLevel(it){ return (it && (it.usageLevel === "大" || it.usageLevel === "中" || it.usageLevel === "なし")) ? it.usageLevel : "小"; }
 function recipeItemSmallPer(m, it){ return unitSmallPer(m, recipeItemLevel(it)); }
 function materialUnitTextByLevel(m, lv){
   if(!m) return "";
+  if(lv === "なし") return "";
   return (lv === "大" ? m.lotUnit : (lv === "中" ? m.midUnit : m.unit)) || "";
 }
-function materialStockLevel(m){ return (m && (m.stockLevel === "大" || m.stockLevel === "小")) ? m.stockLevel : "中"; }
+function materialStockLevel(m){ return (m && (m.stockLevel === "大" || m.stockLevel === "小" || m.stockLevel === "なし")) ? m.stockLevel : "中"; }
 // 在庫数を数える単位（文字）
 function materialStockUnitText(m){
   if(!m) return "";
   const lv = materialStockLevel(m);
+  if(lv === "なし") return "";
   return (lv === "大" ? m.lotUnit : (lv === "小" ? m.unit : m.midUnit)) || "";
 }
 // 「中」で数えた数量を、その資材の在庫単位の数量に直す係数
 function midToStockFactor(m){
   return unitSmallPer(m, "中") / unitSmallPer(m, materialStockLevel(m));
 }
-function purchaseQtyLevel(p){ return (p && (p.qtyLevel === "発注" || p.qtyLevel === "大" || p.qtyLevel === "小")) ? p.qtyLevel : "中"; }
+function purchaseQtyLevel(p){ return (p && (p.qtyLevel === "発注" || p.qtyLevel === "大" || p.qtyLevel === "小" || p.qtyLevel === "なし")) ? p.qtyLevel : "中"; }
 // 発注数を「中」に換算する係数（発注＝数値(大)×数値(中)、大＝数値(中)、小＝1÷数値(小)）
 function purchaseQtyMidFactor(p){
   return unitSmallPer(p, purchaseQtyLevel(p)) / unitSmallPer(p, "中");
@@ -4431,6 +4433,7 @@ function purchaseQtyMidFactor(p){
 // 発注数の単位（文字）：区分に応じて、発注数の単位・単位(大)・単位(中)・単位(小)のどれかを使う
 function purchaseQtyUnitText(p){
   const lv = purchaseQtyLevel(p);
+  if(lv === "なし") return "（なし）";
   const u = lv === "発注" ? p.orderUnit : (lv === "大" ? p.lotUnit : (lv === "小" ? p.packUnit : p.unit));
   return u ? `${u}${lv === "中" ? "" : "（" + lv + "）"}` : (lv === "中" ? "" : `（${lv}）`);
 }
@@ -4443,6 +4446,7 @@ function purchaseLargeQtyDisplay(p, totalQty){
 // 発注数の単位（区分の記号なし）
 function purchaseQtyUnitPlain(p){
   const lv = purchaseQtyLevel(p);
+  if(lv === "なし") return "";
   return (lv === "発注" ? p.orderUnit : (lv === "大" ? p.lotUnit : (lv === "小" ? p.packUnit : p.unit))) || "";
 }
 function purchaseItemsTotal(p){
@@ -5345,7 +5349,7 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, r.bunrui, `updatePurchaseBulk(${i},'bunrui',this.value)`)}</div>
         <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.unit, `updatePurchaseBulk(${i},'unit',this.value)`)}</div>
         <div class="form-field"><label>資材／原料</label><select data-material-select data-row-index="${i}" onchange="updatePurchaseBulk(${i},'materialId',this.value)">${materialOptionsHtml}</select></div>
-        <div class="form-field"><label>発注数の単位区分</label><select onchange="updatePurchaseBulk(${i},'qtyLevel',this.value)">${["中","発注","大","小"].map(l=>`<option value="${l}" ${(r.qtyLevel||"中")===l?"selected":""}>${l==="発注"?"発注数（セットなど）":l+(l==="大"?"（箱など）":l==="小"?"（mlなど）":"（缶・本など）")}</option>`).join("")}</select></div>
+        <div class="form-field"><label>発注数の単位区分</label><select onchange="updatePurchaseBulk(${i},'qtyLevel',this.value)">${["中","発注","大","小","なし"].map(l=>`<option value="${l}" ${(r.qtyLevel||"中")===l?"selected":""}>${l==="発注"?"発注数（セットなど）":l==="なし"?"なし":l+(l==="大"?"（箱など）":l==="小"?"（mlなど）":"（缶・本など）")}</option>`).join("")}</select></div>
         <div class="form-field"><label>発注数の単位</label><input type="text" value="${escAttr(r.orderUnit||"")}" oninput="updatePurchaseBulk(${i},'orderUnit',this.value)" placeholder="セットなど（区分が発注数のとき）"></div>
         <div class="form-field"><label>発注数</label><input type="number" value="${r.qty ?? ''}" oninput="updatePurchaseBulk(${i},'qty',this.value)"></div>
         <div class="form-field"><label>金額(税込)</label><input type="number" value="${r.amount ?? ''}" oninput="updatePurchaseBulk(${i},'amount',this.value)"></div>
@@ -5408,7 +5412,7 @@ function savePurchasesBulk(){
       id, date: r.date, supplier: r.supplier || "",
       status: r.status || "", itemName: (r.itemName||"").toString().trim(),
       invoiceNumber: (r.invoiceNumber||"").toString().trim(), deliveryDate: r.deliveryDate || "",
-      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: (r.qtyLevel === "発注" || r.qtyLevel === "大" || r.qtyLevel === "小") ? r.qtyLevel : "中", orderUnit: (r.orderUnit||"").toString().trim(),
+      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: (r.qtyLevel === "発注" || r.qtyLevel === "大" || r.qtyLevel === "小" || r.qtyLevel === "なし") ? r.qtyLevel : "中", orderUnit: (r.orderUnit||"").toString().trim(),
       memo: (r.memo||"").toString().trim(),
       packQty: parseFloat(r.packQty) || 0, packUnit: r.packUnit || "", lotQty: parseFloat(r.lotQty) || 0, largeQty: parseFloat(r.largeQty) || 0, lotUnit: r.lotUnit || "", maker: (r.maker||"").toString().trim(),
       items,
@@ -6060,7 +6064,7 @@ const PURCHASE_QTY_LEVEL_HEADER_ALIASES = ["発注数の単位区分", "発注�
 // 大・小のときは、発注数の単位の文字を、単位(大)・単位(小)の側へ移す（単位(中)に箱などが入らないようにするため）。
 function applyImportedQtyLevel(r, explicit){
   const ex = (explicit || "").toString().trim();
-  let level = (ex === "発注" || ex === "大" || ex === "中" || ex === "小") ? ex : "";
+  let level = (ex === "発注" || ex === "大" || ex === "中" || ex === "小" || ex === "なし") ? ex : "";
   const hasOrderUnit = !!(r.orderUnit && String(r.orderUnit).trim());
   const u = (hasOrderUnit ? r.orderUnit : r.unit || "").toString().trim(); // 発注数の単位（「発注数の単位」列があればそれ。無ければ単位(中)の列）
   if(!level){
@@ -6078,6 +6082,7 @@ function applyImportedQtyLevel(r, explicit){
     r.qtyLevel = level;
     return r;
   }
+  if(level === "なし"){ r.qtyLevel = level; return r; }
   if(level !== "中" && u){
     if(level === "大" && !r.lotUnit) r.lotUnit = u;
     if(level === "小" && !r.packUnit) r.packUnit = u;
@@ -9474,7 +9479,7 @@ function renderIngredientsBulkGrid(){
         <div class="form-field"><label>単位(中)</label>${bulkSelect(OPTIONS.unitMid, r.midUnit, `updateIngredientBulk(${i},'midUnit',this.value)`)}</div>
         <div class="form-field"><label>価格(中)税込</label><input type="number" value="${r.packPrice ?? ''}" oninput="updateIngredientBulk(${i},'packPrice',this.value)"></div>
         <div class="form-field"><label>数値(大)</label><input type="number" value="${r.largeQty ?? ''}" oninput="updateIngredientBulk(${i},'largeQty',this.value)"></div>
-        <div class="form-field"><label>在庫を数える単位</label><select onchange="updateIngredientBulk(${i},'stockLevel',this.value)">${["中","大","小"].map(l=>`<option value="${l}" ${(r.stockLevel||"中")===l?"selected":""}>${l}</option>`).join("")}</select></div>
+        <div class="form-field"><label>在庫を数える単位</label><select onchange="updateIngredientBulk(${i},'stockLevel',this.value)">${["中","大","小","なし"].map(l=>`<option value="${l}" ${(r.stockLevel||"中")===l?"selected":""}>${l}</option>`).join("")}</select></div>
         <div class="form-field"><label>単位(大)</label>${bulkSelect(OPTIONS.lotUnit, r.lotUnit, `updateIngredientBulk(${i},'lotUnit',this.value)`)}</div>
         <div class="form-field"><label>価格(大)税込</label><input type="number" value="${r.lotPrice ?? ''}" oninput="updateIngredientBulk(${i},'lotPrice',this.value)"></div>
         <div class="form-field span2"><label>保管場所</label>
@@ -9515,7 +9520,7 @@ function saveIngredientsBulk(){
       bunrui: r.bunrui||"", subCategory: r.subCategory||"", status: r.status||"", maker: (r.maker||"").toString().trim(),
       supplier: r.supplier||"",
       packQty: parseFloat(r.packQty)||0, unit: r.unit||"", midUnit: r.midUnit||"", packPrice: parseFloat(r.packPrice)||0,
-      lotQty: parseFloat(r.lotQty)||0, largeQty: parseFloat(r.largeQty)||0, stockLevel: (r.stockLevel==="大"||r.stockLevel==="小") ? r.stockLevel : "中", lotUnit: r.lotUnit||"", lotPrice: parseFloat(r.lotPrice)||0,
+      lotQty: parseFloat(r.lotQty)||0, largeQty: parseFloat(r.largeQty)||0, stockLevel: (r.stockLevel==="大"||r.stockLevel==="小"||r.stockLevel==="なし") ? r.stockLevel : "中", lotUnit: r.lotUnit||"", lotPrice: parseFloat(r.lotPrice)||0,
       taxRate: parseFloat(r.taxRate)||0,
       storageLocations: (r.storageLocationsText||"").split(",").map(s=>s.trim()).filter(Boolean),
       stockSteelRack: parseFloat(r.stockSteelRack)||0, stockChestStocker: parseFloat(r.stockChestStocker)||0,
@@ -9710,7 +9715,7 @@ function importIngredientsExcel(event){
         packPrice: ing(["価格(中)税込","価格(中)","価格税込(中)","1P価格税込","1P価格"], "num", existing ? existing.packPrice : 0),
         lotQty: ing(["数値(中)","ロット入数(中)","ロット入数(大)","ロット入数","ロット入り数"], "num", existing ? existing.lotQty : 0),
         largeQty: ing(["数値(大)","数量(大)"], "num", existing ? (existing.largeQty || 0) : 0),
-        stockLevel: (()=>{ const v = ing(["在庫の単位区分","在庫を数える単位"], "str", existing ? (existing.stockLevel || "中") : "中"); return (v === "大" || v === "小") ? v : "中"; })(),
+        stockLevel: (()=>{ const v = ing(["在庫の単位区分","在庫を数える単位"], "str", existing ? (existing.stockLevel || "中") : "中"); return (v === "大" || v === "小" || v === "なし") ? v : "中"; })(),
         lotUnit: ing(["単位(大)","単位(ロット)","単位(ロット入数)","入り数単位（在庫単位）","入り数単位","入数単位"], "str", existing ? existing.lotUnit : ""),
         lotPrice: ing(["価格(大)税込","価格(大)","1ロット価格"], "num", existing ? existing.lotPrice : 0),
         status: (row["ステータス"]||"").toString().trim(),
@@ -10230,7 +10235,7 @@ function renderRecipeItems(){
       <tr>
         <td><select id="ri-material-${i}" onchange="updateRecipeItem(${i},'materialId',this.value)">${matOptionsHtml}</select></td>
         <td><input type="number" step="0.01" min="0" placeholder="例: 2" value="${it.usage ?? ''}" oninput="updateRecipeItem(${i},'usage',this.value)"></td>
-        <td class="text" style="text-align:center;">${m ? `<select onchange="updateRecipeItem(${i},'usageLevel',this.value)" title="使用量の単位（大・中・小）">${["小","中","大"].map(l=>`<option value="${l}" ${recipeItemLevel(it)===l?"selected":""}>${escAttr(materialUnitTextByLevel(m, l) || "")}（${l}）</option>`).join("")}</select>` : ""}</td>
+        <td class="text" style="text-align:center;">${m ? `<select onchange="updateRecipeItem(${i},'usageLevel',this.value)" title="使用量の単位（大・中・小）">${["小","中","大","なし"].map(l=>`<option value="${l}" ${recipeItemLevel(it)===l?"selected":""}>${l==="なし" ? "なし" : escAttr(materialUnitTextByLevel(m, l) || "") + "（" + l + "）"}</option>`).join("")}</select>` : ""}</td>
         <td class="unit-price">${unitPrice ? fmtNum(Math.round(unitPrice*100)/100) : ""}</td>
         <td class="unit-price" id="ri-subtotal-${i}">${subtotal ? fmtNum(Math.round(subtotal*100)/100) : ""}</td>
         <td class="actions-col"><button class="danger row-remove" onclick="removeRecipeItem(${i})">×</button></td>
@@ -10267,7 +10272,7 @@ function saveRecipe(){
     .filter(it=>it.materialId && parseFloat(it.usage) > 0)
     .map(it=>{
       const rec = { materialId: it.materialId, usage: parseFloat(it.usage) };
-      if(it.usageLevel === "大" || it.usageLevel === "中") rec.usageLevel = it.usageLevel; // 小は既定のため、保存しない
+      if(it.usageLevel === "大" || it.usageLevel === "中" || it.usageLevel === "なし") rec.usageLevel = it.usageLevel; // 小は既定のため、保存しない
       const alts = (Array.isArray(it.alternatives) ? it.alternatives : []).filter(id=>id && id !== it.materialId);
       if(alts.length) rec.alternatives = Array.from(new Set(alts));
       return rec;
