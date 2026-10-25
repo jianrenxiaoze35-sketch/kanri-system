@@ -3539,6 +3539,16 @@ registerBootStep(function(){
     appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
     appStore.setItem(UNIT_MID_FLAG, "1");
   }
+  // 単位（大・中・小）の選択肢に「なし」を足す（単位が無い品目用。一度だけ。設定の分類で、削除・名称変更もできる）。
+  const UNIT_NONE_FLAG = "unit_none_option_v1";
+  if(!appStore.getItem(UNIT_NONE_FLAG)){
+    ["unit", "unitMid", "lotUnit"].forEach(k=>{
+      if(!Array.isArray(OPTIONS[k])) OPTIONS[k] = [];
+      if(!OPTIONS[k].includes("なし")) OPTIONS[k].push("なし");
+    });
+    appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
+    appStore.setItem(UNIT_NONE_FLAG, "1");
+  }
   // 小分類は「中分類の中に作る」形式へ変更。以前は紐付けの無い中分類では「すべての小分類が選べる」仕様だったため、
   // 紐付けの無い中分類には、現在の小分類をすべて入れて、選べる内容を変えずに新しい形式へ移す（一度だけ実行）。
   const NESTED_CATEGORY_FLAG = "bunrui_nested_categories_v1_done";
