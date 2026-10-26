@@ -11153,10 +11153,21 @@ async function exportXlsxWithOptions(cfg){
       const path = "xl/worksheets/sheet1.xml";
       let xml = await zip.file(path).async("string");
       const dv = `<dataValidations count="${rules.length}">${rules.join("")}</dataValidations>`;
-      if(xml.indexOf("<pageMargins") >= 0) xml = xml.replace("<pageMargins", dv + "<pageMargins");
-      else xml = xml.replace("</worksheet>", dv + "</worksheet>");
+      // 要素の並びの決まり：sheetData → … → dataValidations → … → pageMargins → … → ignoredErrors。
+      // この並びを守らないと、Excelが「内容を修復」と表示するため、後ろの要素（ignoredErrors・pageMargins等）の直前に入れる。
+      const anchors = ["<hyperlinks", "<printOptions", "<pageMargins", "<pageSetup", "<headerFooter", "<rowBreaks", "<colBreaks", "<customProperties", "<cellWatches", "<ignoredErrors", "<smartTags", "<drawing", "<legacyDrawing", "<tableParts", "<extLst"];
+      let at = -1;
+      anchors.forEach(t=>{ const i = xml.indexOf(t); if(i >= 0 && (at < 0 || i < at)) at = i; });
+      if(at < 0) at = xml.indexOf("</worksheet>");
+      xml = xml.slice(0, at) + dv + xml.slice(at);
       zip.file(path, xml);
-      outBlob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      // フォルダだけのエントリ（xl/ など）を含めずに、ファイルだけで組み直す（Excelが、余計なエントリを嫌うことがあるため）
+      const outZip = new Z();
+      const names = Object.keys(zip.files).filter(n=>!zip.files[n].dir).sort((x, y)=> (x === "[Content_Types].xml" ? -1 : 0) - (y === "[Content_Types].xml" ? -1 : 0));
+      for(const name of names){
+        outZip.file(name, await zip.files[name].async("uint8array"), { createFolders: false });
+      }
+      outBlob = await outZip.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     }catch(err){
       console.warn("入力規則（プルダウン）を付けられませんでした", err);
       alert("プルダウン（選択）の設定を付けるための部品を読み込めなかったため、選択肢のシート（2枚目）だけを付けて書き出します。");
