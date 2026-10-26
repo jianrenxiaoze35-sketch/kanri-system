@@ -539,8 +539,9 @@
         <div class="toolbar">
           <input type="text" id="searchBox" class="search-box" placeholder="商品コード・商品名で検索">
           <button class="secondary" onclick="exportCSV()">CSV書き出し</button>
-          <button class="secondary" onclick="document.getElementById('csvInput').click()">CSV読み込み</button>
-          <input type="file" id="csvInput" accept=".csv" style="display:none" onchange="importCSV(event)">
+          <button class="secondary" onclick="exportProductsExcel()" title="2枚目に設定の分類の選択肢を付け、該当の列を選択式にしたExcelを書き出します">Excel書き出し（選択肢つき）</button>
+          <button class="secondary" onclick="document.getElementById('csvInput').click()">CSV・Excel読み込み</button>
+          <input type="file" id="csvInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importCSV(event)">
           <button class="secondary" onclick="openProductsBulk()">一括編集・一括登録</button>
           <button onclick="openForm()">＋ 新規追加</button>
         </div>
@@ -573,6 +574,7 @@
         <div class="toolbar">
           <input type="text" id="ingredientSearchBox" class="search-box" placeholder="名称・小分類・メーカーで検索">
           <button class="secondary" onclick="exportIngredientsCSV()">CSV書き出し</button>
+          <button class="secondary" onclick="exportIngredientsExcel()" title="2枚目に設定の分類の選択肢を付け、該当の列を選択式にしたExcelを書き出します">Excel書き出し（選択肢つき）</button>
           <button class="secondary" onclick="document.getElementById('ingredientExcelInput').click()">Excel取込</button>
           <input type="file" id="ingredientExcelInput" accept=".xlsx,.xls" style="display:none" onchange="importIngredientsExcel(event)">
           <button class="secondary" onclick="openIngredientsBulk()">一括編集・一括登録</button>
@@ -651,6 +653,7 @@
         <div class="toolbar">
           <input type="text" id="purchaseSearchBox" class="search-box" placeholder="仕入れ先・品名・メモ・資材名・請求書番号で検索">
           <button class="secondary" onclick="exportPurchasesCSV()">CSV書き出し</button>
+          <button class="secondary" onclick="exportPurchasesExcel()" title="2枚目に設定の分類の選択肢を付け、該当の列を選択式にしたExcelを書き出します">Excel書き出し（選択肢つき）</button>
           <button class="secondary" onclick="document.getElementById('purchaseCsvInput').click()">CSV読み込み</button>
           <input type="file" id="purchaseCsvInput" accept=".csv" style="display:none" onchange="importPurchasesCSV(event)">
           <button class="secondary" onclick="document.getElementById('purchaseExcelInput').click()">Excel取込</button>
@@ -5496,7 +5499,7 @@ function savePurchasesBulk(){
 }
 
 /* ---------- 仕入れ管理：CSV書き出し・読み込み ---------- */
-function exportPurchasesCSV(){
+function buildPurchasesExportTable(){
   // 請求書アップロード用テンプレート（Googleスプレッドシート）の見出しと並びに合わせる。
   // 末尾の「請求書番号」「発注数の単位区分」は、取り込み直したときに請求書のまとまり・発注数の区分を戻すための列。
   // 取込側は旧い見出し名でも読み込める（PURCHASE_*_HEADER_ALIASES参照）。
@@ -5517,6 +5520,10 @@ function exportPurchasesCSV(){
         p.packQty ?? "", p.packUnit||"", p.lotQty ?? "", p.unit||"", largeQty, p.lotUnit||"", p.maker||"", p.invoiceNumber||"", purchaseQtyLevel(p)]);
     });
   });
+  return { headers, rows };
+}
+function exportPurchasesCSV(){
+  const { headers, rows } = buildPurchasesExportTable();
   let csv = "﻿" + [headers, ...rows].map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
@@ -5524,6 +5531,14 @@ function exportPurchasesCSV(){
   a.href = url; a.download = "仕入れ管理.csv"; a.click();
   URL.revokeObjectURL(url);
 }
+function exportPurchasesExcel(){
+  const { headers, rows } = buildPurchasesExportTable();
+  exportXlsxWithOptions({ fileName: "仕入れ管理.xlsx", sheetName: "シート1", headers, rows,
+    optionKeys: ["department", "bunrui", "category", "lotUnit", "unitMid", "unit", "maker", "supplier", "purchaseStatus"],
+    extraColumns: [{ label: "発注数の単位区分", values: ["中", "発注", "大", "小", "なし"] }],
+    validations: { "ステータス": "purchaseStatus", "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "メーカー": "maker", "仕入れ先": "supplier", "発注数の単位区分": "extra:0" } });
+}
+
 
 // 品名（例：「薄力粉25kg」）から原料・資材・半製品マスタの資材を推測する。
 // 1) 完全一致 → 2) 品名と資材名が互いに部分一致（品名に資材名が含まれる、またはその逆）する候補のうち最も名称が長いもの、の順で判定する。
@@ -9598,7 +9613,7 @@ function saveIngredientsBulk(){
 }
 
 /* ---------- 原料・資材・半製品マスタ CSV書き出し ---------- */
-function exportIngredientsCSV(){
+function buildIngredientsExportTable(){
   const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","数値(中)","単位(中)","価格(中)税込","数値(大)","単位(大)","価格(大)税込","価格(大)合計金額","うちその他経費按分","総額(按分込み)","総数(在庫単位)","ステータス","保管場所","在庫数(仕入累計)","在庫単位","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先","在庫の単位区分"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
@@ -9641,6 +9656,10 @@ function exportIngredientsCSV(){
       m.maker||"", m.supplier||"", usedProductNames.join("、"), materialStockLevel(m)
     ];
   });
+  return { headers, rows };
+}
+function exportIngredientsCSV(){
+  const { headers, rows } = buildIngredientsExportTable();
   let csv = "﻿" + [headers, ...rows].map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
@@ -9648,6 +9667,14 @@ function exportIngredientsCSV(){
   a.href = url; a.download = "原料資材半製品マスタ.csv"; a.click();
   URL.revokeObjectURL(url);
 }
+function exportIngredientsExcel(){
+  const { headers, rows } = buildIngredientsExportTable();
+  exportXlsxWithOptions({ fileName: "原料資材半製品マスタ.xlsx", sheetName: "原料・資材・半製品マスタ", headers, rows,
+    optionKeys: ["department", "bunrui", "category", "unit", "unitMid", "lotUnit", "status", "storageLocation", "maker", "supplier"],
+    extraColumns: [{ label: "在庫を数える単位（区分）", values: ["中", "大", "小", "なし"] }],
+    validations: { "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "ステータス": "status", "メーカー": "maker", "仕入れ先": "supplier", "在庫の単位区分": "extra:0" } });
+}
+
 
 /* ---------- Excel取込 ---------- */
 // 取込元Excelの列見出しの表記ゆれ（CSV書き出しの見出しと、フォーム上のラベルとで全角/半角括弧や
@@ -9818,7 +9845,7 @@ let currentRecipeItems = [];
 // 資材/原料は「資材・原料名」列を原料・資材・半製品マスタの「名称」と完全一致で照合する。
 // レシピ名という独立した項目は無く、一覧・使用先の表示名には常に対象（商品名／半製品・仕込み名）を使用する。
 // 使用量は「小」の単位（例：g）で入力する。旧い見出し「使用量」のExcelも取り込める。
-const RECIPE_IMPORT_HEADERS = ["商品コード", "商品名", "資材・原料名", "使用量(小)"];
+const RECIPE_IMPORT_HEADERS = ["商品コード", "商品名", "資材・原料名", "使用量", "使用量の単位"];
 
 function downloadRecipeImportTemplate(){
   if(typeof XLSX === "undefined"){
@@ -9827,26 +9854,22 @@ function downloadRecipeImportTemplate(){
   }
   const sampleProduct = products[0];
   const sampleMaterial = materials[0];
-  const aoa = [
-    RECIPE_IMPORT_HEADERS,
-    [
-      sampleProduct ? sampleProduct.code : "1001",
-      sampleProduct ? sampleProduct.name : "生ビール",
-      sampleMaterial ? sampleMaterial.name : "生ビール樽",
-      1
-    ],
-    [
-      sampleProduct ? sampleProduct.code : "1001",
-      sampleProduct ? sampleProduct.name : "生ビール",
-      "",
-      ""
-    ]
+  const rows = [
+    [sampleProduct ? sampleProduct.code : "1001", sampleProduct ? sampleProduct.name : "生ビール", sampleMaterial ? sampleMaterial.name : "生ビール樽", 1, "小"],
+    [sampleProduct ? sampleProduct.code : "1001", sampleProduct ? sampleProduct.name : "生ビール", "", "", ""]
   ];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{wch:12},{wch:22},{wch:22},{wch:10}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "レシピ一括登録");
-  XLSX.writeFile(wb, "レシピ一括登録テンプレート.xlsx");
+  // 2枚目「設定の分類」に、使用量の単位と、商品マスタ・原料資材半製品マスタの名称の選択肢を付け、該当の列を選択式にする。
+  exportXlsxWithOptions({
+    fileName: "レシピ一括登録テンプレート.xlsx", sheetName: "レシピ一括登録",
+    headers: RECIPE_IMPORT_HEADERS, rows,
+    optionKeys: [],
+    extraColumns: [
+      { label: "使用量の単位（小・中・大・なし）", values: ["小", "中", "大", "なし"] },
+      { label: "商品名（商品マスタ）", values: products.map(p=>p.name).filter(Boolean) },
+      { label: "資材・原料名（原料・資材・半製品マスタ）", values: materials.filter(m=>!isHiddenNonMaterial(m)).map(m=>m.name).filter(Boolean) }
+    ],
+    validations: { "使用量の単位": "extra:0", "商品名": "extra:1", "資材・原料名": "extra:2" }
+  });
 }
 
 /* ---- レシピ一括登録：名称の照合（完全一致 → 以前に選んだ対応 → マスタから選択） ---- */
@@ -9895,7 +9918,7 @@ function buildRecipeImportPlan(rows, overrides){
   const unmatchedMaterials = new Map();  // 資材名 → [{rowNo, productName}]
   const skippedRows = [];
   rows.forEach(r=>{
-    const { code, productName, materialName, usageRaw, rowNo } = r;
+    const { code, productName, materialName, usageRaw, usageLevelRaw, rowNo } = r;
     let product = code ? products.find(p=>String(p.code)===code) : null;
     if(!product && productName) product = products.find(p=>p.name===productName);
     const prodKey = code || productName || `(${rowNo}行目)`;
@@ -9928,7 +9951,10 @@ function buildRecipeImportPlan(rows, overrides){
       skippedRows.push(`${rowNo}行目：${materialName}（使用量が未入力または0以下）`);
       return;
     }
-    group.items.push({ materialId: material.id, usage });
+    const lvRaw = String(usageLevelRaw || "").trim();
+    const item = { materialId: material.id, usage };
+    if(lvRaw === "大" || lvRaw === "中" || lvRaw === "なし") item.usageLevel = lvRaw; // 空欄・小は既定（小）
+    group.items.push(item);
   });
   return { groups, groupOrder, unmatchedProducts, unmatchedMaterials, skippedRows };
 }
@@ -9960,7 +9986,7 @@ function importRecipesExcel(event){
       const productName = (row["商品名"]||"").toString().trim();
       const materialName = (row["資材・原料名"]||"").toString().trim();
       if(!code && !productName && !materialName) return; // 完全な空行はスキップ
-      rows.push({ code, productName, materialName, usageRaw: (row["使用量(小)"] !== undefined && row["使用量(小)"] !== "") ? row["使用量(小)"] : row["使用量"], rowNo: rowIdx + 2 });
+      rows.push({ code, productName, materialName, usageRaw: (row["使用量"] !== undefined && row["使用量"] !== "") ? row["使用量"] : row["使用量(小)"], usageLevelRaw: row["使用量の単位"], rowNo: rowIdx + 2 });
     });
     event.target.value = "";
     const plan = buildRecipeImportPlan(rows, null);
@@ -11068,7 +11094,82 @@ function editById(id){
   if(p) openForm(p);
 }
 
-function exportCSV(){
+/* ---- 選択肢つきExcelの書き出し ----
+   1枚目に、書き出すデータ。2枚目「設定の分類」に、⚙️設定の分類に登録されている、該当する項目の選択肢を、項目ごとの列で書く。
+   1枚目の該当する列のセルには、2枚目の選択肢から選べる入力規則（プルダウン）を付ける
+   （一覧にない値を入力すると、警告が出る。入力は、そのまま続けられる）。
+   入力規則は、書き出したxlsxを、JSZip（cdnjs）で開き直して、1枚目のシートのXMLへ書き足す。 */
+const OPTION_SHEET_NAME = "設定の分類";
+let _jszipPromise = null;
+function loadJsZip(){
+  if(typeof JSZip !== "undefined") return Promise.resolve(JSZip);
+  if(_jszipPromise) return _jszipPromise;
+  _jszipPromise = new Promise((resolve, reject)=>{
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    sc.onload = ()=> typeof JSZip !== "undefined" ? resolve(JSZip) : reject(new Error("JSZip not available"));
+    sc.onerror = ()=> reject(new Error("JSZip load failed"));
+    document.head.appendChild(sc);
+  });
+  _jszipPromise.catch(()=>{ _jszipPromise = null; });
+  return _jszipPromise;
+}
+function xlsxColLetter(i){ let n = i + 1, s = ""; while(n > 0){ const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+async function exportXlsxWithOptions(cfg){
+  if(typeof XLSX === "undefined"){ alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。"); return; }
+  const { fileName, sheetName, headers, rows } = cfg;
+  const optCols = (cfg.optionKeys || []).map(k=>({ label: FIELD_LABELS[k] || k, values: (Array.isArray(OPTIONS[k]) ? OPTIONS[k] : []).filter(v=>v !== "" && v != null) }))
+    .concat(cfg.extraColumns || []);
+  const ws1 = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws1["!cols"] = headers.map(h=>({ wch: Math.max(8, Math.min(30, String(h).length * 2 + 2)) }));
+  const maxLen = optCols.reduce((m, c)=>Math.max(m, c.values.length), 0);
+  const aoa2 = [optCols.map(c=>c.label)];
+  for(let r = 0; r < maxLen; r++) aoa2.push(optCols.map(c=>c.values[r] !== undefined ? c.values[r] : ""));
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  ws2["!cols"] = optCols.map(c=>({ wch: Math.max(14, Math.min(40, Math.max(...c.values.map(v=>String(v).length * 2), String(c.label).length * 2) + 2)) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, sheetName);
+  XLSX.utils.book_append_sheet(wb, ws2, OPTION_SHEET_NAME);
+  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  let outBlob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  // 入力規則（プルダウン）
+  const rules = [];
+  Object.keys(cfg.validations || {}).forEach(hdr=>{
+    const ci = headers.indexOf(hdr);
+    if(ci < 0) return;
+    const spec = cfg.validations[hdr];
+    let oi = -1;
+    if(typeof spec === "string" && spec.indexOf("extra:") === 0) oi = (cfg.optionKeys || []).length + parseInt(spec.slice(6), 10);
+    else oi = (cfg.optionKeys || []).indexOf(spec);
+    if(oi < 0 || !optCols[oi] || !optCols[oi].values.length) return;
+    const last = optCols[oi].values.length + 1;
+    const oc = xlsxColLetter(oi);
+    rules.push(`<dataValidation type="list" errorStyle="warning" allowBlank="1" showErrorMessage="1" errorTitle="設定の分類にない値です" error="設定の分類に登録されていない値です。このまま入力しても構いません（取り込み時に、設定への登録を確認します）。" sqref="${xlsxColLetter(ci)}2:${xlsxColLetter(ci)}5000"><formula1>'${OPTION_SHEET_NAME}'!$${oc}$2:$${oc}$${last}</formula1></dataValidation>`);
+  });
+  if(rules.length){
+    try{
+      const Z = await loadJsZip();
+      const zip = await Z.loadAsync(buf);
+      const path = "xl/worksheets/sheet1.xml";
+      let xml = await zip.file(path).async("string");
+      const dv = `<dataValidations count="${rules.length}">${rules.join("")}</dataValidations>`;
+      if(xml.indexOf("<pageMargins") >= 0) xml = xml.replace("<pageMargins", dv + "<pageMargins");
+      else xml = xml.replace("</worksheet>", dv + "</worksheet>");
+      zip.file(path, xml);
+      outBlob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    }catch(err){
+      console.warn("入力規則（プルダウン）を付けられませんでした", err);
+      alert("プルダウン（選択）の設定を付けるための部品を読み込めなかったため、選択肢のシート（2枚目）だけを付けて書き出します。");
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(outBlob);
+  a.download = fileName;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+
+function buildProductsExportTable(){
   const headers = ["表示順","商品コード","商品名","大分類","小分類","小売価格(税抜)","原価率","卸価格／町民価格","比率(卸÷小売=%)","卸原価率","特別卸価格","比率(特別卸÷小売=%)","特別卸原価率","原価","資材費","原料費","労務費","仕入原価","会計区分","貸方科目","売り先","更新日(適用開始)","POSシステム","税率(POS)"];
   const rows = products.map(p=>{
     const d = computeDisplayFields(p);
@@ -11079,6 +11180,10 @@ function exportCSV(){
       p.posSystem||"",p.posTaxRate??""
     ];
   });
+  return { headers, rows };
+}
+function exportCSV(){
+  const { headers, rows } = buildProductsExportTable();
   let csv = "﻿" + [headers, ...rows].map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
@@ -11086,13 +11191,30 @@ function exportCSV(){
   a.href = url; a.download = "商品マスタ.csv"; a.click();
   URL.revokeObjectURL(url);
 }
+function exportProductsExcel(){
+  const { headers, rows } = buildProductsExportTable();
+  exportXlsxWithOptions({ fileName: "商品マスタ.xlsx", sheetName: "商品マスタ", headers, rows,
+    optionKeys: ["department", "category", "accounting", "creditAccount", "customer", "posSystem"],
+    validations: { "大分類": "department", "小分類": "category", "会計区分": "accounting", "貸方科目": "creditAccount", "売り先": "customer", "POSシステム": "posSystem" } });
+}
+
 
 function importCSV(event){
   const file = event.target.files[0];
   if(!file) return;
   const reader = new FileReader();
+  const isExcel = /\.xlsx?$/i.test(file.name);
   reader.onload = function(e){
-    const text = e.target.result.replace(/^﻿/, "");
+    // Excel（選択肢つきで書き出したxlsxなど）は、1枚目のシートをCSVの形にして、同じ処理で読み込む
+    let text;
+    if(isExcel){
+      try{
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+        text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+      }catch(err){ alert("Excelファイルの読み込みに失敗しました。"); return; }
+    } else {
+      text = e.target.result.replace(/^﻿/, "");
+    }
     const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
     lines.shift(); // ヘッダー除去
     lines.forEach(line=>{
@@ -11136,7 +11258,7 @@ function importCSV(event){
     save();
     event.target.value = "";
   };
-  reader.readAsText(file, "UTF-8");
+  if(isExcel) reader.readAsArrayBuffer(file); else reader.readAsText(file, "UTF-8");
 }
 
 function parseCSVLine(line){
