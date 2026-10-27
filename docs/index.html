@@ -712,6 +712,7 @@
           <div class="toolbar">
             <button class="secondary active" id="purchaseDataMonthBtn" onclick="switchPurchaseDataMode('month')">月別</button>
             <button class="secondary" id="purchaseDataSupplierBtn" onclick="switchPurchaseDataMode('supplier')">仕入れ先別</button>
+            <button class="secondary" onclick="exportPurchaseDataExcel()">📥 Excel出力</button>
           </div>
         </div>
         <div class="hint" style="margin:0 0 6px;">これまでに登録された仕入れデータを、請求書単位（請求書番号ごと。番号がないものは仕入れ先と請求日ごと）で数えます。月は請求日（なければ仕入れ日・納品日）で分けます。金額は税込です。行をクリックすると、その請求書の一覧を開閉できます。</div>
@@ -5118,6 +5119,33 @@ function renderPurchaseDataView(){
     }
     return html;
   }).join("") + `<tr style="font-weight:700;"><td style="text-align:left;">合計</td><td>${fmtNum(invoices.length)}</td><td>${fmtNum(invoices.reduce((s,g)=>s+g.lines,0))}</td><td>${round(totalAmount)}</td>${purchaseDataMode === "supplier" ? "<td></td><td></td>" : ""}</tr>`;
+}
+
+function exportPurchaseDataExcel(){
+  if(typeof XLSX === "undefined"){ alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。"); return; }
+  const invoices = buildPurchaseInvoiceList();
+  if(!invoices.length){ alert("出力するデータがありません。"); return; }
+  const rd = v=>Math.round(v*100)/100;
+  const summarize = (keyOf, withRange)=>{
+    const m = new Map();
+    invoices.forEach(g=>{ const k = keyOf(g); if(!m.has(k)) m.set(k, []); m.get(k).push(g); });
+    return m;
+  };
+  const byMonth = summarize(g=>g.monthKey || "（日付なし）");
+  const bySup = summarize(g=>g.supplier);
+  const sumRow = (k, list)=>{ const ds = list.map(g=>g.date).filter(Boolean).sort(); return [k, list.length, list.reduce((s,g)=>s+g.lines,0), rd(list.reduce((s,g)=>s+g.amount,0)), ds[0] || "", ds[ds.length-1] || ""]; };
+  const monthRows = Array.from(byMonth.keys()).sort((a,b)=>b.localeCompare(a)).map(k=>sumRow(k, byMonth.get(k)).slice(0,4));
+  const supRows = Array.from(bySup.keys()).sort((a,b)=>a.localeCompare(b,"ja")).map(k=>sumRow(k, bySup.get(k)));
+  const total = [invoices.length, invoices.reduce((s,g)=>s+g.lines,0), rd(invoices.reduce((s,g)=>s+g.amount,0))];
+  monthRows.push(["合計", ...total]); supRows.push(["合計", ...total, "", ""]);
+  const detail = invoices.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"") || a.supplier.localeCompare(b.supplier,"ja"))
+    .map(g=>[g.monthKey || "", g.supplier, g.invoiceNumber, g.date, g.lines, rd(g.amount)]);
+  const mk = (head, rows, w)=>{ const ws = XLSX.utils.aoa_to_sheet([head, ...rows]); ws["!cols"] = w.map(x=>({wch:x})); return ws; };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, mk(["月","請求書（件）","明細（行）","金額合計（税込）"], monthRows, [14,14,12,18]), "月別");
+  XLSX.utils.book_append_sheet(wb, mk(["仕入れ先","請求書（件）","明細（行）","金額合計（税込）","最初の請求日","最後の請求日"], supRows, [28,14,12,18,14,14]), "仕入れ先別");
+  XLSX.utils.book_append_sheet(wb, mk(["月","仕入れ先","請求書番号","請求日","明細（行）","金額（税込）"], detail, [10,28,18,14,12,16]), "請求書一覧");
+  XLSX.writeFile(wb, `仕入れ管理_データ管理_${todayStr()}.xlsx`);
 }
 
 /* ---------- 仕入れ管理：グループ見出しの開閉（仕入れ先ビュー・中分類ビュー） ----------
