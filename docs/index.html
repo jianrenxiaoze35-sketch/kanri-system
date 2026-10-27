@@ -3838,18 +3838,36 @@ function closeOptionRegistration(doRegister){
 // メーカーを分類の選択肢にした。初回だけ、すでに入っているメーカー名を、選択肢として登録する。
 registerBootStep(function(){
   snapshotMaterialMakers(); // マスタ→仕入れ管理のメーカー反映の基準（起動時点のメーカー）
-  const FLAG = "maker_options_seed_v1_done";
-  if(appStore.getItem(FLAG)) return;
-  const set = new Set(Array.isArray(OPTIONS.maker) ? OPTIONS.maker : []);
+  // データに入っているメーカー名を、設定の分類の「メーカー」へ追加する（起動のたびに。以前は初回だけで、後から入ったメーカーが反映されなかった）
+  syncMakerOptionsFromData();
+});
+// 原料・資材・半製品マスタ・仕入れ管理に入っているメーカー名で、設定の分類にないものを、設定の分類に自動で追加する（削除はしない）。
+// 追加があれば true。入力中の画面の値を消さないよう、選択肢は作り直さず、足すだけにする。
+function syncMakerOptionsFromData(){
+  if(!Array.isArray(OPTIONS.maker)) OPTIONS.maker = [];
+  const known = new Set(OPTIONS.maker);
+  const added = [];
   [].concat(materials || [], purchases || []).forEach(r=>{
     const v = r && r.maker ? String(r.maker).trim() : "";
-    if(v) set.add(v);
+    if(v && !known.has(v)){ known.add(v); added.push(v); }
   });
-  OPTIONS.maker = [...set].sort((a,b)=>a.localeCompare(b, "ja"));
-  appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS));
-  appStore.setItem(FLAG, "1");
-  try{ initSelects(); }catch(e){}
-});
+  if(!added.length) return false;
+  added.sort((a,b)=>a.localeCompare(b, "ja")).forEach(v=>OPTIONS.maker.push(v));
+  try{ appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS)); }catch(e){ console.warn(e); }
+  // 設定ページの編集中の内容にも反映する
+  try{
+    if(typeof draftOptions !== "undefined" && draftOptions && draftOptions !== OPTIONS){
+      if(!Array.isArray(draftOptions.maker)) draftOptions.maker = [];
+      added.forEach(v=>{ if(!draftOptions.maker.includes(v)){ draftOptions.maker.push(v); if(typeof draftOrigin !== "undefined" && draftOrigin && draftOrigin.maker) draftOrigin.maker.push(null); } });
+    }
+  }catch(e){}
+  ["f_i_maker", "f_pu_maker"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    added.forEach(v=>{ if(![...el.options].some(o=>o.value === v)){ const o = document.createElement("option"); o.value = v; o.textContent = v; el.appendChild(o); } });
+  });
+  return true;
+}
 let draftOptions = null;
 let productsBulkDraft = [];
 let purchasesBulkDraft = [];
@@ -4096,6 +4114,7 @@ function absorbNewSupplierNames(supplierNames){
 }
 
 function savePurchases(){
+  syncMakerOptionsFromData(); // メーカーは、設定の分類へ自動で追加する
   scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   invalidateMaterialOtherExpenseCache();
   invalidateSalesMaterialConsumptionCache(); // 代替資材の在庫割り当ては仕入れ数量にも依存するため
@@ -8691,6 +8710,7 @@ function syncMakerFromMaterialsToPurchases(){
   }
 }
 function saveIngredients(){
+  syncMakerOptionsFromData(); // メーカーは、設定の分類へ自動で追加する
   scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   syncMakerFromMaterialsToPurchases();
   appStore.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
