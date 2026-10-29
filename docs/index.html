@@ -7459,11 +7459,20 @@ function buildOptionChangePlan(){
     const list = (draftOptions[field] || []).map(v=>(v||"").trim());
     const origins = draftOrigin[field] || [];
     const finalValues = new Set(list.filter(Boolean));
+    // 小分類は中分類の中にあるものだけが残る。削除した中分類の中の小分類も、削除として扱う（データは未記入になる）。
+    let nestedFinal = null;
+    if(field === "category"){
+      nestedFinal = new Set();
+      const lk = draftOptions.bunruiCategoryLinks || {};
+      (draftOptions.bunrui || []).forEach(b=>{ (lk[(b||"").trim()] || lk[b] || []).forEach(c=>{ if(c) nestedFinal.add(String(c).trim()); }); });
+      Array.from(finalValues).forEach(v=>{ if(!nestedFinal.has(v)) finalValues.delete(v); });
+    }
     const keptOrigins = new Set();
     const renames = {};
     list.forEach((v, i)=>{
       const o = origins[i];
       if(o === null || o === undefined) return;
+      if(nestedFinal && !nestedFinal.has(v)) return;
       if(v){
         keptOrigins.add(o);
         if(o !== v) renames[o] = v;
