@@ -3755,9 +3755,42 @@ function runOptionRegistrationCheck(){
   if(_optionRegOpen) return;
   // 他の確認画面（マスタへの反映の確認など）が開いているあいだは待つ
   if(document.querySelector(".modal-overlay.show")){ _optionRegTimer = setTimeout(runOptionRegistrationCheck, 1000); return; }
+  autoRegisterOptionsFromData();
   const entries = collectUnregisteredOptions();
   if(!entries.length) return;
   openOptionRegistration(entries);
+}
+// 設定にない分類・単位・メーカー・仕入れ先などを、確認なしで設定の分類へ自動で追加する（削除はしない）。
+// 自動で追加しないもの：ステータス・POSシステム（システムの動作に関わる値）、入れる中分類が分からない小分類（登録確認の画面で選ぶ）。
+const OPTION_AUTO_REG_EXCLUDED = ["status", "purchaseStatus", "posSystem", "salesCategory"];
+function autoRegisterOptionsFromData(){
+  const entries = collectUnregisteredOptions().filter(e=>!OPTION_AUTO_REG_EXCLUDED.includes(e.opt));
+  if(!entries.length) return 0;
+  let added = 0;
+  // 中分類を先に登録してから、小分類をその中分類に入れる
+  entries.sort((a,b)=>(a.nested?1:0) - (b.nested?1:0)).forEach(e=>{
+    if(e.nested){
+      const b = Object.keys(e.bunruiCounts).sort((x,y)=>e.bunruiCounts[y]-e.bunruiCounts[x]).find(k=>(OPTIONS.bunrui || []).includes(k));
+      if(!b) return;
+      if(!OPTIONS.bunruiCategoryLinks || typeof OPTIONS.bunruiCategoryLinks !== "object") OPTIONS.bunruiCategoryLinks = {};
+      if(!Array.isArray(OPTIONS.bunruiCategoryLinks[b])) OPTIONS.bunruiCategoryLinks[b] = [];
+      if(!OPTIONS.bunruiCategoryLinks[b].includes(e.value)) OPTIONS.bunruiCategoryLinks[b].push(e.value);
+      if(!Array.isArray(OPTIONS.category)) OPTIONS.category = [];
+      if(!OPTIONS.category.includes(e.value)) OPTIONS.category.push(e.value);
+    } else {
+      if(!Array.isArray(OPTIONS[e.opt])) OPTIONS[e.opt] = [];
+      if(!OPTIONS[e.opt].includes(e.value)) OPTIONS[e.opt].push(e.value);
+    }
+    added++;
+  });
+  if(!added) return 0;
+  try{ appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS)); }catch(e){ console.warn(e); }
+  try{ initSelects(); }catch(e){}
+  try{
+    const pg = document.getElementById("page-settings");
+    if(pg && pg.classList.contains("active")) renderSettingsOptions();
+  }catch(e){}
+  return added;
 }
 function openOptionRegistration(entries){
   _optionRegOpen = true;
@@ -3841,6 +3874,7 @@ registerBootStep(function(){
   snapshotMaterialMakers(); // マスタ→仕入れ管理のメーカー反映の基準（起動時点のメーカー）
   // データに入っているメーカー名を、設定の分類の「メーカー」へ追加する（起動のたびに。以前は初回だけで、後から入ったメーカーが反映されなかった）
   syncMakerOptionsFromData();
+  autoRegisterOptionsFromData(); // 分類・単位・仕入れ先なども、同様に自動で追加する
 });
 // 原料・資材・半製品マスタ・仕入れ管理に入っているメーカー名で、設定の分類にないものを、設定の分類に自動で追加する（削除はしない）。
 // 追加があれば true。入力中の画面の値を消さないよう、選択肢は作り直さず、足すだけにする。
