@@ -2121,8 +2121,8 @@
         <div class="form-field readonly"><label>比率(特別卸÷小売=%)</label><input type="text" id="f_specialWholesaleRatio" readonly></div>
         <div class="form-field readonly"><label>特別卸原価率</label><input type="text" id="f_specialWholesaleCostRatio" readonly></div>
         <div class="form-field"><label>直販売価</label><input type="number" id="f_directSalePrice" step="1"></div>
-        <div class="form-field"><label>75%価格(円)</label><input type="number" id="f_price75" step="1"></div>
-        <div class="form-field"><label>87%価格(円)</label><input type="number" id="f_price87" step="1"></div>
+        <div class="form-field readonly"><label>75%価格(円・小売価格×75%)</label><input type="text" id="f_price75" readonly></div>
+        <div class="form-field readonly"><label>87%価格(円・小売価格×87%)</label><input type="text" id="f_price87" readonly></div>
 
         <div class="section-title">原価内訳</div>
         <div class="form-field readonly"><label>原価(資材費+原料費+労務費+仕入原価)</label><input type="text" id="f_cost" readonly></div>
@@ -8705,8 +8705,6 @@ function renderProductsBulkGrid(){
         <div class="form-field"><label>卸価格／町民価格</label><input type="number" value="${r.wholesalePrice ?? ''}" oninput="updateProductBulk(${i},'wholesalePrice',this.value)"></div>
         <div class="form-field"><label>特別卸価格</label><input type="number" value="${r.specialWholesalePrice ?? ''}" oninput="updateProductBulk(${i},'specialWholesalePrice',this.value)"></div>
         <div class="form-field"><label>直販売価</label><input type="number" value="${r.directSalePrice ?? ''}" oninput="updateProductBulk(${i},'directSalePrice',this.value)"></div>
-        <div class="form-field"><label>75%価格(円)</label><input type="number" value="${r.price75 ?? ''}" oninput="updateProductBulk(${i},'price75',this.value)"></div>
-        <div class="form-field"><label>87%価格(円)</label><input type="number" value="${r.price87 ?? ''}" oninput="updateProductBulk(${i},'price87',this.value)"></div>
         <div class="form-field"><label>労務費</label><input type="number" value="${r.laborCost ?? ''}" oninput="updateProductBulk(${i},'laborCost',this.value)"></div>
         <div class="form-field"><label>仕入原価</label><input type="number" value="${r.purchaseCost ?? ''}" oninput="updateProductBulk(${i},'purchaseCost',this.value)"></div>
         <div class="form-field"><label>容量</label><input type="text" value="${escAttr(r.capacity)}" oninput="updateProductBulk(${i},'capacity',this.value)"></div>
@@ -8772,7 +8770,7 @@ function saveProductsBulk(){
       code: r.code.toString().trim(), name: r.name.toString().trim(),
       department: r.department||"", bunrui: r.bunrui||"", category: r.category||"",
       retailPrice, wholesalePrice, specialWholesalePrice,
-      directSalePrice: numOrNull(r.directSalePrice), price75: numOrNull(r.price75), price87: numOrNull(r.price87),
+      directSalePrice: numOrNull(r.directSalePrice), price75: calcRatePrice(retailPrice, 0.75), price87: calcRatePrice(retailPrice, 0.87),
       capacity: (r.capacity||"").toString().trim(), signCode: (r.signCode||"").toString().trim(), liquorType: (r.liquorType||"").toString().trim(), abv: numOrNull(r.abv), polishRatio: numOrNull(r.polishRatio), sakeMeter: numOrNull(r.sakeMeter), acidity: numOrNull(r.acidity), mainIngredient: (r.mainIngredient||"").toString().trim(), depthCm: numOrNull(r.depthCm), widthCm: numOrNull(r.widthCm), heightCm: numOrNull(r.heightCm),
       materialsCost, rawMaterialCost, laborCost, purchaseCost, cost,
       costRatio: pctNum(cost, retailPrice),
@@ -10998,8 +10996,13 @@ function recalc(){
   document.getElementById("f_wholesaleCostRatio").value = pct(cost, wholesale);
   document.getElementById("f_specialWholesaleRatio").value = pct(special, retail);
   document.getElementById("f_specialWholesaleCostRatio").value = pct(cost, special);
+  const p75 = calcRatePrice(retail, 0.75), p87 = calcRatePrice(retail, 0.87);
+  document.getElementById("f_price75").value = p75 === null ? "" : p75;
+  document.getElementById("f_price87").value = p87 === null ? "" : p87;
 }
 
+// 75%価格・87%価格は、小売価格(税抜)から自動計算する（円未満は四捨五入）。
+function calcRatePrice(retail, rate){ const r = parseFloat(retail); return (isNaN(r) || !r) ? null : Math.round(r * rate); }
 function numOrNull(v){ const n = parseFloat(v); return (v === "" || v === null || v === undefined || isNaN(n)) ? null : n; }
 // 商品の小分類は、選んだ中分類の中にあるものに絞る（中分類が未選択なら全件）。
 function refreshProductCategoryOptions(preserveValue){
@@ -11026,8 +11029,6 @@ function openForm(product){
     refreshProductCategoryOptions(product.category || "");
     document.getElementById("f_category").value = product.category || "";
     document.getElementById("f_directSalePrice").value = product.directSalePrice ?? "";
-    document.getElementById("f_price75").value = product.price75 ?? "";
-    document.getElementById("f_price87").value = product.price87 ?? "";
     document.getElementById("f_capacity").value = product.capacity ?? "";
     document.getElementById("f_signCode").value = product.signCode ?? "";
     document.getElementById("f_liquorType").value = product.liquorType ?? "";
@@ -11104,8 +11105,8 @@ function saveProduct(){
     category: document.getElementById("f_category").value,
     retailPrice, wholesalePrice, specialWholesalePrice,
     directSalePrice: numOrNull(document.getElementById("f_directSalePrice").value),
-    price75: numOrNull(document.getElementById("f_price75").value),
-    price87: numOrNull(document.getElementById("f_price87").value),
+    price75: calcRatePrice(retailPrice, 0.75),
+    price87: calcRatePrice(retailPrice, 0.87),
     capacity: document.getElementById("f_capacity").value.trim(),
     signCode: document.getElementById("f_signCode").value.trim(),
     liquorType: document.getElementById("f_liquorType").value.trim(),
@@ -11230,8 +11231,8 @@ function render(){
       <td class="calc">${fmtPct(d.specialWholesaleRatio)}</td>
       <td class="calc">${fmtPct(d.specialWholesaleCostRatio)}</td>
       <td>${fmtNum(p.directSalePrice)}</td>
-      <td>${fmtNum(p.price75)}</td>
-      <td>${fmtNum(p.price87)}</td>
+      <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.75))}</td>
+      <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.87))}</td>
       <td class="calc">${fmtNum(d.cost)}</td>
       <td>${fmtNum(d.materialsCost)}</td>
       <td>${fmtNum(d.rawMaterialCost)}</td>
@@ -11372,7 +11373,7 @@ function buildProductsExportTable(){
     const d = computeDisplayFields(p);
     return [
       p.displayOrder ?? "",p.code,p.name,p.department,p.bunrui||"",p.category,p.retailPrice,d.costRatio,p.wholesalePrice,d.wholesaleRatio,d.wholesaleCostRatio,
-      p.specialWholesalePrice,d.specialWholesaleRatio,d.specialWholesaleCostRatio,p.directSalePrice ?? "",p.price75 ?? "",p.price87 ?? "",d.cost,d.materialsCost,d.rawMaterialCost,p.laborCost,p.purchaseCost,p.capacity||"",p.signCode||"",p.liquorType||"",p.abv ?? "",p.polishRatio ?? "",p.sakeMeter ?? "",p.acidity ?? "",p.mainIngredient||"",p.depthCm ?? "",p.widthCm ?? "",p.heightCm ?? "",
+      p.specialWholesalePrice,d.specialWholesaleRatio,d.specialWholesaleCostRatio,p.directSalePrice ?? "",calcRatePrice(p.retailPrice, 0.75) ?? "",calcRatePrice(p.retailPrice, 0.87) ?? "",d.cost,d.materialsCost,d.rawMaterialCost,p.laborCost,p.purchaseCost,p.capacity||"",p.signCode||"",p.liquorType||"",p.abv ?? "",p.polishRatio ?? "",p.sakeMeter ?? "",p.acidity ?? "",p.mainIngredient||"",p.depthCm ?? "",p.widthCm ?? "",p.heightCm ?? "",
       p.accounting,p.creditAccount,p.customer,p.updatedAt||"",
       p.posSystem||"",p.posTaxRate??""
     ];
@@ -11436,7 +11437,7 @@ function importCSV(event){
         id: String(Date.now()) + Math.random().toString(36).slice(2,7),
         displayOrder: displayOrder === "" ? null : parseFloat(displayOrder),
         code, name, department, bunrui: bunrui || "", category,
-        directSalePrice: numOrNull(directSalePrice), price75: numOrNull(price75), price87: numOrNull(price87),
+        directSalePrice: numOrNull(directSalePrice), price75: calcRatePrice(retailPrice, 0.75), price87: calcRatePrice(retailPrice, 0.87),
         capacity: capacity || "", signCode: signCode || "", liquorType: liquorType || "", abv: numOrNull(abv), polishRatio: numOrNull(polishRatio), sakeMeter: numOrNull(sakeMeter), acidity: numOrNull(acidity), mainIngredient: mainIngredient || "",
         depthCm: numOrNull(depthCm), widthCm: numOrNull(widthCm), heightCm: numOrNull(heightCm),
         retailPrice: parseFloat(retailPrice)||0,
