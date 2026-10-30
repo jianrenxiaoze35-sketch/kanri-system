@@ -11192,7 +11192,7 @@ const PRODUCT_COLS = [
   {k:"wholesalePrice",h:"卸価格<br>／町民価格",g:"price"},{k:"wholesaleRatio",h:"比率<br>(卸÷小売)",g:"price"},{k:"wholesaleCostRatio",h:"卸原価率",g:"price"},
   {k:"specialWholesalePrice",h:"特別卸価格",g:"price"},{k:"specialWholesaleRatio",h:"比率<br>(特別卸÷小売)",g:"price"},{k:"specialWholesaleCostRatio",h:"特別卸原価率",g:"price"},
   {k:"directSalePrice",h:"直販売価",g:"price"},
-  {k:"price75",h:"75%価格<br>(円)"},{k:"price87",h:"87%価格<br>(円)"},
+  {k:"price75",h:"75%価格<br>(円)",g:"price"},{k:"price87",h:"87%価格<br>(円)",g:"price"},
   {k:"cost",h:"原価",g:"cost"},{k:"materialsCost",h:"資材費",g:"cost"},{k:"rawMaterialCost",h:"原料費",g:"cost"},{k:"laborCost",h:"労務費",g:"cost"},{k:"purchaseCost",h:"仕入原価",g:"cost"},
   {k:"capacity",h:"容量",g:"detail"},{k:"signCode",h:"符号",g:"detail"},{k:"liquorType",h:"種類",g:"detail"},{k:"abv",h:"アルコール<br>度数",g:"detail"},{k:"polishRatio",h:"精米歩合",g:"detail"},{k:"sakeMeter",h:"酒度",g:"detail"},{k:"acidity",h:"酸度",g:"detail"},{k:"mainIngredient",h:"主原料",g:"detail"},
   {k:"depthCm",h:"縦(cm)",g:"size"},{k:"widthCm",h:"横(cm)",g:"size"},{k:"heightCm",h:"高さ(cm)",g:"size"},
@@ -11281,9 +11281,9 @@ function render(){
       <td class="pg-price calc">${fmtPct(d.specialWholesaleRatio)}</td>
       <td class="pg-price calc">${fmtPct(d.specialWholesaleCostRatio)}</td>
       <td class="pg-price">${fmtNum(p.directSalePrice)}</td>
+      <td class="calc pg-price">${fmtNum(calcRatePrice(p.retailPrice, 0.75))}</td>
+      <td class="calc pg-price">${fmtNum(calcRatePrice(p.retailPrice, 0.87))}</td>
       <td class="pg-ph pg-ph-price">…</td>
-      <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.75))}</td>
-      <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.87))}</td>
       <td class="pg-cost calc">${fmtNum(d.cost)}</td>
       <td class="pg-cost">${fmtNum(d.materialsCost)}</td>
       <td class="pg-cost">${fmtNum(d.rawMaterialCost)}</td>
