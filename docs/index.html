@@ -552,6 +552,7 @@
         </div>
       </div>
 
+      <div id="productDeptTabs" class="toolbar" style="flex-wrap:wrap;margin:0 0 10px;"></div>
       <div class="card">
         <table id="productTable">
           <thead id="productTableHead"></thead>
@@ -11242,11 +11243,38 @@ function renderProductTableHead(){
 }
 registerBootStep(function(){ renderProductTableHead(); });
 
+/* ---- 商品マスタ：大分類ごとのビュー（「すべて」＋設定の分類の大分類ごと） ---- */
+const PRODUCT_DEPT_ALL = "__all__", PRODUCT_DEPT_NONE = "__none__";
+const PRODUCT_DEPT_VIEW_KEY = "kanri_product_dept_view_v1";
+let productDeptView = PRODUCT_DEPT_ALL;
+try{ productDeptView = localStorage.getItem(PRODUCT_DEPT_VIEW_KEY) || PRODUCT_DEPT_ALL; }catch(e){}
+function switchProductDeptView(v){
+  productDeptView = v;
+  try{ localStorage.setItem(PRODUCT_DEPT_VIEW_KEY, v); }catch(e){}
+  render();
+}
+function renderProductDeptTabs(){
+  const box = document.getElementById("productDeptTabs");
+  if(!box) return;
+  const depts = (OPTIONS.department || []).filter(Boolean);
+  const extra = []; // 設定にない大分類・大分類なしの商品も、ビューから外れないようにする
+  products.forEach(p=>{ const d = p.department || ""; if(d && !depts.includes(d) && !extra.includes(d)) extra.push(d); });
+  const hasNone = products.some(p=>!p.department);
+  const views = [{ v: PRODUCT_DEPT_ALL, label: "すべて", n: products.length }]
+    .concat(depts.concat(extra).map(d=>({ v: d, label: d, n: products.filter(p=>p.department === d).length })));
+  if(hasNone) views.push({ v: PRODUCT_DEPT_NONE, label: "（大分類なし）", n: products.filter(p=>!p.department).length });
+  if(!views.some(x=>x.v === productDeptView)) productDeptView = PRODUCT_DEPT_ALL;
+  box.innerHTML = views.map(x=>`<button class="secondary ${x.v === productDeptView ? "active" : ""}" data-deptview="${escAttr(x.v)}">${escAttr(x.label)}（${x.n}）</button>`).join("");
+  box.querySelectorAll("button").forEach(b=>{ b.onclick = ()=>switchProductDeptView(b.getAttribute("data-deptview")); });
+}
+
 function render(){
   if(!document.querySelector("#productTableHead th")) renderProductTableHead();
   const q = (document.getElementById("searchBox").value || "").toLowerCase();
+  renderProductDeptTabs();
   const list = products.filter(p=>
-    !q || (p.code||"").toLowerCase().includes(q) || (p.name||"").toLowerCase().includes(q)
+    (productDeptView === PRODUCT_DEPT_ALL || (p.department || PRODUCT_DEPT_NONE) === productDeptView) &&
+    (!q || (p.code||"").toLowerCase().includes(q) || (p.name||"").toLowerCase().includes(q))
   );
   list.sort((a,b)=>{
     const ao = (a.displayOrder===undefined || a.displayOrder===null || a.displayOrder==="") ? Infinity : Number(a.displayOrder);
@@ -11320,7 +11348,7 @@ function render(){
   `;
   }).join("");
   document.getElementById("emptyMsg").style.display = list.length ? "none" : "block";
-  document.getElementById("countBadge").textContent = `全${products.length}件` +
+  document.getElementById("countBadge").textContent = (productDeptView === PRODUCT_DEPT_ALL ? `全${products.length}件` : `${productDeptView === PRODUCT_DEPT_NONE ? "（大分類なし）" : productDeptView} ${list.length}件／全${products.length}件`) +
     (noStockLinkCount ? `　⚠在庫未紐付け ${noStockLinkCount}件` : "");
 }
 
