@@ -60,6 +60,11 @@
   .card{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:auto;}
   table{border-collapse:collapse;width:100%;min-width:1900px;font-size:12.5px;}
   th,td{border-bottom:1px solid var(--border);padding:8px 10px;white-space:nowrap;text-align:right;}
+  #productTable th.pg-head{cursor:pointer;user-select:none;background:#e2ebe6;}
+  #productTable tr.pg-row2 th{top:37px;}
+  #productTable .pg-ph{display:none;color:var(--muted);}
+  #productTable.pg-off-price .pg-price, #productTable.pg-off-cost .pg-cost, #productTable.pg-off-size .pg-size, #productTable.pg-off-account .pg-account{display:none;}
+  #productTable.pg-off-price .pg-ph-price, #productTable.pg-off-cost .pg-ph-cost, #productTable.pg-off-size .pg-ph-size, #productTable.pg-off-account .pg-ph-account{display:table-cell;}
   th{background:#eef2f0;position:sticky;top:0;text-align:center;color:#33413b;font-weight:600;}
   td.text{text-align:left;}
   tr:hover{background:#f7faf8;}
@@ -548,22 +553,8 @@
       </div>
 
       <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th>表示順</th><th>商品コード</th><th>商品名</th><th>大分類</th><th>中分類</th><th>小分類</th>
-              <th>小売価格<br>(税抜)</th><th>原価率</th>
-              <th>卸価格<br>／町民価格</th><th>比率<br>(卸÷小売)</th><th>卸原価率</th>
-              <th>特別卸価格</th><th>比率<br>(特別卸÷小売)</th><th>特別卸原価率</th><th>直販売価</th><th>75%価格<br>(円)</th><th>87%価格<br>(円)</th>
-              <th>原価</th><th>資材費</th><th>原料費</th><th>労務費</th><th>仕入原価</th>
-              <th>容量</th><th>符号</th><th>種類</th><th>アルコール<br>度数</th><th>精米歩合</th><th>酒度</th><th>酸度</th><th>主原料</th>
-              <th>縦(cm)</th><th>横(cm)</th><th>高さ(cm)</th>
-              <th>会計区分</th><th>貸方科目</th><th>売り先</th>
-              <th>更新日<br>(適用開始)</th>
-              <th>POS<br>システム</th><th>税率<br>(POS)</th>
-              <th class="actions-col">操作</th>
-            </tr>
-          </thead>
+        <table id="productTable">
+          <thead id="productTableHead"></thead>
           <tbody id="tableBody"></tbody>
         </table>
         <div class="empty" id="emptyMsg" style="display:none;">商品データがありません。「＋ 新規追加」から登録してください。</div>
@@ -11193,7 +11184,66 @@ function fmtPct(n){
   return (n===undefined||n===null||n==="") ? "" : n + "%";
 }
 
+/* ---- 商品マスタ一覧：項目のグループ（見出しをクリックで、グループ内の列を折りたたむ／開く） ----
+   PRODUCT_COLS の順がそのまま列の順。g が付いた列は、そのグループの見出しの下にまとまる。 */
+const PRODUCT_COLS = [
+  {k:"displayOrder",h:"表示順"},{k:"code",h:"商品コード"},{k:"name",h:"商品名"},{k:"department",h:"大分類"},{k:"bunrui",h:"中分類"},{k:"category",h:"小分類"},
+  {k:"retailPrice",h:"小売価格<br>(税抜)",g:"price"},{k:"costRatio",h:"原価率",g:"price"},
+  {k:"wholesalePrice",h:"卸価格<br>／町民価格",g:"price"},{k:"wholesaleRatio",h:"比率<br>(卸÷小売)",g:"price"},{k:"wholesaleCostRatio",h:"卸原価率",g:"price"},
+  {k:"specialWholesalePrice",h:"特別卸価格",g:"price"},{k:"specialWholesaleRatio",h:"比率<br>(特別卸÷小売)",g:"price"},{k:"specialWholesaleCostRatio",h:"特別卸原価率",g:"price"},
+  {k:"directSalePrice",h:"直販売価",g:"price"},
+  {k:"price75",h:"75%価格<br>(円)"},{k:"price87",h:"87%価格<br>(円)"},
+  {k:"cost",h:"原価",g:"cost"},{k:"materialsCost",h:"資材費",g:"cost"},{k:"rawMaterialCost",h:"原料費",g:"cost"},{k:"laborCost",h:"労務費",g:"cost"},{k:"purchaseCost",h:"仕入原価",g:"cost"},
+  {k:"capacity",h:"容量"},{k:"signCode",h:"符号"},{k:"liquorType",h:"種類"},{k:"abv",h:"アルコール<br>度数"},{k:"polishRatio",h:"精米歩合"},{k:"sakeMeter",h:"酒度"},{k:"acidity",h:"酸度"},{k:"mainIngredient",h:"主原料"},
+  {k:"depthCm",h:"縦(cm)",g:"size"},{k:"widthCm",h:"横(cm)",g:"size"},{k:"heightCm",h:"高さ(cm)",g:"size"},
+  {k:"accounting",h:"会計区分",g:"account"},{k:"creditAccount",h:"貸方科目",g:"account"},
+  {k:"customer",h:"売り先"},{k:"updatedAt",h:"更新日<br>(適用開始)"},{k:"posSystem",h:"POS<br>システム"},{k:"posTaxRate",h:"税率<br>(POS)"}
+];
+const PRODUCT_COL_GROUPS = { price:"価格", cost:"原価", size:"サイズ", account:"勘定" };
+const PRODUCT_GROUP_COLLAPSED_KEY = "kanri_product_group_collapsed_v1";
+let productGroupCollapsed = new Set();
+try{ productGroupCollapsed = new Set(JSON.parse(localStorage.getItem(PRODUCT_GROUP_COLLAPSED_KEY) || "[]")); }catch(e){}
+function toggleProductGroup(g){
+  if(productGroupCollapsed.has(g)) productGroupCollapsed.delete(g); else productGroupCollapsed.add(g);
+  try{ localStorage.setItem(PRODUCT_GROUP_COLLAPSED_KEY, JSON.stringify([...productGroupCollapsed])); }catch(e){}
+  applyProductGroupState();
+}
+function applyProductGroupState(){
+  const t = document.getElementById("productTable");
+  if(!t) return;
+  Object.keys(PRODUCT_COL_GROUPS).forEach(g=>{
+    const col = productGroupCollapsed.has(g);
+    t.classList.toggle("pg-off-" + g, col);
+    const th = t.querySelector(`th[data-pgroup="${g}"]`);
+    if(th){
+      const n = PRODUCT_COLS.filter(c=>c.g === g).length;
+      th.colSpan = col ? 1 : n;
+      th.querySelector(".pg-arrow").textContent = col ? "▶" : "▼";
+    }
+  });
+}
+function renderProductTableHead(){
+  const head = document.getElementById("productTableHead");
+  if(!head) return;
+  let r1 = "", r2 = "";
+  for(let i = 0; i < PRODUCT_COLS.length; i++){
+    const c = PRODUCT_COLS[i];
+    if(!c.g){ r1 += `<th rowspan="2">${c.h}</th>`; continue; }
+    const lastOfGroup = !(PRODUCT_COLS[i+1] && PRODUCT_COLS[i+1].g === c.g);
+    const ph = lastOfGroup ? `<th class="pg-ph pg-ph-${c.g}">…</th>` : "";
+    if(i > 0 && PRODUCT_COLS[i-1].g === c.g){ r2 += `<th class="pg-m pg-${c.g}">${c.h}</th>${ph}`; continue; }
+    const n = PRODUCT_COLS.filter(x=>x.g === c.g).length;
+    r1 += `<th data-pgroup="${c.g}" colspan="${n}" class="pg-head" onclick="toggleProductGroup('${c.g}')" title="クリックで、この項目のまとまりを折りたたむ／開く"><span class="pg-arrow">▼</span> ${PRODUCT_COL_GROUPS[c.g]}</th>`;
+    r2 += `<th class="pg-m pg-${c.g}">${c.h}</th>${ph}`;
+  }
+  r1 += `<th rowspan="2" class="actions-col">操作</th>`;
+  head.innerHTML = `<tr>${r1}</tr><tr class="pg-row2">${r2}</tr>`;
+  applyProductGroupState();
+}
+registerBootStep(function(){ renderProductTableHead(); });
+
 function render(){
+  if(!document.querySelector("#productTableHead th")) renderProductTableHead();
   const q = (document.getElementById("searchBox").value || "").toLowerCase();
   const list = products.filter(p=>
     !q || (p.code||"").toLowerCase().includes(q) || (p.name||"").toLowerCase().includes(q)
@@ -11222,22 +11272,24 @@ function render(){
       <td class="text">${p.department||""}</td>
       <td class="text">${p.bunrui||""}</td>
       <td class="text">${p.category||""}</td>
-      <td>${fmtNum(p.retailPrice)}</td>
-      <td class="calc">${fmtPct(d.costRatio)}</td>
-      <td>${fmtNum(p.wholesalePrice)}</td>
-      <td class="calc">${fmtPct(d.wholesaleRatio)}</td>
-      <td class="calc">${fmtPct(d.wholesaleCostRatio)}</td>
-      <td>${fmtNum(p.specialWholesalePrice)}</td>
-      <td class="calc">${fmtPct(d.specialWholesaleRatio)}</td>
-      <td class="calc">${fmtPct(d.specialWholesaleCostRatio)}</td>
-      <td>${fmtNum(p.directSalePrice)}</td>
+      <td class="pg-price">${fmtNum(p.retailPrice)}</td>
+      <td class="pg-price calc">${fmtPct(d.costRatio)}</td>
+      <td class="pg-price">${fmtNum(p.wholesalePrice)}</td>
+      <td class="pg-price calc">${fmtPct(d.wholesaleRatio)}</td>
+      <td class="pg-price calc">${fmtPct(d.wholesaleCostRatio)}</td>
+      <td class="pg-price">${fmtNum(p.specialWholesalePrice)}</td>
+      <td class="pg-price calc">${fmtPct(d.specialWholesaleRatio)}</td>
+      <td class="pg-price calc">${fmtPct(d.specialWholesaleCostRatio)}</td>
+      <td class="pg-price">${fmtNum(p.directSalePrice)}</td>
+      <td class="pg-ph pg-ph-price">…</td>
       <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.75))}</td>
       <td class="calc">${fmtNum(calcRatePrice(p.retailPrice, 0.87))}</td>
-      <td class="calc">${fmtNum(d.cost)}</td>
-      <td>${fmtNum(d.materialsCost)}</td>
-      <td>${fmtNum(d.rawMaterialCost)}</td>
-      <td>${fmtNum(p.laborCost)}</td>
-      <td>${fmtNum(p.purchaseCost)}</td>
+      <td class="pg-cost calc">${fmtNum(d.cost)}</td>
+      <td class="pg-cost">${fmtNum(d.materialsCost)}</td>
+      <td class="pg-cost">${fmtNum(d.rawMaterialCost)}</td>
+      <td class="pg-cost">${fmtNum(p.laborCost)}</td>
+      <td class="pg-cost">${fmtNum(p.purchaseCost)}</td>
+      <td class="pg-ph pg-ph-cost">…</td>
       <td class="text">${p.capacity||""}</td>
       <td class="text">${p.signCode||""}</td>
       <td class="text">${p.liquorType||""}</td>
@@ -11246,11 +11298,13 @@ function render(){
       <td>${p.sakeMeter ?? ""}</td>
       <td>${p.acidity ?? ""}</td>
       <td class="text">${p.mainIngredient||""}</td>
-      <td>${fmtNum(p.depthCm)}</td>
-      <td>${fmtNum(p.widthCm)}</td>
-      <td>${fmtNum(p.heightCm)}</td>
-      <td class="text">${p.accounting||""}</td>
-      <td class="text">${p.creditAccount||""}</td>
+      <td class="pg-size">${fmtNum(p.depthCm)}</td>
+      <td class="pg-size">${fmtNum(p.widthCm)}</td>
+      <td class="pg-size">${fmtNum(p.heightCm)}</td>
+      <td class="pg-ph pg-ph-size">…</td>
+      <td class="pg-account text">${p.accounting||""}</td>
+      <td class="pg-account text">${p.creditAccount||""}</td>
+      <td class="pg-ph pg-ph-account">…</td>
       <td class="text">${p.customer||""}</td>
       <td class="text">${p.updatedAt ? formatDateDisplay(p.updatedAt) + "〜" : ""}</td>
       <td class="text">${p.posSystem||""}</td>
