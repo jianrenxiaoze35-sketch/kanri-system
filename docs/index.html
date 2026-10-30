@@ -551,11 +551,12 @@
         <table>
           <thead>
             <tr>
-              <th>表示順</th><th>商品コード</th><th>商品名</th><th>大分類</th><th>小分類</th>
+              <th>表示順</th><th>商品コード</th><th>商品名</th><th>大分類</th><th>中分類</th><th>小分類</th>
               <th>小売価格<br>(税抜)</th><th>原価率</th>
               <th>卸価格<br>／町民価格</th><th>比率<br>(卸÷小売)</th><th>卸原価率</th>
-              <th>特別卸価格</th><th>比率<br>(特別卸÷小売)</th><th>特別卸原価率</th>
+              <th>特別卸価格</th><th>比率<br>(特別卸÷小売)</th><th>特別卸原価率</th><th>直販売価</th>
               <th>原価</th><th>資材費</th><th>原料費</th><th>労務費</th><th>仕入原価</th>
+              <th>縦(cm)</th><th>横(cm)</th><th>高さ(cm)</th>
               <th>会計区分</th><th>貸方科目</th><th>売り先</th>
               <th>更新日<br>(適用開始)</th>
               <th>POS<br>システム</th><th>税率<br>(POS)</th>
@@ -2105,6 +2106,7 @@
         <div class="form-field"><label>商品コード *</label><input type="text" id="f_code" required></div>
         <div class="form-field span2"><label>商品名 *</label><input type="text" id="f_name" required></div>
         <div class="form-field"><label>大分類</label><select id="f_department"></select></div>
+        <div class="form-field"><label>中分類</label><select id="f_bunrui" onchange="refreshProductCategoryOptions()"></select></div>
         <div class="form-field"><label>小分類</label><select id="f_category"></select></div>
 
         <div class="section-title">価格・比率</div>
@@ -2117,6 +2119,7 @@
         <div class="form-field"><label>特別卸価格</label><input type="number" id="f_specialWholesalePrice" step="1" oninput="recalc()"></div>
         <div class="form-field readonly"><label>比率(特別卸÷小売=%)</label><input type="text" id="f_specialWholesaleRatio" readonly></div>
         <div class="form-field readonly"><label>特別卸原価率</label><input type="text" id="f_specialWholesaleCostRatio" readonly></div>
+        <div class="form-field"><label>直販売価</label><input type="number" id="f_directSalePrice" step="1"></div>
 
         <div class="section-title">原価内訳</div>
         <div class="form-field readonly"><label>原価(資材費+原料費+労務費+仕入原価)</label><input type="text" id="f_cost" readonly></div>
@@ -2124,6 +2127,9 @@
         <div class="form-field readonly"><label>原料費(資材管理と連動)</label><input type="text" id="f_rawMaterialCost" readonly></div>
         <div class="form-field"><label>労務費</label><input type="number" id="f_laborCost" step="1" oninput="recalc()"></div>
         <div class="form-field"><label>仕入原価(仕入れ販売商品用)</label><input type="number" id="f_purchaseCost" step="1" oninput="recalc()"></div>
+        <div class="form-field"><label>縦(cm)</label><input type="number" id="f_depthCm" step="any" min="0"></div>
+        <div class="form-field"><label>横(cm)</label><input type="number" id="f_widthCm" step="any" min="0"></div>
+        <div class="form-field"><label>高さ(cm)</label><input type="number" id="f_heightCm" step="any" min="0"></div>
 
         <div class="section-title">会計・販売</div>
         <div class="form-field"><label>会計区分</label><select id="f_accounting"></select></div>
@@ -3674,7 +3680,8 @@ const OPTION_REG_IGNORED_KEY = "kanri_optreg_ignored_v1";
 const OPTION_REG_FIELDS = {
   products: [
     { opt: "department", f: "department", label: "大分類" },
-    { opt: "category", f: "category", label: "小分類", nested: true },
+    { opt: "bunrui", f: "bunrui", label: "中分類" },
+    { opt: "category", f: "category", label: "小分類", nested: true, bunruiField: "bunrui" },
     { opt: "accounting", f: "accounting", label: "会計区分" },
     { opt: "creditAccount", f: "creditAccount", label: "貸方科目" },
     { opt: "customer", f: "customer", label: "売り先" },
@@ -7009,7 +7016,8 @@ function onPurchaseAllocTargetToggle(id, checked){
 
 function initSelects(){
   fillSelect("f_department", OPTIONS.department);
-  fillSelect("f_category", OPTIONS.category);
+  fillSelect("f_bunrui", OPTIONS.bunrui);
+  refreshProductCategoryOptions();
   fillSelect("f_accounting", OPTIONS.accounting);
   fillSelect("f_creditAccount", OPTIONS.creditAccount);
   fillSelect("f_customer", OPTIONS.customer);
@@ -7407,6 +7415,7 @@ const OPTION_DATA_TARGETS = {
     { label:"棚卸記録", rows:()=>inventoryStocktakeRecords.flatMap(r=>r.items||[]), fields:["category"], key:()=>INVENTORY_RECORDS_KEY, whole:()=>inventoryStocktakeRecords }
   ],
   bunrui: [
+    { label:"商品", rows:()=>products, fields:["bunrui"], key:()=>STORAGE_KEY, whole:()=>products },
     { label:"原料・資材・半製品", rows:()=>materials, fields:["bunrui"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
     { label:"仕入れ", rows:()=>purchases, fields:["bunrui"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases },
     { label:"予算管理の項目設定", rows:()=>Object.values(budgetCategoryMappings).flat().filter(x=>x && typeof x === "object"), fields:["bunrui"], key:()=>BUDGET_CATEGORY_MAPPING_KEY, whole:()=>budgetCategoryMappings },
@@ -8633,9 +8642,9 @@ function importSettingsOptionsExcel(event){
 /* ===================== 商品マスタ 一括編集・一括登録 ===================== */
 function openProductsBulk(){
   productsBulkDraft = products.map(p=>({
-    id: p.id, displayOrder: p.displayOrder, code: p.code, name: p.name, department: p.department, category: p.category,
-    retailPrice: p.retailPrice, wholesalePrice: p.wholesalePrice, specialWholesalePrice: p.specialWholesalePrice,
-    laborCost: p.laborCost, purchaseCost: p.purchaseCost, accounting: p.accounting, creditAccount: p.creditAccount, customer: p.customer,
+    id: p.id, displayOrder: p.displayOrder, code: p.code, name: p.name, department: p.department, bunrui: p.bunrui || "", category: p.category,
+    retailPrice: p.retailPrice, wholesalePrice: p.wholesalePrice, specialWholesalePrice: p.specialWholesalePrice, directSalePrice: p.directSalePrice,
+    laborCost: p.laborCost, purchaseCost: p.purchaseCost, depthCm: p.depthCm, widthCm: p.widthCm, heightCm: p.heightCm, accounting: p.accounting, creditAccount: p.creditAccount, customer: p.customer,
     posSystem: p.posSystem, posTaxRate: p.posTaxRate ?? 0.1
   }));
   renderProductsBulkGrid();
@@ -8647,7 +8656,7 @@ function closeProductsBulk(){
 }
 
 function addProductBulkRow(){
-  productsBulkDraft.push({ id:"", displayOrder:"", code:"", name:"", department:"", category:"", retailPrice:"", wholesalePrice:"", specialWholesalePrice:"", laborCost:"", purchaseCost:"", accounting:"", creditAccount:"", customer:"", posSystem:"", posTaxRate:0.1 });
+  productsBulkDraft.push({ id:"", displayOrder:"", code:"", name:"", department:"", bunrui:"", category:"", retailPrice:"", wholesalePrice:"", specialWholesalePrice:"", directSalePrice:"", laborCost:"", purchaseCost:"", depthCm:"", widthCm:"", heightCm:"", accounting:"", creditAccount:"", customer:"", posSystem:"", posTaxRate:0.1 });
   renderProductsBulkGrid();
 }
 
@@ -8657,8 +8666,9 @@ function removeProductBulkRow(i){
 }
 
 function updateProductBulk(i, field, value){
-  const numeric = ["retailPrice","wholesalePrice","specialWholesalePrice","laborCost","purchaseCost","displayOrder","posTaxRate"];
+  const numeric = ["retailPrice","wholesalePrice","specialWholesalePrice","directSalePrice","laborCost","purchaseCost","depthCm","widthCm","heightCm","displayOrder","posTaxRate"];
   productsBulkDraft[i][field] = numeric.includes(field) ? (value === "" ? "" : parseFloat(value)) : value;
+  if(field === "bunrui") renderProductsBulkGrid(); // 中分類を変えたら、小分類の選択肢を絞り直す
 }
 
 function renderProductsBulkGrid(){
@@ -8678,12 +8688,17 @@ function renderProductsBulkGrid(){
         <div class="form-field"><label>商品コード *</label><input type="text" value="${escAttr(r.code)}" oninput="updateProductBulk(${i},'code',this.value)"></div>
         <div class="form-field"><label>商品名 *</label><input type="text" value="${escAttr(r.name)}" oninput="updateProductBulk(${i},'name',this.value)"></div>
         <div class="form-field"><label>大分類</label>${bulkSelect(OPTIONS.department, r.department, `updateProductBulk(${i},'department',this.value)`)}</div>
-        <div class="form-field"><label>小分類</label>${bulkSelect(OPTIONS.category, r.category, `updateProductBulk(${i},'category',this.value)`)}</div>
+        <div class="form-field"><label>中分類</label>${bulkSelect(OPTIONS.bunrui, r.bunrui, `updateProductBulk(${i},'bunrui',this.value)`)}</div>
+        <div class="form-field"><label>小分類</label>${bulkSelect(filteredCategoryListForBunrui(r.bunrui, r.category), r.category, `updateProductBulk(${i},'category',this.value)`)}</div>
         <div class="form-field"><label>小売価格</label><input type="number" value="${r.retailPrice ?? ''}" oninput="updateProductBulk(${i},'retailPrice',this.value)"></div>
         <div class="form-field"><label>卸価格／町民価格</label><input type="number" value="${r.wholesalePrice ?? ''}" oninput="updateProductBulk(${i},'wholesalePrice',this.value)"></div>
         <div class="form-field"><label>特別卸価格</label><input type="number" value="${r.specialWholesalePrice ?? ''}" oninput="updateProductBulk(${i},'specialWholesalePrice',this.value)"></div>
+        <div class="form-field"><label>直販売価</label><input type="number" value="${r.directSalePrice ?? ''}" oninput="updateProductBulk(${i},'directSalePrice',this.value)"></div>
         <div class="form-field"><label>労務費</label><input type="number" value="${r.laborCost ?? ''}" oninput="updateProductBulk(${i},'laborCost',this.value)"></div>
         <div class="form-field"><label>仕入原価</label><input type="number" value="${r.purchaseCost ?? ''}" oninput="updateProductBulk(${i},'purchaseCost',this.value)"></div>
+        <div class="form-field"><label>縦(cm)</label><input type="number" step="any" value="${r.depthCm ?? ''}" oninput="updateProductBulk(${i},'depthCm',this.value)"></div>
+        <div class="form-field"><label>横(cm)</label><input type="number" step="any" value="${r.widthCm ?? ''}" oninput="updateProductBulk(${i},'widthCm',this.value)"></div>
+        <div class="form-field"><label>高さ(cm)</label><input type="number" step="any" value="${r.heightCm ?? ''}" oninput="updateProductBulk(${i},'heightCm',this.value)"></div>
         <div class="form-field"><label>会計区分</label>${bulkSelect(OPTIONS.accounting, r.accounting, `updateProductBulk(${i},'accounting',this.value)`)}</div>
         <div class="form-field"><label>貸方科目</label>${bulkSelect(OPTIONS.creditAccount, r.creditAccount, `updateProductBulk(${i},'creditAccount',this.value)`)}</div>
         <div class="form-field"><label>売り先</label>${bulkSelect(OPTIONS.customer, r.customer, `updateProductBulk(${i},'customer',this.value)`)}</div>
@@ -8734,8 +8749,9 @@ function saveProductsBulk(){
     return {
       id, displayOrder: (r.displayOrder===undefined || r.displayOrder===null || r.displayOrder==="") ? null : parseFloat(r.displayOrder),
       code: r.code.toString().trim(), name: r.name.toString().trim(),
-      department: r.department||"", category: r.category||"",
+      department: r.department||"", bunrui: r.bunrui||"", category: r.category||"",
       retailPrice, wholesalePrice, specialWholesalePrice,
+      directSalePrice: numOrNull(r.directSalePrice), depthCm: numOrNull(r.depthCm), widthCm: numOrNull(r.widthCm), heightCm: numOrNull(r.heightCm),
       materialsCost, rawMaterialCost, laborCost, purchaseCost, cost,
       costRatio: pctNum(cost, retailPrice),
       wholesaleRatio: pctNum(wholesalePrice, retailPrice),
@@ -10962,18 +10978,35 @@ function recalc(){
   document.getElementById("f_specialWholesaleCostRatio").value = pct(cost, special);
 }
 
+function numOrNull(v){ const n = parseFloat(v); return (v === "" || v === null || v === undefined || isNaN(n)) ? null : n; }
+// 商品の小分類は、選んだ中分類の中にあるものに絞る（中分類が未選択なら全件）。
+function refreshProductCategoryOptions(preserveValue){
+  const bSel = document.getElementById("f_bunrui"), cSel = document.getElementById("f_category");
+  if(!bSel || !cSel) return;
+  const keep = preserveValue !== undefined ? preserveValue : cSel.value;
+  fillSelect("f_category", filteredCategoryListForBunrui(bSel.value, keep));
+  cSel.value = keep || "";
+}
+
 function openForm(product){
   document.getElementById("modalTitle").textContent = product ? "商品を編集" : "商品を新規追加";
   document.getElementById("productForm").reset();
   document.getElementById("f_id").value = product ? product.id : "";
   document.getElementById("f_revisionDate").value = todayStr();
+  refreshProductCategoryOptions();
 
   if(product){
     document.getElementById("f_displayOrder").value = product.displayOrder ?? "";
     document.getElementById("f_code").value = product.code || "";
     document.getElementById("f_name").value = product.name || "";
     document.getElementById("f_department").value = product.department || "";
+    document.getElementById("f_bunrui").value = product.bunrui || "";
+    refreshProductCategoryOptions(product.category || "");
     document.getElementById("f_category").value = product.category || "";
+    document.getElementById("f_directSalePrice").value = product.directSalePrice ?? "";
+    document.getElementById("f_depthCm").value = product.depthCm ?? "";
+    document.getElementById("f_widthCm").value = product.widthCm ?? "";
+    document.getElementById("f_heightCm").value = product.heightCm ?? "";
     document.getElementById("f_retailPrice").value = product.retailPrice ?? "";
     document.getElementById("f_wholesalePrice").value = product.wholesalePrice ?? "";
     document.getElementById("f_specialWholesalePrice").value = product.specialWholesalePrice ?? "";
@@ -11035,8 +11068,13 @@ function saveProduct(){
     displayOrder: displayOrderRaw === "" ? null : parseFloat(displayOrderRaw),
     code, name,
     department: document.getElementById("f_department").value,
+    bunrui: document.getElementById("f_bunrui").value,
     category: document.getElementById("f_category").value,
     retailPrice, wholesalePrice, specialWholesalePrice,
+    directSalePrice: numOrNull(document.getElementById("f_directSalePrice").value),
+    depthCm: numOrNull(document.getElementById("f_depthCm").value),
+    widthCm: numOrNull(document.getElementById("f_widthCm").value),
+    heightCm: numOrNull(document.getElementById("f_heightCm").value),
     materialsCost, rawMaterialCost, laborCost, purchaseCost, cost,
     costRatio: pctNum(cost, retailPrice),
     wholesaleRatio: pctNum(wholesalePrice, retailPrice),
@@ -11139,6 +11177,7 @@ function render(){
       <td class="text">${p.code}</td>
       <td class="text">${p.name}${noStockLinkBadge}</td>
       <td class="text">${p.department||""}</td>
+      <td class="text">${p.bunrui||""}</td>
       <td class="text">${p.category||""}</td>
       <td>${fmtNum(p.retailPrice)}</td>
       <td class="calc">${fmtPct(d.costRatio)}</td>
@@ -11148,11 +11187,15 @@ function render(){
       <td>${fmtNum(p.specialWholesalePrice)}</td>
       <td class="calc">${fmtPct(d.specialWholesaleRatio)}</td>
       <td class="calc">${fmtPct(d.specialWholesaleCostRatio)}</td>
+      <td>${fmtNum(p.directSalePrice)}</td>
       <td class="calc">${fmtNum(d.cost)}</td>
       <td>${fmtNum(d.materialsCost)}</td>
       <td>${fmtNum(d.rawMaterialCost)}</td>
       <td>${fmtNum(p.laborCost)}</td>
       <td>${fmtNum(p.purchaseCost)}</td>
+      <td>${fmtNum(p.depthCm)}</td>
+      <td>${fmtNum(p.widthCm)}</td>
+      <td>${fmtNum(p.heightCm)}</td>
       <td class="text">${p.accounting||""}</td>
       <td class="text">${p.creditAccount||""}</td>
       <td class="text">${p.customer||""}</td>
@@ -11272,12 +11315,12 @@ async function exportXlsxWithOptions(cfg){
 }
 
 function buildProductsExportTable(){
-  const headers = ["表示順","商品コード","商品名","大分類","小分類","小売価格(税抜)","原価率","卸価格／町民価格","比率(卸÷小売=%)","卸原価率","特別卸価格","比率(特別卸÷小売=%)","特別卸原価率","原価","資材費","原料費","労務費","仕入原価","会計区分","貸方科目","売り先","更新日(適用開始)","POSシステム","税率(POS)"];
+  const headers = ["表示順","商品コード","商品名","大分類","中分類","小分類","小売価格(税抜)","原価率","卸価格／町民価格","比率(卸÷小売=%)","卸原価率","特別卸価格","比率(特別卸÷小売=%)","特別卸原価率","直販売価","原価","資材費","原料費","労務費","仕入原価","縦(cm)","横(cm)","高さ(cm)","会計区分","貸方科目","売り先","更新日(適用開始)","POSシステム","税率(POS)"];
   const rows = products.map(p=>{
     const d = computeDisplayFields(p);
     return [
-      p.displayOrder ?? "",p.code,p.name,p.department,p.category,p.retailPrice,d.costRatio,p.wholesalePrice,d.wholesaleRatio,d.wholesaleCostRatio,
-      p.specialWholesalePrice,d.specialWholesaleRatio,d.specialWholesaleCostRatio,d.cost,d.materialsCost,d.rawMaterialCost,p.laborCost,p.purchaseCost,
+      p.displayOrder ?? "",p.code,p.name,p.department,p.bunrui||"",p.category,p.retailPrice,d.costRatio,p.wholesalePrice,d.wholesaleRatio,d.wholesaleCostRatio,
+      p.specialWholesalePrice,d.specialWholesaleRatio,d.specialWholesaleCostRatio,p.directSalePrice ?? "",d.cost,d.materialsCost,d.rawMaterialCost,p.laborCost,p.purchaseCost,p.depthCm ?? "",p.widthCm ?? "",p.heightCm ?? "",
       p.accounting,p.creditAccount,p.customer,p.updatedAt||"",
       p.posSystem||"",p.posTaxRate??""
     ];
@@ -11296,8 +11339,8 @@ function exportCSV(){
 function exportProductsExcel(){
   const { headers, rows } = buildProductsExportTable();
   exportXlsxWithOptions({ fileName: "商品マスタ.xlsx", sheetName: "商品マスタ", headers, rows,
-    optionKeys: ["department", "category", "accounting", "creditAccount", "customer", "posSystem"],
-    validations: { "大分類": "department", "小分類": "category", "会計区分": "accounting", "貸方科目": "creditAccount", "売り先": "customer", "POSシステム": "posSystem" } });
+    optionKeys: ["department", "bunrui", "category", "accounting", "creditAccount", "customer", "posSystem"],
+    validations: { "大分類": "department", "中分類": "bunrui", "小分類": "category", "会計区分": "accounting", "貸方科目": "creditAccount", "売り先": "customer", "POSシステム": "posSystem" } });
 }
 
 
@@ -11318,19 +11361,30 @@ function importCSV(event){
       text = e.target.result.replace(/^﻿/, "");
     }
     const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
-    lines.shift(); // ヘッダー除去
+    // 見出しの名前で列を探す（中分類・直販売価・縦横高さが無い古い書き出しファイルも読み込める）
+    const hdr = parseCSVLine(lines.shift() || "").map(h=>h.trim());
+    const colOf = {};
+    hdr.forEach((h, i)=>{ if(!(h in colOf)) colOf[h] = i; });
+    const HEAD = { displayOrder:"表示順", code:"商品コード", name:"商品名", department:"大分類", bunrui:"中分類", category:"小分類", retailPrice:"小売価格(税抜)", costRatio:"原価率",
+      wholesalePrice:"卸価格／町民価格", wholesaleRatio:"比率(卸÷小売=%)", wholesaleCostRatio:"卸原価率", specialWholesalePrice:"特別卸価格", specialWholesaleRatio:"比率(特別卸÷小売=%)",
+      specialWholesaleCostRatio:"特別卸原価率", directSalePrice:"直販売価", cost:"原価", materialsCost:"資材費", rawMaterialCost:"原料費", laborCost:"労務費", purchaseCost:"仕入原価",
+      depthCm:"縦(cm)", widthCm:"横(cm)", heightCm:"高さ(cm)", accounting:"会計区分", creditAccount:"貸方科目", customer:"売り先", updatedAt:"更新日(適用開始)", posSystem:"POSシステム", posTaxRate:"税率(POS)" };
     lines.forEach(line=>{
-      const cols = parseCSVLine(line);
-      if(cols.length < 21) return;
-      const [displayOrder,code,name,department,category,retailPrice,costRatio,wholesalePrice,wholesaleRatio,wholesaleCostRatio,
-        specialWholesalePrice,specialWholesaleRatio,specialWholesaleCostRatio,cost,materialsCost,rawMaterialCost,laborCost,purchaseCost,
-        accounting,creditAccount,customer,updatedAt,
-        posSystem,posTaxRate] = cols;
+      const raw = parseCSVLine(line);
+      if(raw.length < 21) return;
+      const g = {};
+      Object.keys(HEAD).forEach(k=>{ const i = colOf[HEAD[k]]; g[k] = i === undefined ? "" : (raw[i] === undefined ? "" : raw[i]); });
+      const { displayOrder,code,name,department,bunrui,category,retailPrice,costRatio,wholesalePrice,wholesaleRatio,wholesaleCostRatio,
+        specialWholesalePrice,specialWholesaleRatio,specialWholesaleCostRatio,directSalePrice,cost,materialsCost,rawMaterialCost,laborCost,purchaseCost,
+        depthCm,widthCm,heightCm,accounting,creditAccount,customer,updatedAt } = g;
+      const posSystem = colOf[HEAD.posSystem] === undefined ? undefined : g.posSystem;
+      const posTaxRate = colOf[HEAD.posTaxRate] === undefined ? undefined : g.posTaxRate;
       const revDate = updatedAt || todayStr();
       products.push({
         id: String(Date.now()) + Math.random().toString(36).slice(2,7),
         displayOrder: displayOrder === "" ? null : parseFloat(displayOrder),
-        code, name, department, category,
+        code, name, department, bunrui: bunrui || "", category,
+        directSalePrice: numOrNull(directSalePrice), depthCm: numOrNull(depthCm), widthCm: numOrNull(widthCm), heightCm: numOrNull(heightCm),
         retailPrice: parseFloat(retailPrice)||0,
         wholesalePrice: parseFloat(wholesalePrice)||0,
         specialWholesalePrice: parseFloat(specialWholesalePrice)||0,
