@@ -37,6 +37,8 @@ function doPost(e) {
   currentAction_ = String(req.action || '');
   try {
     if (req.action === 'setup') return json_(setup_(req));
+    // 棚卸（在庫入力アプリのGASから）。合言葉ではなく棚卸用の鍵で確かめる（Tana.gs）
+    if (/^tana[A-Z]/.test(currentAction_)) return json_(tanaRoute_(req));
     if (!checkPass_(req.pass)) return json_({ ok: false, error: 'bad_pass' });
     switch (req.action) {
       case 'ping': return json_({ ok: true, meta: meta_() });
