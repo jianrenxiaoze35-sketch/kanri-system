@@ -63,8 +63,8 @@
   #productTable th.pg-head{cursor:pointer;user-select:none;background:#e2ebe6;}
   #productTable tr.pg-row2 th{top:37px;}
   #productTable .pg-ph{display:none;color:var(--muted);}
-  #productTable.pg-off-price .pg-price, #productTable.pg-off-cost .pg-cost, #productTable.pg-off-size .pg-size, #productTable.pg-off-account .pg-account{display:none;}
-  #productTable.pg-off-price .pg-ph-price, #productTable.pg-off-cost .pg-ph-cost, #productTable.pg-off-size .pg-ph-size, #productTable.pg-off-account .pg-ph-account{display:table-cell;}
+  #productTable.pg-off-price .pg-price, #productTable.pg-off-cost .pg-cost, #productTable.pg-off-detail .pg-detail, #productTable.pg-off-size .pg-size, #productTable.pg-off-account .pg-account{display:none;}
+  #productTable.pg-off-price .pg-ph-price, #productTable.pg-off-cost .pg-ph-cost, #productTable.pg-off-detail .pg-ph-detail, #productTable.pg-off-size .pg-ph-size, #productTable.pg-off-account .pg-ph-account{display:table-cell;}
   th{background:#eef2f0;position:sticky;top:0;text-align:center;color:#33413b;font-weight:600;}
   td.text{text-align:left;}
   tr:hover{background:#f7faf8;}
@@ -11194,12 +11194,12 @@ const PRODUCT_COLS = [
   {k:"directSalePrice",h:"直販売価",g:"price"},
   {k:"price75",h:"75%価格<br>(円)"},{k:"price87",h:"87%価格<br>(円)"},
   {k:"cost",h:"原価",g:"cost"},{k:"materialsCost",h:"資材費",g:"cost"},{k:"rawMaterialCost",h:"原料費",g:"cost"},{k:"laborCost",h:"労務費",g:"cost"},{k:"purchaseCost",h:"仕入原価",g:"cost"},
-  {k:"capacity",h:"容量"},{k:"signCode",h:"符号"},{k:"liquorType",h:"種類"},{k:"abv",h:"アルコール<br>度数"},{k:"polishRatio",h:"精米歩合"},{k:"sakeMeter",h:"酒度"},{k:"acidity",h:"酸度"},{k:"mainIngredient",h:"主原料"},
+  {k:"capacity",h:"容量",g:"detail"},{k:"signCode",h:"符号",g:"detail"},{k:"liquorType",h:"種類",g:"detail"},{k:"abv",h:"アルコール<br>度数",g:"detail"},{k:"polishRatio",h:"精米歩合",g:"detail"},{k:"sakeMeter",h:"酒度",g:"detail"},{k:"acidity",h:"酸度",g:"detail"},{k:"mainIngredient",h:"主原料",g:"detail"},
   {k:"depthCm",h:"縦(cm)",g:"size"},{k:"widthCm",h:"横(cm)",g:"size"},{k:"heightCm",h:"高さ(cm)",g:"size"},
   {k:"accounting",h:"会計区分",g:"account"},{k:"creditAccount",h:"貸方科目",g:"account"},
   {k:"customer",h:"売り先"},{k:"updatedAt",h:"更新日<br>(適用開始)"},{k:"posSystem",h:"POS<br>システム"},{k:"posTaxRate",h:"税率<br>(POS)"}
 ];
-const PRODUCT_COL_GROUPS = { price:"価格", cost:"原価", size:"サイズ", account:"勘定" };
+const PRODUCT_COL_GROUPS = { price:"価格", cost:"原価", size:"サイズ", account:"勘定", detail:"商品詳細" };
 const PRODUCT_GROUP_COLLAPSED_KEY = "kanri_product_group_collapsed_v1";
 let productGroupCollapsed = new Set();
 try{ productGroupCollapsed = new Set(JSON.parse(localStorage.getItem(PRODUCT_GROUP_COLLAPSED_KEY) || "[]")); }catch(e){}
@@ -11290,14 +11290,15 @@ function render(){
       <td class="pg-cost">${fmtNum(p.laborCost)}</td>
       <td class="pg-cost">${fmtNum(p.purchaseCost)}</td>
       <td class="pg-ph pg-ph-cost">…</td>
-      <td class="text">${p.capacity||""}</td>
-      <td class="text">${p.signCode||""}</td>
-      <td class="text">${p.liquorType||""}</td>
-      <td>${p.abv ?? ""}</td>
-      <td>${p.polishRatio ?? ""}</td>
-      <td>${p.sakeMeter ?? ""}</td>
-      <td>${p.acidity ?? ""}</td>
-      <td class="text">${p.mainIngredient||""}</td>
+      <td class="pg-detail text">${p.capacity||""}</td>
+      <td class="pg-detail text">${p.signCode||""}</td>
+      <td class="pg-detail text">${p.liquorType||""}</td>
+      <td class="pg-detail">${p.abv ?? ""}</td>
+      <td class="pg-detail">${p.polishRatio ?? ""}</td>
+      <td class="pg-detail">${p.sakeMeter ?? ""}</td>
+      <td class="pg-detail">${p.acidity ?? ""}</td>
+      <td class="pg-detail text">${p.mainIngredient||""}</td>
+      <td class="pg-ph pg-ph-detail">…</td>
       <td class="pg-size">${fmtNum(p.depthCm)}</td>
       <td class="pg-size">${fmtNum(p.widthCm)}</td>
       <td class="pg-size">${fmtNum(p.heightCm)}</td>
