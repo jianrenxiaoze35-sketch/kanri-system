@@ -7,6 +7,7 @@
  * シート「tana」     ：1行＝1回の入力。同じ 棚卸回・品目・場所 は後の行が勝つ。数が空なら取り消し。
  * シート「tana_loc」 ：棚卸画面で足した・外した保管場所（マスタの保管場所に足して使う）。
  * シート「tana_done」：場所を数え終えた記録。
+ * シート「現場入力」：使った・捨てた／届いた／足りない。
  */
 const TANA_SHEET = 'tana';
 const TANA_HEADER = ['日時', '棚卸回', '品目ID', '品名', '保管場所', '在庫単位の数', '在庫単位', '最小単位の数', '最小単位', '内訳', '数えた人', '端末'];
@@ -14,8 +15,10 @@ const TANA_LOC_SHEET = 'tana_loc';
 const TANA_LOC_HEADER = ['日時', '品目ID', '品名', '保管場所', '操作', '人'];
 const TANA_DONE_SHEET = 'tana_done';
 const TANA_DONE_HEADER = ['日時', '棚卸回', '部門', '保管場所', '人', '操作'];
-// 棚卸の対象にする原料・資材・半製品マスタの中分類（コスト・経費の中分類は数えない）
-const TANA_BUNRUI = ['原料', '資材', '雑貨', '備品'];
+// 現場入力：在庫入力アプリの「使った・捨てた／届いた／足りない」。1行＝1回の入力。消さず、取消列に時刻を入れる
+const FIELD_SHEET = '現場入力';
+const FIELD_HEADER = ['ID', '日時', '種類', '品目ID', '品名', '数', '単位', '最小単位の数', '最小単位', '内訳', '理由', '賞味期限', 'メモ', '人', '端末', '取消'];
+const FIELD_KINDS = ['使った・捨てた', '届いた', '足りない'];
 
 function tanaRoute_(req) {
   if (req.action === 'tanaPair') return tanaPair_(req);
@@ -26,6 +29,10 @@ function tanaRoute_(req) {
     case 'tanaPut': return tanaPut_(req);
     case 'tanaPlace': return tanaPlace_(req);
     case 'tanaDone': return tanaDone_(req);
+    case 'tanaFieldPut': return tanaFieldPut_(req);
+    case 'tanaFieldList': return tanaFieldList_(req);
+    case 'tanaFieldCancel': return tanaFieldCancel_(req);
+    case 'tanaSheetSync': return tanaSheetSync_();
     default: return { ok: false, error: 'unknown_action' };
   }
 }
@@ -99,13 +106,11 @@ function tanaMaster_() {
   const materials = kvJson_('material_master_data_v1', []);
   const products = kvJson_('product_master_data_v1', []);
   const disp = kvJson_('material_display_settings_v1', {}) || {};
-  const hidden = {};
-  (disp.hiddenCombos || []).forEach(function (k) { hidden[k] = true; });
   const shownProducts = {};
   (disp.shownProducts || []).forEach(function (k) { shownProducts[k] = true; });
   const items = [];
   materials.forEach(function (m) {
-    if (!m || !m.id || TANA_BUNRUI.indexOf(m.bunrui) < 0) return;
+    if (!m || !m.id) return;   // 原料・資材・半製品マスタは全品目を対象にする
     const u = tanaUnits_(m);
     const smallPerMid = (u.units.filter(function (x) { return x.lv === '中'; })[0] || { per: 1 }).per;
     const price = parseFloat(m.packPrice) > 0 ? parseFloat(m.packPrice) / smallPerMid
@@ -113,7 +118,7 @@ function tanaMaster_() {
     items.push({
       id: 'm:' + m.id, name: String(m.name || ''), dept: String(m.department || ''), bunrui: String(m.bunrui || ''),
       sub: String(m.subCategory || ''), maker: String(m.maker || ''), code: String(m.itemCode || ''),
-      active: m.status === '在庫〇', hidden: !!hidden[JSON.stringify([m.bunrui, m.subCategory || ''])],
+      active: m.status === '在庫〇', hidden: false,
       locs: (m.storageLocations || []).map(String), units: u.units, stockLv: u.stockLv,
       priceSmall: Math.round(price * 1000) / 1000
     });
@@ -223,4 +228,145 @@ function tanaDone_(req) {
   lock.waitLock(30000);
   try { tanaAppend_(TANA_DONE_SHEET, TANA_DONE_HEADER, [row]); } finally { lock.releaseLock(); }
   return { ok: true, at: at };
+}
+
+/* ---- 現場入力 ---- */
+function tanaFieldPut_(req) {
+  const kind = String(req.kind || ''), x = req.row || {};
+  if (FIELD_KINDS.indexOf(kind) < 0) return { ok: false, error: 'bad_kind' };
+  if (!x.id || !req.staff) return { ok: false, error: 'bad_request' };
+  const id = Utilities.getUuid(), at = new Date().toISOString();
+  const blank = x.v === null || x.v === undefined || x.v === '';
+  const row = [id, at, kind, String(x.id), String(x.name || '').slice(0, 200), blank ? '' : Number(x.v), String(x.unit || ''),
+    blank ? '' : Number(x.small), String(x.smallUnit || ''), String(x.detail || '').slice(0, 200), String(x.reason || '').slice(0, 60),
+    String(x.exp || '').slice(0, 10), String(x.memo || '').slice(0, 500), String(req.staff).slice(0, 40), String(req.route || '').slice(0, 80), ''];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { tanaAppend_(FIELD_SHEET, FIELD_HEADER, [row]); } finally { lock.releaseLock(); }
+  return { ok: true, id: id, at: at };
+}
+function fieldRowObj_(r) {
+  return { rowId: String(r[0]), at: String(r[1]), kind: String(r[2]), id: String(r[3]), name: String(r[4]), v: r[5] === '' ? null : Number(r[5]), unit: String(r[6]),
+    small: r[7] === '' ? null : Number(r[7]), smallUnit: String(r[8]), detail: String(r[9]), reason: String(r[10]), exp: String(r[11]), memo: String(r[12]),
+    by: String(r[13]), route: String(r[14]), canceled: String(r[15]) };
+}
+function tanaFieldList_(req) {
+  const limit = Math.min(Math.max(Number(req.limit) || 50, 1), 300), kind = String(req.kind || '');
+  const rows = tanaRows_(FIELD_SHEET, FIELD_HEADER), out = [];
+  for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {
+    if (kind && String(rows[i][2]) !== kind) continue;
+    out.push(fieldRowObj_(rows[i]));
+  }
+  return { ok: true, rows: out };
+}
+function tanaFieldCancel_(req) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sh = tanaSheet_(FIELD_SHEET, FIELD_HEADER), rows = tanaRows_(FIELD_SHEET, FIELD_HEADER);
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (String(rows[i][0]) !== String(req.id)) continue;
+      sh.getRange(i + 2, 16).setValue(new Date().toISOString() + ' ' + String(req.staff || '').slice(0, 40));
+      return { ok: true };
+    }
+    return { ok: false, error: 'not_found' };
+  } finally { lock.releaseLock(); }
+}
+
+/* ---- 商品管理システムのログページ用（合言葉つき）。現場入力と棚卸の新しい順。since より後の件数も返す ---- */
+function fieldLog_(req) {
+  const limit = Math.min(Math.max(Number(req.limit) || 200, 1), 1000), since = String(req.since || '');
+  const rows = [];
+  tanaRows_(FIELD_SHEET, FIELD_HEADER).forEach(function (r) { rows.push(fieldRowObj_(r)); });
+  tanaRows_(TANA_SHEET, TANA_HEADER).forEach(function (r) {
+    if (String(r[11]) === '動作確認') return;
+    rows.push({ rowId: '', at: String(r[0]), kind: '棚卸', id: String(r[2]), name: String(r[3]), v: r[5] === '' ? null : Number(r[5]), unit: String(r[6]),
+      detail: String(r[5]) === '' ? '取り消し' : String(r[9]), reason: String(r[1]), exp: '', memo: String(r[4]), by: String(r[10]), route: String(r[11]), canceled: '' });
+  });
+  rows.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+  let newCount = 0;
+  if (since) rows.forEach(function (x) { if (x.at > since) newCount++; });
+  const res = { ok: true, rows: rows.slice(0, limit), total: rows.length, newCount: newCount, latest: rows.length ? rows[0].at : '' };
+  if (req.usage) {
+    res.usage = rows.filter(function (x) { return x.kind === '使った・捨てた' && !x.canceled && x.v !== null; })
+      .map(function (x) { return { id: x.id, v: x.v, at: x.at }; });
+  }
+  return res;
+}
+
+/* ---- 読めるシート ----
+ * kv の値を、同じスプレッドシートの読めるシートへ書き出す。表示専用（直しても kv には戻らない）。
+ * 商品管理システムの保存のたびに、変わった項目のシートだけ作り直す。 */
+const READABLE_SHEETS = {
+  material_master_data_v1: { sheet: '原料資材マスタ', cols: [['品目ID', 'id'], ['品目コード', 'itemCode'], ['品名', 'name'], ['大分類', 'department'], ['中分類', 'bunrui'], ['小分類', 'subCategory'], ['メーカー', 'maker'], ['仕入れ先', 'supplier'], ['単位(大)', 'lotUnit'], ['数値(中)大1つの中の数', 'lotQty'], ['単位(中)', 'midUnit'], ['数値(小)中1つの中身', 'packQty'], ['単位(小)', 'unit'], ['在庫を数える単位', 'stockLevel'], ['価格(中)税込', 'packPrice'], ['価格(大)税込', 'lotPrice'], ['税率', 'taxRate'], ['ステータス', 'status'], ['保管場所', 'storageLocations'], ['棚卸の数', 'stockCount'], ['棚卸の基準日', 'stockCountAsOfDate']] },
+  product_master_data_v1: { sheet: '商品マスタ', cols: [['商品ID', 'id'], ['商品コード', 'code'], ['商品名', 'name'], ['大分類', 'department'], ['カテゴリ', 'category'], ['売価', 'retailPrice'], ['卸価格', 'wholesalePrice'], ['特別卸価格', 'specialWholesalePrice'], ['仕入れ原価', 'purchaseCost'], ['会計', 'accounting'], ['保管場所', 'storageLocations']] },
+  recipe_master_data_v1: { sheet: 'レシピ', flat: true },
+  purchase_master_data_v1: { sheet: '仕入れ', flat: true },
+  sales_master_data_v1: { sheet: '売上日別', flat: true },
+  labor_employees_data_v1: { sheet: '従業員', flat: true },
+  labor_attendance_data_v1: { sheet: '勤怠', flat: true }
+};
+function readableCell_(v) {
+  if (v === null || v === undefined) return '';
+  if (Array.isArray(v)) v = v.map(function (x) { return typeof x === 'object' ? JSON.stringify(x) : x; }).join('、');
+  else if (typeof v === 'object') v = JSON.stringify(v);
+  if (typeof v === 'string') {
+    if (v.length > 5000) v = v.slice(0, 5000) + '…';
+    if (/^[=+\-@]/.test(v)) v = "'" + v;   // 数式として動かないように
+  }
+  return v;
+}
+function readableWrite_(key, jsonText) {
+  const def = READABLE_SHEETS[key];
+  if (!def) return 0;
+  let list = JSON.parse(jsonText || '[]');
+  if (list && !Array.isArray(list)) list = list.salesDays || list.items || [];
+  let header, rows;
+  if (def.flat) {
+    const keys = [];
+    list.forEach(function (o) { Object.keys(o || {}).forEach(function (k) {
+      const v = o[k];
+      if (keys.indexOf(k) < 0 && (v === null || typeof v !== 'object' || (Array.isArray(v) && (!v.length || typeof v[0] !== 'object')))) keys.push(k);
+    }); });
+    header = keys;
+    rows = list.map(function (o) { return keys.map(function (k) { return readableCell_(o[k]); }); });
+  } else {
+    header = def.cols.map(function (c) { return c[0]; });
+    rows = list.map(function (o) { return def.cols.map(function (c) { return readableCell_(o[c[1]]); }); });
+  }
+  if (!header.length) return 0;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(def.sheet);
+  if (!sh) {
+    sh = ss.insertSheet(def.sheet);
+    sh.setFrozenRows(1);
+    sh.protect().setDescription('表示専用。直しても商品管理システムには戻りません').setWarningOnly(true);
+  }
+  sh.clearContents();
+  sh.getRange(1, 1, 1, header.length).setValues([header]);
+  if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
+  return rows.length;
+}
+/** 保存した項目のうち、読めるシートがあるものを書き出す。失敗しても保存は失敗にしない */
+function readableAfterPut_(req) {
+  (req.items || []).forEach(function (it) {
+    if (it.del || !READABLE_SHEETS[it.k]) return;
+    try {
+      let text = String(it.d || '');
+      if (it.enc === 'gz') text = Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(text), 'application/x-gzip')).getDataAsString('UTF-8');
+      readableWrite_(it.k, text);
+    } catch (err) { console.error('readableAfterPut_ ' + it.k + ': ' + err); }
+  });
+}
+/** 全部作り直す（最初の1回用）。何度呼んでも同じ結果。5分に1回まで */
+function tanaSheetSync_() {
+  const p = PropertiesService.getScriptProperties(), last = Number(p.getProperty('SHEET_SYNC_AT')) || 0, now = Date.now();
+  if (now - last < 300000) return { ok: false, error: 'too_soon' };
+  p.setProperty('SHEET_SYNC_AT', String(now));
+  const done = {};
+  Object.keys(READABLE_SHEETS).forEach(function (k) {
+    try { const v = kvValue_(k); done[READABLE_SHEETS[k].sheet] = v === null ? 'なし' : readableWrite_(k, v); }
+    catch (err) { done[READABLE_SHEETS[k].sheet] = 'エラー: ' + err; }
+  });
+  return { ok: true, done: done };
 }

@@ -530,6 +530,7 @@
     <div class="nav-item" id="nav-labor" onclick="switchPage('labor')">👥 人件費管理</div>
     <div class="nav-item" id="nav-budget" onclick="switchPage('budget')">💰 予算管理</div>
     <div class="nav-item" id="nav-regi" onclick="switchPage('regi')">🧮 レジ締め・売上集計</div>
+    <div class="nav-item" id="nav-logs" onclick="switchPage('logs')">📝 ログ<span id="navLogBadge" style="display:none;margin-left:6px;background:#c0392b;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;"></span></div>
     <div class="nav-item" id="nav-settings" onclick="switchPage('settings')">⚙️ 設定</div>
   </div>
 
@@ -1710,6 +1711,19 @@
       </div>
     </div>
 
+    <div class="page-content" id="page-logs">
+      <div class="card" style="padding:14px 16px;">
+        <h3 style="margin:0 0 6px;">📝 ログ</h3>
+        <div class="hint" style="margin:0 0 10px;">在庫入力アプリの入力と、このシステムの編集の記録です。全データは<a href="https://docs.google.com/spreadsheets/d/1zB6-J1I5nqpSqcoKyM_jhCNjZxCi41dO7xff68Ttn84/edit" target="_blank" rel="noopener">スプレッドシート「商品管理システム データ」</a>にあります（権限のある人だけ開けます）。</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <button class="secondary" id="logTabField" onclick="logsSetTab('field')">在庫入力アプリ</button>
+          <button class="secondary" id="logTabEdit" onclick="logsSetTab('edit')">編集ログ</button>
+          <input type="search" id="logsFilter" placeholder="品名・人・内容で絞り込む" oninput="logsDraw()" style="flex:1;min-width:180px;">
+          <button class="secondary" onclick="renderLogsPage()">更新</button>
+        </div>
+        <div id="logsBody"><div class="hint">読み込み中…</div></div>
+      </div>
+    </div>
     <div class="page-content" id="page-settings">
       <div class="topbar">
         <h2>設定</h2>
@@ -6445,6 +6459,7 @@ function importPurchasesExcel(event){
    ※ これは画面の表示を絞る機能で、データの閲覧そのものを防ぐセキュリティ機能ではない
      （全データは合言葉を知っている端末に読み込まれるため）。 */
 const APP_ACCESS_REGISTRY = [
+  { page:"logs", label:"ログ", views:[] },
   { page:"products", label:"商品マスタ", views:[] },
   { page:"ingredients", label:"原料・資材・半製品マスタ", cur:()=>ingredientView, go:v=>switchIngredientView(v),
     views:[["all","全体","ingViewAllBtn"],["raw","原料","ingViewRawBtn"],["prep","仕込み/半製品","ingViewPrepBtn"],["material","資材","ingViewMaterialBtn"],["equip","備品","ingViewEquipBtn"],["uncategorized","未分類","ingViewUncategorizedBtn"]] },
@@ -6751,7 +6766,7 @@ function accountDelete(id){
 }
 
 // 部門ごとのメニュー表示。DEPARTMENTSのmenusに含まれるページだけをサイドバーに出す（nullはすべて）。
-const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","settings"];
+const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","logs","settings"];
 function allowedPagesForCurrentDept(){
   const m = getCurrentDept().menus;
   const byDept = m ? APP_PAGE_IDS.filter(p=>m.includes(p)) : APP_PAGE_IDS.slice();
@@ -6828,6 +6843,7 @@ async function switchPage(page){
   document.getElementById("page-regi").classList.toggle("active", page==="regi");
   document.getElementById("page-inventory").classList.toggle("active", page==="inventory");
   document.getElementById("page-settings").classList.toggle("active", page==="settings");
+  document.getElementById("page-logs").classList.toggle("active", page==="logs");
   document.getElementById("nav-products").classList.toggle("active", page==="products");
   document.getElementById("nav-ingredients").classList.toggle("active", page==="ingredients");
   document.getElementById("nav-recipes").classList.toggle("active", page==="recipes");
@@ -6838,6 +6854,8 @@ async function switchPage(page){
   document.getElementById("nav-regi").classList.toggle("active", page==="regi");
   document.getElementById("nav-inventory").classList.toggle("active", page==="inventory");
   document.getElementById("nav-settings").classList.toggle("active", page==="settings");
+  document.getElementById("nav-logs").classList.toggle("active", page==="logs");
+  if(page==="logs") renderLogsPage();
   if(page==="sales") renderSales();
   if(page==="purchases") switchPurchaseView(purchaseView);
   if(page==="labor") renderLaborActiveView();
@@ -10916,11 +10934,77 @@ function computeIngredientStockTotal(m){
   const sinceDate = m.stockCountAsOfDate || "";
   const purchased = sumPurchasedQtySinceDate(m.id, sinceDate);
   const sold = sumSoldMaterialQtySinceDate(m.id, sinceDate);
-  return baseline + purchased - sold;
+  return baseline + purchased - sold - sumFieldUsedSinceDate(m.id, sinceDate);
 }
 
 // 参考情報：保管場所別の手入力欄（スチールラック在庫数など）の単純合計。
 // 在庫数(計算)の算出には使用しないが、原料・資材・半製品マスタの編集画面で参考値として表示する。
+/* ---- 在庫入力アプリの入力（シート「現場入力」「tana」）----
+   ログページの表示、新着の通知（左メニューのバッジとブラウザのタブのタイトル）、在庫数(計算)の「使った・捨てた」。 */
+let _fieldUsage = [];
+function sumFieldUsedSinceDate(id, sinceDate){
+  let t = 0;
+  _fieldUsage.forEach(u=>{ if(u.id === "m:" + id && (!sinceDate || String(u.at).slice(0,10) > sinceDate)) t += Number(u.v) || 0; });
+  return t;
+}
+const FIELD_SEEN_KEY = "kanri_field_seen_v1";
+const APP_BASE_TITLE = document.title;
+let _logsTab = "field", _logsField = [], _logsEdit = [];
+function fieldSeenGet(){ try{ return localStorage.getItem(FIELD_SEEN_KEY) || ""; }catch(e){ return ""; } }
+function fieldSeenSet(v){ try{ localStorage.setItem(FIELD_SEEN_KEY, v); }catch(e){} }
+function fieldNotify(n){
+  const b = document.getElementById("navLogBadge");
+  if(b){ b.textContent = n > 99 ? "99+" : String(n); b.style.display = n > 0 ? "" : "none"; }
+  document.title = (n > 0 ? "(" + (n > 99 ? "99+" : n) + ") 在庫入力の新着｜" : "") + APP_BASE_TITLE;
+}
+async function fieldPoll(){
+  if(_cloudMode !== "cloud") return;
+  try{
+    let since = fieldSeenGet();
+    const res = await cloudApi("fieldLog", {limit: 1, since, usage: true});
+    if(!since && res.latest){ since = res.latest; fieldSeenSet(since); res.newCount = 0; } // 最初の1回は今までの分を新着にしない
+    const changed = JSON.stringify(res.usage || []) !== JSON.stringify(_fieldUsage);
+    _fieldUsage = res.usage || [];
+    if(changed && document.getElementById("page-inventory") && document.getElementById("page-inventory").classList.contains("active")) renderInventoryActiveView();
+    if(document.getElementById("page-logs").classList.contains("active")){
+      if(res.newCount > 0) renderLogsPage(); else fieldNotify(0);
+    } else fieldNotify(res.newCount || 0);
+  }catch(e){ /* 通知の失敗で画面を止めない。次の回にまた見る */ }
+}
+registerBootStep(()=>{ fieldPoll(); setInterval(fieldPoll, 60000); document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) fieldPoll(); }); });
+function logsSetTab(t){ _logsTab = t; logsDraw(); }
+async function renderLogsPage(){
+  const el = document.getElementById("logsBody");
+  if(_cloudMode !== "cloud"){ el.innerHTML = '<div class="hint">クラウドに接続しているときだけ見られます。</div>'; return; }
+  el.innerHTML = '<div class="hint">読み込み中…</div>';
+  try{
+    const [f, l] = await Promise.all([cloudApi("fieldLog", {limit: 500, usage: true}), cloudApi("logList", {limit: 500})]);
+    _logsField = f.rows || []; _logsEdit = l.rows || []; _fieldUsage = f.usage || [];
+    if(f.latest) fieldSeenSet(f.latest);
+    fieldNotify(0);
+    logsDraw();
+  }catch(err){
+    el.innerHTML = `<div class="hint" style="color:var(--danger)">読み込めませんでした（${cloudEsc((err && err.code) || err)}）</div>`;
+  }
+}
+function logsDraw(){
+  const el = document.getElementById("logsBody"), q = (document.getElementById("logsFilter").value || "").trim().toLowerCase();
+  document.getElementById("logTabField").style.fontWeight = _logsTab === "field" ? "700" : "400";
+  document.getElementById("logTabEdit").style.fontWeight = _logsTab === "edit" ? "700" : "400";
+  const td = 'style="text-align:left;vertical-align:top;padding:4px 8px;border-bottom:1px solid var(--border);white-space:normal;"';
+  const hit = o => !q || JSON.stringify(o).toLowerCase().includes(q);
+  const when = at => cloudEsc(new Date(at).toLocaleString("ja-JP"));
+  let head, rows;
+  if(_logsTab === "field"){
+    head = ["日時","種類","品目","数","内容","人"];
+    rows = _logsField.filter(hit).map(r=>`<tr${r.canceled ? ' style="opacity:.5;text-decoration:line-through;"' : ""}><td ${td}>${when(r.at)}</td><td ${td}>${cloudEsc(r.kind)}</td><td ${td}>${cloudEsc(r.name)}</td><td ${td}>${r.v === null ? "" : cloudEsc(r.v + " " + r.unit)}${r.detail ? `<div class="hint" style="margin:0">${cloudEsc(r.detail)}</div>` : ""}</td><td ${td}>${cloudEsc([r.kind === "棚卸" ? r.memo : r.reason, r.exp && "期限 " + r.exp, r.kind === "棚卸" ? "" : r.memo].filter(Boolean).join("／"))}</td><td ${td}>${cloudEsc(r.by)}</td></tr>`);
+  } else {
+    head = ["日時","氏名","操作","内容"];
+    rows = _logsEdit.filter(hit).map(r=>`<tr><td ${td}>${when(r.at)}</td><td ${td}>${cloudEsc(r.name || "（未ログイン）")}${r.dept ? `<div class="hint" style="margin:0">${cloudEsc(r.dept)}</div>` : ""}</td><td ${td}>${cloudEsc(r.op)}</td><td ${td}>${cloudEsc(r.sum || cloudLogKeyLabel(r.k))}</td></tr>`);
+  }
+  el.innerHTML = rows.length ? `<div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:6px;"><table style="min-width:0;width:100%;font-size:12px;border-collapse:collapse;"><thead><tr>${head.map(h=>`<th ${td}>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div><div class="hint" style="margin-top:4px;">新しい順に最大500件。</div>` : '<div class="hint">記録はありません。</div>';
+}
+
 function computeIngredientManualStockSum(m){
   return (parseFloat(m.stockSteelRack)||0) + (parseFloat(m.stockChestStocker)||0) +
     (parseFloat(m.stockMaruManFreezer)||0) + (parseFloat(m.stockMaruMan)||0) +

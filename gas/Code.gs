@@ -44,7 +44,8 @@ function doPost(e) {
       case 'ping': return json_({ ok: true, meta: meta_() });
       case 'meta': return json_({ ok: true, meta: meta_() });
       case 'load': return json_(load_());
-      case 'put': return json_(put_(req));
+      case 'put': { const res = put_(req); readableAfterPut_(req); return json_(res); }
+      case 'fieldLog': return json_(fieldLog_(req));
       case 'logList': return json_(logList_(req));
       case 'changePass': return json_(changePass_(req));
       default: return json_({ ok: false, error: 'unknown_action' });
