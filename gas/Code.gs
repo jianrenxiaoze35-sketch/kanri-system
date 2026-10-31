@@ -46,6 +46,7 @@ function doPost(e) {
       case 'load': return json_(load_());
       case 'put': { const res = put_(req); readableAfterPut_(req); return json_(res); }
       case 'fieldLog': return json_(fieldLog_(req));
+      case 'theory': return json_(theoryForKanri_());
       case 'logList': return json_(logList_(req));
       case 'changePass': return json_(changePass_(req));
       default: return json_({ ok: false, error: 'unknown_action' });

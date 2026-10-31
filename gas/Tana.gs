@@ -33,7 +33,7 @@ function tanaRoute_(req) {
     case 'tanaFieldList': return tanaFieldList_(req);
     case 'tanaFieldCancel': return tanaFieldCancel_(req);
     case 'tanaSheetSync': return tanaSheetSync_();
-    default: return { ok: false, error: 'unknown_action' };
+    default: return rironRoute_(req);
   }
 }
 
@@ -117,7 +117,7 @@ function tanaMaster_() {
       : (parseFloat(m.lotPrice) > 0 ? parseFloat(m.lotPrice) / (u.units[0].per || 1) : 0);
     items.push({
       id: 'm:' + m.id, name: String(m.name || ''), dept: String(m.department || ''), bunrui: String(m.bunrui || ''),
-      sub: String(m.subCategory || ''), maker: String(m.maker || ''), code: String(m.itemCode || ''),
+      sub: String(m.subCategory || ''), maker: String(m.maker || ''), supplier: String(m.supplier || ''), code: String(m.itemCode || ''),
       active: m.status === '在庫〇', hidden: false,
       locs: (m.storageLocations || []).map(String), units: u.units, stockLv: u.stockLv,
       priceSmall: Math.round(price * 1000) / 1000
@@ -133,6 +133,7 @@ function tanaMaster_() {
       priceSmall: parseFloat(p.purchaseCost) || 0
     });
   });
+  try { prepItems_().forEach(function (it) { items.push(it); }); } catch (err) { console.error('prepItems_: ' + err); }
   const opts = kvJson_('product_master_options_v1', null);
   return { ok: true, items: items, at: new Date().toISOString(), locOptions: (opts && opts.storageLocation) || null };
 }
@@ -283,6 +284,7 @@ function fieldLog_(req) {
     rows.push({ rowId: '', at: String(r[0]), kind: '棚卸', id: String(r[2]), name: String(r[3]), v: r[5] === '' ? null : Number(r[5]), unit: String(r[6]),
       detail: String(r[5]) === '' ? '取り消し' : String(r[9]), reason: String(r[1]), exp: '', memo: String(r[4]), by: String(r[10]), route: String(r[11]), canceled: '' });
   });
+  rironLogRows_().forEach(function (x) { rows.push(x); });
   rows.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
   let newCount = 0;
   if (since) rows.forEach(function (x) { if (x.at > since) newCount++; });

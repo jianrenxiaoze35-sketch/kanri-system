@@ -530,6 +530,7 @@
     <div class="nav-item" id="nav-labor" onclick="switchPage('labor')">👥 人件費管理</div>
     <div class="nav-item" id="nav-budget" onclick="switchPage('budget')">💰 予算管理</div>
     <div class="nav-item" id="nav-regi" onclick="switchPage('regi')">🧮 レジ締め・売上集計</div>
+    <div class="nav-item" id="nav-theory" onclick="switchPage('theory')">📐 理論在庫</div>
     <div class="nav-item" id="nav-logs" onclick="switchPage('logs')">📝 ログ<span id="navLogBadge" style="display:none;margin-left:6px;background:#c0392b;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;"></span></div>
     <div class="nav-item" id="nav-settings" onclick="switchPage('settings')">⚙️ 設定</div>
   </div>
@@ -1711,6 +1712,20 @@
       </div>
     </div>
 
+    <div class="page-content" id="page-theory">
+      <div class="card" style="padding:14px 16px;">
+        <h3 style="margin:0 0 6px;">📐 理論在庫</h3>
+        <div class="hint" style="margin:0 0 10px;">開始数＋入った分−使った分で計算します。棚卸の数では上書きしません。入力は在庫入力アプリとハブの仕込みから、レシピはスプレッドシートの「理論レシピ」から読みます。</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="secondary" data-th="原料" onclick="theorySetTab('原料')">原料</button>
+          <button class="secondary" data-th="仕込み品" onclick="theorySetTab('仕込み品')">仕込み品</button>
+          <button class="secondary" data-th="チェストストッカー" onclick="theorySetTab('チェストストッカー')">チェストストッカー</button>
+          <button class="secondary" data-th="照合" onclick="theorySetTab('照合')">仕入れと受入の照合</button>
+          <button class="secondary" onclick="renderTheoryPage()">更新</button>
+        </div>
+        <div id="theoryBody"><div class="hint">読み込み中…</div></div>
+      </div>
+    </div>
     <div class="page-content" id="page-logs">
       <div class="card" style="padding:14px 16px;">
         <h3 style="margin:0 0 6px;">📝 ログ</h3>
@@ -6459,6 +6474,7 @@ function importPurchasesExcel(event){
    ※ これは画面の表示を絞る機能で、データの閲覧そのものを防ぐセキュリティ機能ではない
      （全データは合言葉を知っている端末に読み込まれるため）。 */
 const APP_ACCESS_REGISTRY = [
+  { page:"theory", label:"理論在庫", views:[] },
   { page:"logs", label:"ログ", views:[] },
   { page:"products", label:"商品マスタ", views:[] },
   { page:"ingredients", label:"原料・資材・半製品マスタ", cur:()=>ingredientView, go:v=>switchIngredientView(v),
@@ -6766,7 +6782,7 @@ function accountDelete(id){
 }
 
 // 部門ごとのメニュー表示。DEPARTMENTSのmenusに含まれるページだけをサイドバーに出す（nullはすべて）。
-const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","logs","settings"];
+const APP_PAGE_IDS = ["products","ingredients","recipes","purchases","inventory","sales","labor","budget","regi","theory","logs","settings"];
 function allowedPagesForCurrentDept(){
   const m = getCurrentDept().menus;
   const byDept = m ? APP_PAGE_IDS.filter(p=>m.includes(p)) : APP_PAGE_IDS.slice();
@@ -6844,6 +6860,7 @@ async function switchPage(page){
   document.getElementById("page-inventory").classList.toggle("active", page==="inventory");
   document.getElementById("page-settings").classList.toggle("active", page==="settings");
   document.getElementById("page-logs").classList.toggle("active", page==="logs");
+  document.getElementById("page-theory").classList.toggle("active", page==="theory");
   document.getElementById("nav-products").classList.toggle("active", page==="products");
   document.getElementById("nav-ingredients").classList.toggle("active", page==="ingredients");
   document.getElementById("nav-recipes").classList.toggle("active", page==="recipes");
@@ -6855,6 +6872,8 @@ async function switchPage(page){
   document.getElementById("nav-inventory").classList.toggle("active", page==="inventory");
   document.getElementById("nav-settings").classList.toggle("active", page==="settings");
   document.getElementById("nav-logs").classList.toggle("active", page==="logs");
+  document.getElementById("nav-theory").classList.toggle("active", page==="theory");
+  if(page==="theory") renderTheoryPage();
   if(page==="logs") renderLogsPage();
   if(page==="sales") renderSales();
   if(page==="purchases") switchPurchaseView(purchaseView);
@@ -10972,6 +10991,35 @@ async function fieldPoll(){
   }catch(e){ /* 通知の失敗で画面を止めない。次の回にまた見る */ }
 }
 registerBootStep(()=>{ fieldPoll(); setInterval(fieldPoll, 60000); document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) fieldPoll(); }); });
+let _theoryTab = "原料", _theoryData = null;
+function theorySetTab(t){ _theoryTab = t; theoryDraw(); }
+async function renderTheoryPage(){
+  const el = document.getElementById("theoryBody");
+  if(_cloudMode !== "cloud"){ el.innerHTML = '<div class="hint">クラウドに接続しているときだけ見られます。</div>'; return; }
+  el.innerHTML = '<div class="hint">計算しています…</div>';
+  try{ _theoryData = await cloudApi("theory", {}); theoryDraw(); }
+  catch(err){ el.innerHTML = `<div class="hint" style="color:var(--danger)">読み込めませんでした（${cloudEsc((err && err.code) || err)}）</div>`; }
+}
+function theoryDraw(){
+  const el = document.getElementById("theoryBody"), j = _theoryData; if(!j) return;
+  document.querySelectorAll("[data-th]").forEach(b=>{ b.style.fontWeight = b.dataset.th === _theoryTab ? "700" : "400"; });
+  const td = 'style="text-align:left;vertical-align:top;padding:4px 8px;border-bottom:1px solid var(--border);white-space:normal;"';
+  const tr = 'style="text-align:right;vertical-align:top;padding:4px 8px;border-bottom:1px solid var(--border);white-space:nowrap;"';
+  const n = v => v === null || v === undefined ? "—" : cloudEsc(String(v));
+  const head = `<div class="hint" style="margin:0 0 6px;">売上は ${cloudEsc(j.salesUntil || "—")} まで／保留中 ${j.hold || 0}件</div>` + (j.hasStart ? "" : '<div class="hint" style="margin:0 0 6px;color:var(--danger)">開始数がまだありません。在庫入力アプリの「理論在庫」で入れるまで、理論値は出ません。</div>') + (j.warnings || []).map(w=>`<div class="hint" style="margin:0 0 4px;color:var(--danger)">${cloudEsc(w)}</div>`).join("");
+  const wrap = (h, rows) => rows.length ? `<div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:6px;"><table style="min-width:0;width:100%;font-size:12px;border-collapse:collapse;"><thead><tr>${h.join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>` : '<div class="hint">表示する品目はまだありません。</div>';
+  if(_theoryTab === "照合"){
+    const m = j.match || {rows:[]};
+    el.innerHTML = `<div class="hint" style="margin:0 0 6px;">金額は仕入れ、数は受入です。受入が始まった日（${cloudEsc(m.since || "—")}）以降の仕入れだけ比べます。</div>` + wrap(["品目","仕入れ","受入","状態"].map(x=>`<th ${td}>${x}</th>`), m.rows.map(r=>`<tr><td ${td}>${cloudEsc(r.name)}</td><td ${td}>${cloudEsc(r.buy)}</td><td ${td}>${cloudEsc(r.recv)}</td><td ${td}>${cloudEsc(r.state)}</td></tr>`));
+    return;
+  }
+  const chest = _theoryTab === "チェストストッカー";
+  const cols = ["開始数","入った"].concat(chest ? ["出した"] : ["仕込みで使用","売上で使用","使った・捨てた"]).concat(["理論値","棚卸","差"]);
+  el.innerHTML = head + wrap([`<th ${td}>品目</th>`].concat(cols.map(x=>`<th ${tr}>${x}</th>`), [`<th ${td}>警告</th>`]), (j.rows || []).filter(r=>r.table === _theoryTab).map(r=>{
+    const mid = chest ? [r.out] : [r.prepUse, r.sold, r.used];
+    return `<tr><td ${td}>${cloudEsc(r.name)}${r.start ? `<div class="hint" style="margin:0">${cloudEsc(r.start)} から</div>` : ""}</td><td ${tr}>${n(r.startQty)}</td><td ${tr}>${n(r.inn)}</td>${mid.map(v=>`<td ${tr}>${n(v)}</td>`).join("")}<td ${tr}><b>${n(r.val)}</b> ${cloudEsc(r.unit)}</td><td ${tr}>${n(r.counted)}</td><td ${tr}>${n(r.diff)}</td><td ${td}>${cloudEsc(r.warn)}</td></tr>`;
+  }));
+}
 function logsSetTab(t){ _logsTab = t; logsDraw(); }
 async function renderLogsPage(){
   const el = document.getElementById("logsBody");
