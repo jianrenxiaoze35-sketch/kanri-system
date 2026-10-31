@@ -81,7 +81,11 @@ function ukeConfig_() {
   const docs = tanaRows_(UKE_DOC_SHEET, UKE_DOC_HEADER).filter(function (r) { return !String(r[7]); }).map(function (r) {
     return { rowId: String(r[0]), name: String(r[2]), target: String(r[3]), until: jstDate_(r[4]), by: String(r[5]), memo: String(r[6]) };
   });
-  return { ok: true, sets: sets, docs: docs, today: jstDate_(new Date()) };
+  // 同じ品目・ロットの二重入力の警告用（ブルワリーアプリの行も含む）
+  const lots = tanaRows_(UKE_SHEET, UKE_HEADER).map(ukeRowObj_).filter(function (o) { return o.lot && !o.canceled; }).map(function (o) {
+    return { id: o.id, lot: o.lot, at: o.at, by: o.by, route: o.route, res: o.res };
+  });
+  return { ok: true, sets: sets, docs: docs, lots: lots, today: jstDate_(new Date()) };
 }
 function ukePut_(req) {
   const x = req.row || {}, res = String(x.res || '');
@@ -91,7 +95,7 @@ function ukePut_(req) {
   const id = Utilities.getUuid(), at = new Date().toISOString(), staff = String(req.staff).slice(0, 40);
   const t = function (v, n) { return String(v === null || v === undefined ? '' : v).slice(0, n); };
   const row = [id, at, t(x.id, 80), t(x.name, 200), t(x.supplier, 100), Number(x.v), t(x.unit, 20), Number(x.small), t(x.smallUnit, 20), t(x.use, 60), t(x.lot, 80), t(x.exp, 10), t(x.temp, 10),
-    x.slip === null || x.slip === undefined ? '' : (x.slip ? 'OK' : '不一致'), JSON.stringify(x.checks || {}).slice(0, 1000), res, t(x.why, 500), res, t(x.place, 80), t(x.action, 80), res === '保留' ? '' : at, res === '保留' ? '' : staff, staff, t(req.route, 80), ''];
+    x.slip === null || x.slip === undefined ? '' : (x.slip ? 'OK' : '不一致'), JSON.stringify(x.checks || {}).slice(0, 1000), res, t(x.why, 500), res, t(x.place, 80), t(x.action, 80), res === '保留' ? '' : at, res === '保留' ? '' : staff, staff, t(req.route, 80) || '在庫入力アプリ', ''];
   withLock_(function () {
     tanaAppend_(UKE_SHEET, UKE_HEADER, [row]);
     if (x.storage && !x.storageFixed) tanaAppend_(UKE_SET_SHEET, UKE_SET_HEADER, [[t(x.id, 80), t(x.name, 200), t(x.storage, 20), at, staff]]);
