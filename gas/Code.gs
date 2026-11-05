@@ -39,6 +39,10 @@ function doPost(e) {
     if (req.action === 'setup') return json_(setup_(req));
     // 棚卸（在庫入力アプリのGASから）。合言葉ではなく棚卸用の鍵で確かめる（Tana.gs）
     if (/^tana[A-Z]/.test(currentAction_)) return json_(tanaRoute_(req));
+    // 理論在庫（ホームハブのGASから）。読むだけの専用の鍵で確かめる（Riron.gs）
+    if (req.action === 'theoryPair') return json_(theoryPair_(req));
+    if (req.action === 'theoryRead') return json_(theoryRead_(req));
+    if (req.action === 'purchaseItems') return json_(purchaseItems_(req));   // ホームハブの購買の品目マスタ（同じ鍵）
     if (!checkPass_(req.pass)) return json_({ ok: false, error: 'bad_pass' });
     switch (req.action) {
       case 'ping': return json_({ ok: true, meta: meta_() });

@@ -21576,6 +21576,28 @@ registerBootStep(function(){
   switchInventoryView("sheet");
 });
 
+// ホームハブの購買から：?add=material&name=…&dept=…&bunrui=…&supplier=…&from=PR-… で原料・資材の「新規追加」を開く（2026-11-05）
+// 中身を入れるだけで保存はしない。保存は開いた人が確かめて押す
+registerBootStep(function(){
+  const q = new URLSearchParams(location.search);
+  if(q.get("add") !== "material") return;
+  try{ history.replaceState(null, "", location.pathname); }catch(e){}
+  setTimeout(async function(){
+    try{
+      await switchPage("ingredients");
+      openIngredientForm(null);
+      const name = q.get("name") || "";
+      if(name && materials.some(m=>String(m.name||"").trim() === name.trim())) alert("「" + name + "」はもう登録されています。ホームハブの次の取り込み（6時間ごと）で申請につながります");
+      document.getElementById("f_i_name").value = name;
+      if(q.get("dept")) setSelectValueKeep("f_i_department", q.get("dept"));
+      if(q.get("bunrui")){ setSelectValueKeep("f_i_bunrui", q.get("bunrui")); refreshMaterialCategoryOptions(""); }
+      if(q.get("supplier")) setSelectValueKeep("f_i_supplier", q.get("supplier"));
+      if(q.get("from")) document.getElementById("f_i_recipeNote").value = "ホームハブの購買申請 " + q.get("from") + " から登録";
+      recalcIngredient();
+    }catch(err){ console.error("add=material failed:", err); }
+  }, 300);
+});
+
 // 全てのブート処理（appStoreの準備＋登録済みの各データ読み込み・初回描画）を、登録順に実行する。
 let _appBootReady = runBootSteps();
 </script>

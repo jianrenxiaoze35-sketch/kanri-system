@@ -20,9 +20,18 @@ const START_SHEET = '理論在庫の開始';
 const START_HEADER = ['品目ID', '品名', '保管場所', '開始日', '開始数（最小単位）', '最小単位', '元', '入れた人', '入れた日時'];
 const THEORY_SHEET = '理論在庫';
 const THEORY_HEADER = ['表', '品目ID', '品名', '開始日', '開始数', '入った分', '仕込みで使った分', '売上で使った分', '使った・捨てた', '出した分', '理論値', '単位', '棚卸の数', '差', '警告', '計算日時'];
+const MOVES_SHEET = '理論在庫の動き';
+const MOVES_HEADER = ['日付', '品目ID', '品名', '動き', '増減（最小単位）', '最小単位', '元シート', '元ID', '説明', '計算日時'];
+const THEORY_READ_MOVES = 20;   // ハブへ渡す動きは品目ごとに新しい順でこの件数まで（全件はシートにある）
 const CHEST_LOC = 'チェストストッカー';
 const PREP_SOURCE_SHEET = '仕込み記録';
 const UKE_RESULTS = ['合格', '保留', '不合格'];
+// 棚卸差分（2026-11-01）：差に気づいて対応した記録。1行＝1回の入力で、同じ棚卸回・品目は後の行が勝つ（消さない）
+const DIFF_SHEET = '棚卸差分';
+const DIFF_HEADER = ['記録ID', '日時', '棚卸回', '品目ID', '品名', '棚卸の数', '数えた日の理論値', '単位', '差', '差額', 'ずれ率', '要冷蔵', '記録要否', '差分原因', '対応内容', '対応者', '対応日', '対応状況', '入れた人', '端末'];
+const DIFF_CAUSES = ['計数漏れ', '入力ミス', '出庫記録漏れ', '廃棄未記録', '納品差異', '理論値設定ミス', '原因不明'];
+const DIFF_STATES = ['未対応', '確認中', '対応済'];
+const DIFF_YEN = 1000, DIFF_RATE = 0.2;   // 対応内容まで求めるしきい値（ちょうどの値も含む）
 
 function rironRoute_(req) {
   switch (req.action) {
@@ -36,7 +45,9 @@ function rironRoute_(req) {
     case 'tanaMovePut': return movePut_(req);
     case 'tanaMoveList': return moveList_(req);
     case 'tanaMoveCancel': return moveCancel_(req);
-    case 'tanaTheory': return theoryGet_();
+    case 'tanaTheory': { const res = theoryGet_(); delete res.moves; res.diffOpen = diffRows_(res).open; return res; }
+    case 'tanaDiffList': return diffList_(req);
+    case 'tanaDiffSave': return diffSave_(req);
     case 'tanaTheoryStart': return theoryStart_(req);
     default: return { ok: false, error: 'unknown_action' };
   }
@@ -216,7 +227,7 @@ function prepItems_() {
 }
 
 /* ---- 理論在庫 ---- */
-function theoryCalc_() {
+function theoryCalc_(roundIn) {
   const master = tanaMaster_().items, byId = {}, byName = {};
   master.forEach(function (it) { byId[it.id] = it; if (!byName[it.name]) byName[it.name] = it; });
   const small = function (it) { return it.units[it.units.length - 1].u; };
@@ -237,22 +248,37 @@ function theoryCalc_() {
     return T[id] || (T[id] = { id: id, inn: 0, prepUse: 0, sold: 0, used: 0, chestIn: 0, chestOut: 0 });
   };
   Object.keys(startDate).forEach(function (id) { row(id); });
+  // 増減の明細。計算には使わない（シート「理論在庫の動き」とハブの内訳に出す）
+  const moves = [];
+  const mv = function (d, id, kind, q, src, srcId, note) { moves.push({ date: d, id: id, kind: kind, q: q, src: src, srcId: srcId, note: note }); };
 
   // 受入：合格だけ
-  const noItem = {};
+  const noItem = {}, holdQty = {};
+  const chestMv = [];   // チェストの増減（差を数えた日で切るため）
+  let holdN = 0;
   tanaRows_(UKE_SHEET, UKE_HEADER).forEach(function (r) {
     const o = ukeRowObj_(r), d = jstDate_(o.decidedAt);
+    if (o.res === '保留' && !o.canceled && String(o.route) !== '動作確認') {
+      holdN++;
+      if (o.id) holdQty[o.id] = (holdQty[o.id] || 0) + (Number(o.small) || 0);
+    }
     // 工場の受入はブルワリーアプリも書く。対応する品目が無い原料は品目IDが空で届くので、数えずに警告へ
     if (o.res !== '合格' || o.canceled || String(o.route) === '動作確認') return;
     if (!o.id) { noItem[o.name] = true; return; }
-    if (after(o.id, d)) row(o.id).inn += Number(o.small) || 0;
+    if (after(o.id, d)) {
+      row(o.id).inn += Number(o.small) || 0;
+      mv(d, o.id, '受入 合格', Number(o.small) || 0, UKE_SHEET, o.rowId, o.lot ? 'ロット ' + o.lot : '');
+    }
   });
   if (Object.keys(noItem).length) warnings.push('マスタに品目がなく計上していない受入：' + Object.keys(noItem).join('、'));
   // 使った・捨てた
   tanaRows_(FIELD_SHEET, FIELD_HEADER).forEach(function (r) {
     if (String(r[2]) !== '使った・捨てた' || String(r[15]) || String(r[7]) === '') return;
     const id = String(r[3]);
-    if (after(id, jstDate_(r[1]))) row(id).used += Number(r[7]) || 0;
+    if (after(id, jstDate_(r[1]))) {
+      row(id).used += Number(r[7]) || 0;
+      mv(jstDate_(r[1]), id, '使った・捨てた', -(Number(r[7]) || 0), FIELD_SHEET, String(r[0]), String(r[10] || ''));
+    }
   });
   // レシピ（名前でつなぐ）
   const recipes = { '商品': {}, '仕込み品': {} }, badRecipe = {};
@@ -278,11 +304,16 @@ function theoryCalc_() {
     const id = 's:' + m.name, q = (Number(o['計上量']) || 0) * m.rate;
     if (after(id, d)) {
       row(id).inn += q;
-      if (m.loc === CHEST_LOC) row(id).chestIn += q;
+      if (m.loc === CHEST_LOC) { row(id).chestIn += q; chestMv.push({ id: id, d: d, q: q }); }
+      mv(d, id, '仕込み完了', q, PREP_SOURCE_SHEET, String(o['記録ID']), String(o['計上の元'] || ''));
     }
     const rc = recipes['仕込み品'][m.name];
     if (!rc) { noPrepRecipe[m.name] = true; return; }
-    rc.forEach(function (x) { if (after(x.id, d)) row(x.id).prepUse += x.q * q; });
+    rc.forEach(function (x) {
+      if (!after(x.id, d)) return;
+      row(x.id).prepUse += x.q * q;
+      mv(d, x.id, '仕込みで使用', -(x.q * q), PREP_SOURCE_SHEET, String(o['記録ID']), m.name + ' ' + q + m.unit);
+    });
   });
   if (Object.keys(unmapped).length) warnings.push('換算が未設定で計上していない仕込み：' + Object.keys(unmapped).join('、'));
   if (Object.keys(noPrepRecipe).length) warnings.push('原料レシピがなく、原料を引いていない仕込み品：' + Object.keys(noPrepRecipe).join('、'));
@@ -299,7 +330,11 @@ function theoryCalc_() {
       const rc = recipes['商品'][it.productName], q = Number(it.qty) || 0;
       if (!q) return;
       if (!rc) { if (Object.keys(startDate).length === 0 || d > minStart_(startDate)) noRecipe[it.productName] = true; return; }
-      rc.forEach(function (x) { if (after(x.id, d)) row(x.id).sold += x.q * q; });
+      rc.forEach(function (x) {
+        if (!after(x.id, d)) return;
+        row(x.id).sold += x.q * q;
+        mv(d, x.id, '売上', -(x.q * q), '売上日別', d, it.productName + ' ' + q);
+      });
     });
   });
   const noRecipeN = Object.keys(noRecipe).length;
@@ -310,19 +345,26 @@ function theoryCalc_() {
     if (String(r[13])) return;
     const id = String(r[2]), d = jstDate_(r[1]), q = Number(r[6]) || 0;
     if (!after(id, d)) return;
-    if (String(r[10]) === CHEST_LOC) row(id).chestIn += q;
-    if (String(r[9]) === CHEST_LOC) row(id).chestOut += q;
+    if (String(r[10]) === CHEST_LOC) { row(id).chestIn += q; chestMv.push({ id: id, d: d, q: q }); }
+    if (String(r[9]) === CHEST_LOC) { row(id).chestOut += q; chestMv.push({ id: id, d: d, q: -q }); }
   });
 
-  // 棚卸：一番新しい回の最新の数（差の表示だけ）
-  const tana = {}; let latestRound = '';
-  tanaRows_(TANA_SHEET, TANA_HEADER).forEach(function (r) { if (String(r[5]) !== '' && String(r[11]) !== '動作確認' && String(r[1]) > latestRound) latestRound = String(r[1]); });
-  tanaRows_(TANA_SHEET, TANA_HEADER).forEach(function (r) {
+  // 棚卸：指定の回（無ければ一番新しい回）の最新の数と数えた日（差の表示だけ）
+  const tana = {}, tanaDay = {}; let latestRound = String(roundIn || '');
+  const tanaInput = tanaRows_(TANA_SHEET, TANA_HEADER).filter(function (r) { return String(r[11]) !== '動作確認'; });
+  if (!latestRound) tanaInput.forEach(function (r) { if (String(r[5]) !== '' && String(r[1]) > latestRound) latestRound = String(r[1]); });
+  tanaInput.forEach(function (r) {
     if (String(r[1]) !== latestRound) return;
     const k = String(r[2]), l = String(r[4]);
-    (tana[k] = tana[k] || {});
-    if (String(r[5]) === '') delete tana[k][l]; else tana[k][l] = Number(r[7]) || 0;
+    (tana[k] = tana[k] || {}); (tanaDay[k] = tanaDay[k] || {});
+    if (String(r[5]) === '') { delete tana[k][l]; delete tanaDay[k][l]; }
+    else { tana[k][l] = Number(r[7]) || 0; tanaDay[k][l] = jstDate_(r[0]); }
   });
+  // 差は「今の理論値」ではなく「数えた日の閉店後の理論値」と比べる。場所ごとに日が違うときは最後に数えた日
+  const flowBy = {};
+  moves.forEach(function (m) { (flowBy[m.id] = flowBy[m.id] || []).push(m); });
+  const flowTo = function (id, day) { return (flowBy[id] || []).reduce(function (s, m) { return m.date && m.date <= day ? s + m.q : s; }, 0); };
+  const lastDay = function (id) { return Object.keys(tanaDay[id] || {}).map(function (l) { return tanaDay[id][l]; }).sort().pop() || ''; };
 
   const rows = [], at = new Date().toISOString();
   Object.keys(T).forEach(function (id) {
@@ -337,20 +379,91 @@ function theoryCalc_() {
     if (!hasStart) warn.push('開始数なし');
     if (hasStart && val < 0) warn.push('マイナス');
     const isPrep = id.indexOf('s:') === 0, name = it ? it.name : id.replace(/^[ms]:/, '');
-    rows.push({ table: isPrep ? '仕込み品' : '原料', id: id, name: name, start: startDate[id] || '', startQty: hasStart ? conv(total) : null, inn: conv(t.inn), prepUse: conv(t.prepUse), sold: conv(t.sold), used: conv(t.used), out: 0,
-      val: hasStart ? conv(val) : null, unit: unit.u, counted: counted === null ? null : conv(counted), diff: counted === null || !hasStart ? null : conv(counted - val), warn: warn.join('、') });
+    const day = lastDay(id), canDiff = counted !== null && hasStart && day >= startDate[id];
+    const valAt = canDiff ? total + flowTo(id, day) : null;
+    rows.push({ dept: it ? it.dept : '', hold: holdQty[id] ? conv(holdQty[id]) : 0, table: isPrep ? '仕込み品' : '原料', id: id, name: name, start: startDate[id] || '', startQty: hasStart ? conv(total) : null, inn: conv(t.inn), prepUse: conv(t.prepUse), sold: conv(t.sold), used: conv(t.used), out: 0,
+      val: hasStart ? conv(val) : null, unit: unit.u, counted: counted === null ? null : conv(counted), countDay: day, valAt: canDiff ? conv(valAt) : null, diff: canDiff ? conv(counted - valAt) : null, diffSmall: canDiff ? counted - valAt : null, price: it ? (it.priceSmall || 0) : 0, warn: warn.join('、') });
     const chestStart = hasStart && st[CHEST_LOC] !== undefined;
     if (chestStart || t.chestIn || t.chestOut) {
       const cs = chestStart ? st[CHEST_LOC] : 0, cv = cs + t.chestIn - t.chestOut, cw = [];
       if (!chestStart) cw.push('開始数なし');
       if (chestStart && cv < 0) cw.push('マイナス');
       const cc = tana[id] && tana[id][CHEST_LOC] !== undefined ? tana[id][CHEST_LOC] : null;
+      const cd = tanaDay[id] && tanaDay[id][CHEST_LOC] ? tanaDay[id][CHEST_LOC] : '', cOk = cc !== null && chestStart && cd >= startDate[id];
+      const cAt = cOk ? cs + chestMv.reduce(function (s, m) { return m.id === id && m.d && m.d <= cd ? s + m.q : s; }, 0) : null;
       rows.push({ table: 'チェストストッカー', id: id, name: name, start: startDate[id] || '', startQty: chestStart ? conv(cs) : null, inn: conv(t.chestIn), prepUse: 0, sold: 0, used: 0, out: conv(t.chestOut),
-        val: chestStart ? conv(cv) : null, unit: unit.u, counted: cc === null ? null : conv(cc), diff: cc === null || !chestStart ? null : conv(cc - cv), warn: cw.join('、') });
+        val: chestStart ? conv(cv) : null, unit: unit.u, counted: cc === null ? null : conv(cc), countDay: cd, valAt: cOk ? conv(cAt) : null, diff: cOk ? conv(cc - cAt) : null, warn: cw.join('、') });
     }
   });
   rows.sort(function (a, b) { return a.table === b.table ? a.name.localeCompare(b.name, 'ja') : a.table < b.table ? -1 : 1; });
-  return { ok: true, rows: rows, warnings: warnings, salesUntil: salesUntil, round: latestRound, at: at, hasStart: Object.keys(startDate).length > 0 };
+  moves.forEach(function (m) {
+    const it = byId[m.id];
+    m.name = it ? it.name : m.id.replace(/^[ms]:/, '');
+    m.unit = it ? small(it) : '';
+  });
+  moves.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  return { ok: true, rows: rows, warnings: warnings, salesUntil: salesUntil, round: latestRound, at: at, hasStart: Object.keys(startDate).length > 0, holdN: holdN, moves: moves };
+}
+/* ---- 棚卸差分 ---- */
+/** 記録要否：差があれば「原因のみ」、しきい値に当たれば「対応まで」。差が0や理論値がない行は「不要」 */
+function diffJudge_(r, cold) {
+  if (r.diff === null || r.diff === undefined || r.diff === 0) return { need: '不要', yen: 0, rate: null, why: [] };
+  const yen = Math.round(Math.abs(r.diffSmall || 0) * (r.price || 0) * 100) / 100;
+  const rate = r.valAt ? Math.round(Math.abs(r.diff) / Math.abs(r.valAt) * 10000) / 10000 : null;
+  const why = [];
+  if (yen >= DIFF_YEN) why.push('差額' + DIFF_YEN.toLocaleString() + '円以上');
+  if (rate === null || rate >= DIFF_RATE) why.push('ずれ' + (DIFF_RATE * 100) + '%以上');
+  if (cold) why.push('要冷蔵');
+  return { need: why.length ? '対応まで' : '原因のみ', yen: yen, rate: rate, why: why };
+}
+function diffColdSet_() {
+  const cold = {};
+  tanaRows_(UKE_SET_SHEET, UKE_SET_HEADER).forEach(function (r) { cold[String(r[0])] = String(r[2]) === '要冷蔵'; });
+  return cold;
+}
+/** 回の差と記録を合わせる。差が0に戻っても、記録があれば残して見せる */
+function diffRows_(calc) {
+  const round = calc.round, cold = diffColdSet_(), rec = {}, c = {};
+  DIFF_HEADER.forEach(function (h, i) { c[h] = i; });
+  tanaRows_(DIFF_SHEET, DIFF_HEADER).forEach(function (r) { if (String(r[c['棚卸回']]) === round) rec[String(r[c['品目ID']])] = r; });
+  const out = [];
+  calc.rows.forEach(function (r) {
+    if (r.table === 'チェストストッカー') return;
+    const j = diffJudge_(r, !!cold[r.id]), x = rec[r.id];
+    if (j.need === '不要' && !x) return;
+    const o = { id: r.id, name: r.name, unit: r.unit, counted: r.counted, valAt: r.valAt, diff: r.diff, day: r.countDay, need: j.need, yen: j.yen, rate: j.rate, why: j.why, cause: '', action: '', who: '', when: '', state: '未対応', by: '', at: '', recDiff: null };
+    if (x) {
+      o.cause = String(x[c['差分原因']]); o.action = String(x[c['対応内容']]); o.who = String(x[c['対応者']]); o.when = jstDate_(x[c['対応日']]);
+      o.state = String(x[c['対応状況']]) || '未対応'; o.by = String(x[c['入れた人']]); o.at = String(x[c['日時']]); o.recDiff = Number(x[c['差']]);
+    }
+    out.push(o);
+  });
+  const order = function (o) { return (o.state === '対応済' || o.need === '不要' ? 2 : 0) + (o.need === '対応まで' ? 0 : 1); };
+  out.sort(function (a, b) { return order(a) - order(b) || a.name.localeCompare(b.name, 'ja'); });
+  return { rows: out, open: out.filter(function (o) { return o.need !== '不要' && o.state !== '対応済'; }).length };
+}
+function diffList_(req) {
+  const calc = theoryCalc_(tanaRound_(req.round)), d = diffRows_(calc);
+  return { ok: true, round: calc.round, rows: d.rows, open: d.open, causes: DIFF_CAUSES, states: DIFF_STATES, salesUntil: calc.salesUntil, hasStart: calc.hasStart, gid: tanaSheet_(DIFF_SHEET, DIFF_HEADER).getSheetId(), at: calc.at };
+}
+function diffSave_(req) {
+  const round = tanaRound_(req.round), x = req.row || {}, staff = String(req.staff || '').slice(0, 40), cause = String(x.cause || '');
+  if (!x.id || !staff || DIFF_CAUSES.indexOf(cause) < 0) return { ok: false, error: 'bad_request' };
+  const calc = theoryCalc_(round), r = calc.rows.filter(function (y) { return y.id === x.id && y.table !== 'チェストストッカー'; })[0];
+  if (!r || r.diff === null || r.diff === 0) return { ok: false, error: 'no_diff' };
+  const j = diffJudge_(r, !!diffColdSet_()[r.id]);
+  const action = String(x.action || '').trim().slice(0, 500), who = String(x.who || '').trim().slice(0, 40), when = String(x.when || '');
+  let state = String(x.state || '');
+  if (j.need === '原因のみ') state = '対応済';   // 原因を選べば足りる行
+  if (DIFF_STATES.indexOf(state) < 0) return { ok: false, error: 'bad_request' };
+  if (when && !/^\d{4}-\d{2}-\d{2}$/.test(when)) return { ok: false, error: 'bad_request' };
+  if (j.need === '対応まで' && state === '対応済' && (!action || !who || !when)) return { ok: false, error: 'need_action' };
+  const at = new Date().toISOString();
+  withLock_(function () {
+    tanaAppend_(DIFF_SHEET, DIFF_HEADER, [[Utilities.getUuid(), at, round, r.id, r.name, r.counted, r.valAt, r.unit, r.diff, j.yen, j.rate === null ? '' : j.rate, !!diffColdSet_()[r.id] ? '要冷蔵' : '', j.need, cause, action, who, when, state, staff, String(req.route || '').slice(0, 80)]]);
+  });
+  const d = diffRows_(calc);
+  return { ok: true, at: at, row: d.rows.filter(function (o) { return o.id === r.id; })[0], open: d.open };
 }
 function minStart_(m) {
   return Object.keys(m).map(function (k) { return m[k]; }).sort()[0];
@@ -369,7 +482,43 @@ function theoryGet_() {
     }));
     sh.clearContents();
     sh.getRange(1, 1, data.length, THEORY_HEADER.length).setValues(data);
+    let ms = ss.getSheetByName(MOVES_SHEET);
+    if (!ms) { ms = ss.insertSheet(MOVES_SHEET); ms.setFrozenRows(1); ms.protect().setDescription('表示専用。再計算で作り直します').setWarningOnly(true); }
+    const md = [MOVES_HEADER].concat(res.moves.map(function (m) {
+      return [m.date, m.id, m.name, m.kind, m.q, m.unit, m.src, m.srcId, m.note, res.at];
+    }));
+    ms.clearContents();
+    ms.getRange(1, 1, md.length, MOVES_HEADER.length).setValues(md);
   }
+  return res;
+}
+/* ---- ハブ（読むだけ）。棚卸用とは別の鍵で、書く操作はできない ---- */
+function theoryPair_(req) {
+  return withLock_(function () {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('THEORY_READ_KEY_HASH')) return { ok: false, error: 'already_paired' };
+    if (!req.key || String(req.key).length < 32) return { ok: false, error: 'key_too_short' };
+    props.setProperty('THEORY_READ_KEY_HASH', hash_('theory:' + req.key));
+    return { ok: true };
+  });
+}
+/** 鍵を作り直すとき用。持ち主がエディタから実行する（ハブ側の KANRI_THEORY_KEY も消すこと） */
+function theoryUnpair() {
+  PropertiesService.getScriptProperties().deleteProperty('THEORY_READ_KEY_HASH');
+  Logger.log('THEORY_READ_KEY_HASH を消しました。');
+}
+function theoryRead_(req) {
+  const stored = PropertiesService.getScriptProperties().getProperty('THEORY_READ_KEY_HASH');
+  if (!stored || !req.key || hash_('theory:' + req.key) !== stored) { Utilities.sleep(1000); return { ok: false, error: 'bad_key' }; }
+  const res = theoryGet_(), byItem = {};
+  // 新しい順に品目ごとの上限まで。差は計算を直すまで渡さない（設計 §5①）
+  for (let i = res.moves.length - 1; i >= 0; i--) {
+    const m = res.moves[i], a = byItem[m.id] || (byItem[m.id] = []);
+    if (a.length < THEORY_READ_MOVES) a.push({ date: m.date, kind: m.kind, q: Math.round(m.q * 1000) / 1000, unit: m.unit, note: m.note });
+  }
+  res.rows.forEach(function (r) { delete r.diff; delete r.diffSmall; delete r.valAt; });
+  delete res.moves;
+  res.moves = byItem;
   return res;
 }
 /** 棚卸回の数を開始数に写す。1回だけ使う想定で、同じ品目をやり直すと後の行が勝つ */
@@ -413,6 +562,7 @@ function theoryMatch_() {
 }
 function theoryForKanri_() {
   const res = theoryGet_();
+  delete res.moves;
   res.match = theoryMatch_();
   res.hold = tanaRows_(UKE_SHEET, UKE_HEADER).map(ukeRowObj_).filter(function (o) { return o.res === '保留' && !o.canceled; }).length;
   return res;
@@ -428,4 +578,22 @@ function rironLogRows_() {
     out.push({ rowId: String(r[0]), at: String(r[1]), kind: '移した', id: String(r[2]), name: String(r[3]), v: Number(r[4]), unit: String(r[5]), detail: String(r[8]), reason: String(r[9]) + ' → ' + String(r[10]), exp: '', memo: '', by: String(r[11]), route: String(r[12]), canceled: String(r[13]) });
   });
   return out;
+}
+
+/* ---- ホームハブの購買の品目マスタ用（2026-11-05）。理論在庫と同じ読むだけの鍵で確かめる ----
+   原料・資材マスタを、発注の単位（中があれば中、無ければ小）とその単価で返す。振り分けはハブ側でする */
+function purchaseItems_(req) {
+  const stored = PropertiesService.getScriptProperties().getProperty('THEORY_READ_KEY_HASH');
+  if (!stored || !req.key || hash_('theory:' + req.key) !== stored) { Utilities.sleep(1000); return { ok: false, error: 'bad_key' }; }
+  const none = function (u) { u = String(u || '').trim(); return !u || u === 'なし'; };
+  const items = kvJson_('material_master_data_v1', []).filter(function (m) { return m && m.id && String(m.name || '').trim(); }).map(function (m) {
+    const mid = !none(m.midUnit), pack = parseFloat(m.packPrice), lot = parseFloat(m.lotPrice), lq = parseFloat(m.lotQty);
+    const price = mid ? (pack > 0 ? pack : (lot > 0 && lq > 0 ? lot / lq : 0)) : (pack > 0 ? pack : 0);
+    return {
+      id: String(m.id), name: String(m.name).trim(), dept: String(m.department || ''), bunrui: String(m.bunrui || ''), sub: String(m.subCategory || ''),
+      supplier: String(m.supplier || ''), maker: String(m.maker || ''), code: String(m.itemCode || ''), status: String(m.status || ''),
+      unit: mid ? String(m.midUnit).trim() : (none(m.unit) ? '個' : String(m.unit).trim()), price: Math.round(price * 100) / 100
+    };
+  });
+  return { ok: true, items: items, at: new Date().toISOString() };
 }
