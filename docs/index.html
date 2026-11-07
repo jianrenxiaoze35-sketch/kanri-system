@@ -20075,7 +20075,7 @@ function renderRegiClose(){
       </tr>`;
     }).join("");
     return `<div class="card regi-block" style="padding:10px;">
-      <h4 style="margin:0 0 6px;">${name}</h4>
+      <h4 style="margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${name}${name==="金庫" ? `<button class="secondary" style="margin-left:auto;padding:4px 10px;font-size:12.5px;" onclick="carryKinkoToNextDay()" title="金庫の実数(枚)を翌日の金庫の理論値(枚)に入れる">➡ 翌日に引き継ぐ</button>` : ""}</h4>
       <table style="width:100%;table-layout:fixed;">
         <colgroup><col style="width:22%"><col style="width:19%"><col style="width:19%"><col style="width:19%"><col style="width:19%"></colgroup>
         <tr><th>金種</th><th>理論値(枚)</th><th>金額</th><th>実数(枚)</th><th>金額</th></tr>
@@ -20123,6 +20123,50 @@ function computeRegiClose(){
   lastRegiTheoryTotal = grandTheory;
   lastRegiActualTotal = grandActual;
   computePosCash();
+}
+
+/* 金庫の実数(枚)を翌日の金庫の理論値(枚)へ引き継ぐ（2026-11-07）。
+   翌日にまだ理論値が無いときは、レジ1〜3には固定テンプレートを入れておく（金庫だけ入ると、
+   翌日開いたときに「理論値が空ならテンプレート」が効かなくなるため）。 */
+function regiNextDayStr(d){
+  const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + 1);
+  return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+}
+function carryKinkoToNextDay(){
+  const src = regiCloseState["金庫"] || { theory: {}, actual: {} };
+  const hasActual = REGI_DENOMS.some(d=> src.actual[d] != null);
+  if(!hasActual){ alert("金庫の「実数(枚)」がまだ入っていません。数えて入れてから引き継いでください。"); return; }
+  const total = REGI_DENOMS.reduce((a, d)=> a + (src.actual[d] || 0) * d, 0);
+  const next = regiNextDayStr(regiCurrentDate);
+  const nextSt = migrateRegiCloseState(JSON.parse(regiDailyStore.getItem(regiCloseKey(next)) || "null"));
+  const nextHasTheory = REGI_NAMES.some(n=> REGI_DENOMS.some(d=> nextSt[n].theory[d] != null));
+  const nextKinko = REGI_DENOMS.reduce((a, d)=> a + (nextSt["金庫"].theory[d] || 0) * d, 0);
+  const nextKinkoSet = REGI_DENOMS.some(d=> nextSt["金庫"].theory[d] != null);
+  let msg = `${regiCurrentDate} の金庫の実数（${fmtNum(total)}円）を、${next} の金庫の理論値に入れます。`;
+  if(nextKinkoSet) msg += `
+
+${next} の金庫にはもう理論値（${fmtNum(nextKinko)}円）が入っています。上書きします。`;
+  if(!confirm(msg)) return;
+  if(!nextHasTheory && regiSettings.regiTheoryTemplate){
+    REGI_NAMES.forEach(n=>{
+      if(n === "金庫") return;
+      REGI_DENOMS.forEach(d=>{
+        const v = regiSettings.regiTheoryTemplate[n] ? regiSettings.regiTheoryTemplate[n][d] : null;
+        nextSt[n].theory[d] = (v !== undefined && v !== null) ? v : null;
+      });
+    });
+  }
+  REGI_DENOMS.forEach(d=>{ nextSt["金庫"].theory[d] = src.actual[d] != null ? src.actual[d] : null; });
+  try{
+    regiDailyStore.setItem(regiCloseKey(next), JSON.stringify(nextSt));
+  }catch(err){
+    alert("引き継ぎを保存できませんでした: " + ((err && err.message) || err));
+    return;
+  }
+  if(confirm(`引き継ぎました（${next} の金庫 理論値 ${fmtNum(total)}円）。\n\n${next} のレジ締めを開きますか？`)){
+    document.getElementById("regiDate").value = next;
+    onRegiDateChange();
+  }
 }
 
 function resetRegi(){
