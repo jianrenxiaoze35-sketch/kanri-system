@@ -18697,6 +18697,7 @@ function handleOtherPayFiles(files, source){
   const status = document.getElementById("otherPayUploadStatus");
   if(status) status.textContent = "読み込み中…";
   let done = 0, added = 0, skipped = 0;
+  const toDrive = [];   // 2026-11-12 読み取れたCSVは、元のファイルのままドライブにも保存する
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -18735,6 +18736,7 @@ function handleOtherPayFiles(files, source){
           const existIdx = otherPayArchives[source].findIndex(a => a.name === file.name);
           if(existIdx >= 0) otherPayArchives[source][existIdx] = entry; else otherPayArchives[source].push(entry);
           added++;
+          toDrive.push({ name: file.name, type: file.type, buf: e.target.result });
         }
       }catch(err){
         console.warn("その他決済CSV読込失敗:", file.name, err);
@@ -18743,13 +18745,38 @@ function handleOtherPayFiles(files, source){
       if(done === files.length){
         persistOtherPayArchives();
         syncOtherPayFeesToSalesManagement();
-        if(status) status.textContent = `取込完了：追加${added}件・スキップ${skipped}件` + (skipped ? "（列構成が想定と異なるファイルはスキップされました）" : "");
+        const msg = `取込完了：追加${added}件・スキップ${skipped}件` + (skipped ? "（列構成が想定と異なるファイルはスキップされました）" : "");
+        if(status) status.textContent = msg;
         renderOtherPayActiveView();
+        if(toDrive.length) otherPaySaveCsvToDrive(source, toDrive, status, msg);
       }
     };
     reader.onerror = () => { done++; skipped++; };
     reader.readAsArrayBuffer(file);
   });
+}
+// 取り込んだCSVを、元のファイルのままドライブのフォルダ「キャッシュレス決済CSV」（取り込み元ごとのフォルダ）へ保存する。
+// 取り込みそのものは保存の成否に関係なく済んでいる。同じ名前・同じ大きさのファイルが既にあれば保存しない（GAS側で判定）。
+function otherPayArrayBufferToBase64(buf){
+  const bytes = new Uint8Array(buf);
+  let s = "";
+  for(let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function otherPaySaveCsvToDrive(source, list, status, msg){
+  let saved = 0, same = 0, failed = 0;
+  for(const f of list){
+    try{
+      const res = await cloudApi("otherpayCsv", { source, name: f.name, mime: f.type || "text/csv", b64: otherPayArrayBufferToBase64(f.buf) });
+      if(res.skipped) same++; else saved++;
+    }catch(err){
+      console.warn("CSVのドライブ保存に失敗:", f.name, err);
+      failed++;
+    }
+  }
+  if(status && status.textContent === msg){
+    status.textContent = msg + `　ドライブ：保存${saved}件` + (same ? `・保存済み${same}件` : "") + (failed ? `・失敗${failed}件（取り込みは済んでいます）` : "");
+  }
 }
 const OTHERPAY_SOURCE_LABELS = {
   funfo: "funfo", square: "Square", paygate: "PAYGATE（精算明細）",

@@ -306,8 +306,34 @@ const READABLE_SHEETS = {
   purchase_master_data_v1: { sheet: '仕入れ', flat: true },
   sales_master_data_v1: { sheet: '売上日別', flat: true },
   labor_employees_data_v1: { sheet: '従業員', flat: true },
-  labor_attendance_data_v1: { sheet: '勤怠', flat: true }
+  labor_attendance_data_v1: { sheet: '勤怠', flat: true },
+  // 2026-11-12 ⑤その他決済集計で取り込んだキャッシュレス決済（funfo・Square・PAYGATE）。1行＝1件の決済
+  regi_otherpay_archives_v1: { sheet: 'キャッシュレス決済', otherpay: true }
 };
+const OTHERPAY_SRC_LABEL = { funfo: 'funfo 支払履歴', square: 'Square お取引', paygate: 'PAYGATE 精算明細', paygateEmoney: 'PAYGATE 電子マネー取引履歴', paygateBarcode: 'PAYGATE QRコード決済取引履歴', paygateCredit: 'PAYGATE クレジットカード処理結果' };
+const OTHERPAY_METHOD_JA = { credit: 'クレジットカード', emoney: '電子マネー', qr: 'QRコード決済', unknown: '不明' };
+const OTHERPAY_COLS = [['集計', 'use'], ['取り込み元', 'src'], ['ファイル名', 'file'], ['取り込んだ日', 'uploadedAt'], ['取引日', 'date'], ['時刻', 'time'], ['入金日', 'payDate'], ['期間', 'periodLabel'], ['決済会社', 'companyLabel'], ['ブランド', 'brand'], ['決済方法', 'method'], ['金額', 'amount'], ['手数料率(%)', 'feeRatePct'], ['手数料', 'feeAmount'], ['受取額', 'net'], ['提出済', 'submitted'], ['重複キー', 'uniqueKey']];
+/** 決済の取り込み（決済会社ごとのファイルの束）を、1行＝1件の決済に平らにする。
+ *  「集計」は画面の⑤と同じ考え方：funfo・Square・PAYGATE精算明細の最初の1件だけ「入る」。同じ決済の2件目は「重複」。PAYGATEの取引履歴3種は照合用 */
+function otherpayFlat_(obj) {
+  const out = [], seen = {};
+  Object.keys(OTHERPAY_SRC_LABEL).forEach(function (src) {
+    const main = src === 'funfo' || src === 'square' || src === 'paygate';
+    ((obj && obj[src]) || []).forEach(function (arc) {
+      (arc.rows || []).forEach(function (r) {
+        let use = '照合用';
+        if (main) { use = r.uniqueKey && seen[r.uniqueKey] ? '重複' : '入る'; if (r.uniqueKey) seen[r.uniqueKey] = 1; }
+        const o = {};
+        Object.keys(r).forEach(function (k) { o[k] = r[k]; });
+        o.use = use; o.src = OTHERPAY_SRC_LABEL[src]; o.file = arc.name || ''; o.uploadedAt = arc.uploadedAt || '';
+        o.method = OTHERPAY_METHOD_JA[r.method] || r.method || '';
+        o.submitted = arc.submitted ? '済' + (arc.submittedAt ? ' ' + arc.submittedAt : '') : '';
+        out.push(o);
+      });
+    });
+  });
+  return out;
+}
 function readableCell_(v) {
   if (v === null || v === undefined) return '';
   if (Array.isArray(v)) v = v.map(function (x) { return typeof x === 'object' ? JSON.stringify(x) : x; }).join('、');
@@ -322,9 +348,13 @@ function readableWrite_(key, jsonText) {
   const def = READABLE_SHEETS[key];
   if (!def) return 0;
   let list = JSON.parse(jsonText || '[]');
-  if (list && !Array.isArray(list)) list = list.salesDays || list.items || [];
+  if (def.otherpay) list = otherpayFlat_(list);
+  else if (list && !Array.isArray(list)) list = list.salesDays || list.items || [];
   let header, rows;
-  if (def.flat) {
+  if (def.otherpay) {
+    header = OTHERPAY_COLS.map(function (c) { return c[0]; });
+    rows = list.map(function (o) { return OTHERPAY_COLS.map(function (c) { return readableCell_(o[c[1]]); }); });
+  } else if (def.flat) {
     const keys = [];
     list.forEach(function (o) { Object.keys(o || {}).forEach(function (k) {
       const v = o[k];
@@ -359,6 +389,57 @@ function readableAfterPut_(req) {
       readableWrite_(it.k, text);
     } catch (err) { console.error('readableAfterPut_ ' + it.k + ': ' + err); }
   });
+}
+/* ---- キャッシュレス決済のCSVをドライブへ（2026-11-12） ----
+ * 置き場：このスプレッドシートと同じフォルダの「キャッシュレス決済CSV」› 取り込み元ごとのフォルダ。
+ * 同じ名前・同じ大きさのファイルが既にあれば保存しない（同じCSVを取り込み直しても増えない）。 */
+const OTHERPAY_CSV_FOLDER = 'キャッシュレス決済CSV';
+const OTHERPAY_CSV_MAX = 20 * 1024 * 1024;
+function otherpayCsvRoot_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('OTHERPAY_CSV_FOLDER_ID');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  const parents = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId()).getParents();
+  const parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  const it = parent.getFoldersByName(OTHERPAY_CSV_FOLDER);
+  const root = it.hasNext() ? it.next() : parent.createFolder(OTHERPAY_CSV_FOLDER);
+  props.setProperty('OTHERPAY_CSV_FOLDER_ID', root.getId());
+  return root;
+}
+function otherpayCsvSub_(root, label) {
+  const it = root.getFoldersByName(label);
+  return it.hasNext() ? it.next() : root.createFolder(label);
+}
+function otherpayCsv_(req) {
+  const label = OTHERPAY_SRC_LABEL[req.source];
+  if (!label) return { ok: false, error: 'bad_source' };
+  const name = String(req.name || '').replace(/[\\/]/g, '_').slice(0, 200);
+  if (!name || !req.b64) return { ok: false, error: 'bad_file' };
+  const bytes = Utilities.base64Decode(String(req.b64));
+  if (bytes.length > OTHERPAY_CSV_MAX) return { ok: false, error: 'too_large' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const folder = otherpayCsvSub_(otherpayCsvRoot_(), label);
+    const same = folder.getFilesByName(name);
+    while (same.hasNext()) { const f = same.next(); if (!f.isTrashed() && f.getSize() === bytes.length) return { ok: true, skipped: true, id: f.getId() }; }
+    const file = folder.createFile(Utilities.newBlob(bytes, String(req.mime || 'text/csv'), name));
+    return { ok: true, skipped: false, id: file.getId() };
+  } finally { lock.releaseLock(); }
+}
+/** 持ち主がエディタから1回実行する：ドライブの権限を承認し、フォルダ「キャッシュレス決済CSV」と取り込み元ごとのフォルダを作る */
+function otherpayCsvSetup() {
+  const root = otherpayCsvRoot_();
+  Object.keys(OTHERPAY_SRC_LABEL).forEach(function (k) { otherpayCsvSub_(root, OTHERPAY_SRC_LABEL[k]); });
+  console.log('キャッシュレス決済CSV: ' + root.getUrl());
+  return root.getUrl();
+}
+/** 2026-11-12 シート「キャッシュレス決済」を今の kv から作り直す。持ち主がエディタから1回だけ実行する（そのあとは取り込みのたびに自動） */
+function otherpaySheetNow() {
+  const v = kvValue_('regi_otherpay_archives_v1');
+  const n = v === null ? 'なし' : readableWrite_('regi_otherpay_archives_v1', v);
+  console.log('キャッシュレス決済: ' + n);
+  return n;
 }
 /** 全部作り直す（最初の1回用）。何度呼んでも同じ結果。5分に1回まで */
 function tanaSheetSync_() {
