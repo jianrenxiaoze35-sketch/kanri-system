@@ -733,7 +733,7 @@
           <thead>
             <tr>
               <th><input type="checkbox" id="purchaseSelectAllCheckbox" onchange="toggleSelectAllPurchases(this.checked)"></th>
-              <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
+              <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
               <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
               <th>仕入れ先</th><th>メモ</th>
               <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -803,7 +803,7 @@
             <thead>
               <tr>
                 <th><input type="checkbox" disabled></th>
-                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
+                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
                 <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -823,7 +823,7 @@
             <thead>
               <tr>
                 <th><input type="checkbox" disabled></th>
-                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>品名</th>
+                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
                 <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -2336,6 +2336,7 @@
       <div class="form-field"><label>納品日</label><input type="date" id="f_pu_deliveryDate"></div>
       <div class="form-field"><label>請求日</label><input type="date" id="f_pu_billingDate" onchange="refreshPurchaseAllocBox()"></div>
       <div class="form-field"><label>請求書番号</label><input type="text" id="f_pu_invoiceNumber" oninput="refreshPurchaseAllocBox()"></div>
+      <div class="form-field"><label>部署</label><select id="f_pu_busho"></select></div>
       <div class="form-field"><label>品名</label><input type="text" id="f_pu_itemName" placeholder="請求書・納品書に記載の品名など"></div>
       <div class="form-field"><label>大分類</label><select id="f_pu_department"></select></div>
       <div class="form-field"><label>小分類</label><select id="f_pu_category" onchange="refreshPurchaseAllocBox()"></select></div>
@@ -2784,9 +2785,20 @@ const DEPARTMENTS = [
   { id: "craft", name: "クラフトビール事業部", menus: null },
   { id: "shop",  name: "売店", menus: null },
   { id: "eigyo", name: "営業", menus: null },
-  { id: "ec",    name: "EC",   menus: null }
+  { id: "ec",    name: "EC",   menus: null },
+  // 全体：全部門のデータを合わせて表示・編集する（実データは持たない。保存すると、各データを元の部門へ振り分ける）
+  { id: "all",   name: "全体", menus: null }
 ];
+const ALL_DEPT_ID = "all";
 const DEFAULT_DEPT_ID = "craft";
+function memberDepts(){ return DEPARTMENTS.filter(d=>d.id !== ALL_DEPT_ID); }
+// 仕入れの「部署」（設定の分類）の値から、対応する部門IDを返す（部門の名称と一致するもの。なければnull）
+function deptIdForBusho(v){
+  const n = (v === undefined || v === null) ? "" : String(v).replace(/\s/g, "");
+  if(!n) return null;
+  const d = memberDepts().find(x=>x.name.replace(/\s/g, "") === n);
+  return d ? d.id : null;
+}
 const DEPT_STORAGE_KEY = "kanri_dept_v1";
 const ACCOUNTS_KEY = "app_accounts_v1"; // アカウント（部門をまたいで共通。クラウドに保存される）
 const DEPT_SHARED_KEYS = [ACCOUNTS_KEY];
@@ -2799,48 +2811,125 @@ function getCurrentDept(){ return DEPARTMENTS.find(d=>d.id===currentDeptId) || D
 function isDeptSharedKey(k){ return DEPT_SHARED_KEYS.some(p=> p.endsWith("*") ? k.startsWith(p.slice(0,-1)) : k===p); }
 // 論理キー → 実キー
 function deptStoreKey(k){
-  return (currentDeptId === DEFAULT_DEPT_ID || isDeptSharedKey(k)) ? k : `dept:${currentDeptId}:${k}`;
+  return (currentDeptId === DEFAULT_DEPT_ID || currentDeptId === ALL_DEPT_ID || isDeptSharedKey(k)) ? k : `dept:${currentDeptId}:${k}`;
+}
+// 部門IDと論理キーから、実際の保存キーを返す
+function deptRealKey(deptId, k){
+  return (deptId === DEFAULT_DEPT_ID || isDeptSharedKey(k)) ? k : `dept:${deptId}:${k}`;
 }
 // 実キー → 現在の部門から見える論理キー（見えない＝他部門のデータならnull）
 function deptLogicalKey(real){
   const m = /^dept:([^:]+):(.*)$/.exec(real);
+  if(currentDeptId === ALL_DEPT_ID) return m ? m[2] : real; // 全体：全部門のキーが見える
   if(m) return m[1] === currentDeptId ? m[2] : null;
   return (currentDeptId === DEFAULT_DEPT_ID || isDeptSharedKey(real)) ? real : null;
 }
 function deptVisibleKeys(){
-  const out = [];
-  _regiDailyCache.forEach((v, real)=>{ const k = deptLogicalKey(real); if(k !== null) out.push(k); });
+  const out = [], seen = new Set();
+  _regiDailyCache.forEach((v, real)=>{ const k = deptLogicalKey(real); if(k !== null && !seen.has(k)){ seen.add(k); out.push(k); } });
   return out;
 }
+/* ---- 全体（全部門）の読み書き ----
+   読む：配列（レコードの一覧）のデータは、全部門のものを合わせて返す（各レコードに、元の部門を _dept として付ける）。
+         配列でないデータ（設定など）は、クラフトビール事業部のものを返す。
+   書く：配列は、レコードを元の部門へ振り分けて保存する（_dept → 仕入れの「部署」 → 元の部門にあるid → クラフトビール事業部、の順で決める）。
+         配列でないデータは、クラフトビール事業部へ保存する。
+   ※ 全体でレコードを全件空にする保存は、全部門のデータを一度に消してしまうため、受け付けない（1件ずつの削除は可能）。 */
+function _allParse(v){
+  if(v === null || v === undefined) return { ok: true, arr: null };
+  try{
+    const a = JSON.parse(v);
+    if(Array.isArray(a) && a.every(x=>x && typeof x === "object" && !Array.isArray(x))) return { ok: true, arr: a };
+  }catch(e){}
+  return { ok: false, arr: null };
+}
+function allDeptGet(key){
+  if(isDeptSharedKey(key)) return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null;
+  const parts = [];
+  for(const d of memberDepts()){
+    const real = deptRealKey(d.id, key);
+    const r = _allParse(_regiDailyCache.has(real) ? _regiDailyCache.get(real) : null);
+    if(!r.ok) return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null; // 配列でないデータ：クラフトビール事業部のもの
+    if(r.arr) parts.push([d.id, r.arr]);
+  }
+  if(!parts.length) return null;
+  const merged = [];
+  parts.forEach(([id, arr])=>arr.forEach(x=>{ x._dept = id; merged.push(x); }));
+  return JSON.stringify(merged);
+}
+function allDeptSet(key, value, setReal){
+  if(isDeptSharedKey(key)){ setReal(key, value); return; }
+  const r = _allParse(value);
+  if(!r.ok || !r.arr){ setReal(deptRealKey(DEFAULT_DEPT_ID, key), value); return; }
+  const members = memberDepts().map(d=>d.id);
+  const idSets = {}; let existingTotal = 0;
+  members.forEach(id=>{
+    const real = deptRealKey(id, key);
+    const cur = _allParse(_regiDailyCache.has(real) ? _regiDailyCache.get(real) : null);
+    idSets[id] = new Set((cur.arr || []).map(x=>x.id).filter(v=>v !== undefined && v !== null));
+    existingTotal += (cur.arr || []).length;
+  });
+  if(!r.arr.length && existingTotal > 1){ console.warn("全体：全部門のデータを空にする保存は受け付けません:", key); return; }
+  const buckets = {}; members.forEach(id=>{ buckets[id] = []; });
+  r.arr.forEach(x=>{
+    let owner = (key === PURCHASES_STORAGE_KEY) ? deptIdForBusho(x.busho) : null;
+    if(!owner && x._dept && buckets[x._dept]) owner = x._dept;
+    if(!owner && x.id !== undefined && x.id !== null) owner = members.find(id=>idSets[id].has(x.id)) || null;
+    if(!owner) owner = DEFAULT_DEPT_ID;
+    const copy = Object.assign({}, x); delete copy._dept;
+    buckets[owner].push(copy);
+  });
+  members.forEach(id=>{
+    const real = deptRealKey(id, key);
+    const json = JSON.stringify(buckets[id]);
+    const has = _regiDailyCache.has(real);
+    if(!has && !buckets[id].length) return;
+    if(has && _regiDailyCache.get(real) === json) return;
+    setReal(real, json);
+  });
+}
 // アプリのコードからはこのオブジェクトをlocalStorageと同じ感覚で使う（アプリが保存する全データが対象）。
+function _storeSetReal(key, value){
+  if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
+  const _prev = _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null;
+  const _changed = _prev !== value;
+  _regiDailyCache.set(key, value);
+  if(_changed) cloudOnChange(key, _prev);
+  regiIdbPut(key, value).then(()=>{
+    // 保存に成功したら、次に失敗した際は改めてアラートを表示できるようフラグを戻す
+    _regiIdbWriteErrorAlerted = false;
+  }).catch(err=>{
+    console.error("regiDailyStore: IndexedDBへの保存に失敗しました:", key, err);
+    if(!_regiIdbWriteErrorAlerted && !_suppressQuotaAlert){
+      _regiIdbWriteErrorAlerted = true;
+      alert("データの保存中にエラーが発生しました。ブラウザがIndexedDBを利用できない状態（プライベートブラウジング中など）の可能性があります。");
+    }
+  });
+}
+function _storeRemoveReal(key){
+  if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
+  const _had = _regiDailyCache.has(key);
+  const _prev = _had ? _regiDailyCache.get(key) : null;
+  _regiDailyCache.delete(key);
+  if(_had) cloudOnChange(key, _prev);
+  regiIdbDelete(key).catch(err=>console.error("regiDailyStore: IndexedDBからの削除に失敗しました:", key, err));
+}
 const regiDailyStore = {
-  getItem(key){ key = deptStoreKey(key); return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null; },
+  getItem(key){
+    if(currentDeptId === ALL_DEPT_ID) return allDeptGet(key);
+    key = deptStoreKey(key); return _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null;
+  },
   setItem(key, value){
-    if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
-    key = deptStoreKey(key);
-    const _prev = _regiDailyCache.has(key) ? _regiDailyCache.get(key) : null;
-    const _changed = _prev !== value;
-    _regiDailyCache.set(key, value);
-    if(_changed) cloudOnChange(key, _prev);
-    regiIdbPut(key, value).then(()=>{
-      // 保存に成功したら、次に失敗した際は改めてアラートを表示できるようフラグを戻す
-      _regiIdbWriteErrorAlerted = false;
-    }).catch(err=>{
-      console.error("regiDailyStore: IndexedDBへの保存に失敗しました:", key, err);
-      if(!_regiIdbWriteErrorAlerted && !_suppressQuotaAlert){
-        _regiIdbWriteErrorAlerted = true;
-        alert("データの保存中にエラーが発生しました。ブラウザがIndexedDBを利用できない状態（プライベートブラウジング中など）の可能性があります。");
-      }
-    });
+    if(currentDeptId === ALL_DEPT_ID){ if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; } allDeptSet(key, value, _storeSetReal); return; }
+    _storeSetReal(deptStoreKey(key), value);
   },
   removeItem(key){
-    if(!_appDataLoaded){ _warnWriteBeforeBoot(key); return; }
-    key = deptStoreKey(key);
-    const _had = _regiDailyCache.has(key);
-    const _prev = _had ? _regiDailyCache.get(key) : null;
-    _regiDailyCache.delete(key);
-    if(_had) cloudOnChange(key, _prev);
-    regiIdbDelete(key).catch(err=>console.error("regiDailyStore: IndexedDBからの削除に失敗しました:", key, err));
+    if(currentDeptId === ALL_DEPT_ID){
+      if(isDeptSharedKey(key)) _storeRemoveReal(key);
+      else memberDepts().forEach(d=>_storeRemoveReal(deptRealKey(d.id, key)));
+      return;
+    }
+    _storeRemoveReal(deptStoreKey(key));
   },
   keys(){ return deptVisibleKeys(); },
   key(i){ return deptVisibleKeys()[i] ?? null; },
@@ -3529,6 +3618,7 @@ const DEFAULT_OPTIONS = {
   supplier: ["仕入れ先A", "仕入れ先B", "仕入れ先C", "その他"],
   salesCategory: ["レストラン", "Shop"],
   purchaseStatus: ["発注済み", "納品済み", "納品ミス"],
+  busho: [],
   // 中分類(bunrui)ごとに選択できる小分類(category)を制限するための対応表。
   // キー：bunruiの値、値：許可するcategory値の配列。キーが無い、または配列が空の場合は
   // 制限なし（全てのcategory値が選択可能）を意味する。
@@ -3552,7 +3642,8 @@ const FIELD_LABELS = {
   storageLocation: "保管場所（原料・資材）",
   maker: "メーカー（原料・資材）",
   supplier: "仕入れ先（原料・資材）",
-  purchaseStatus: "ステータス（仕入れ）"
+  purchaseStatus: "ステータス（仕入れ）",
+  busho: "部署（仕入れ）"
 };
 const OPTIONS_KEY = "product_master_options_v1";
 let OPTIONS = JSON.parse(JSON.stringify(DEFAULT_OPTIONS)); // 安全なデフォルト値。実際の内容はブート時に読み込む
@@ -3805,6 +3896,7 @@ const OPTION_REG_FIELDS = {
     { opt: "supplier", f: "supplier", label: "仕入れ先" },
     { opt: "maker", f: "maker", label: "メーカー" },
     { opt: "purchaseStatus", f: "status", label: "ステータス" },
+    { opt: "busho", f: "busho", label: "部署" },
     { opt: "unitMid", f: "unit", label: "単位(中)" },
     { opt: "unit", f: "packUnit", label: "単位(小)" },
     { opt: "lotUnit", f: "lotUnit", label: "単位(大)" }
@@ -3979,9 +4071,18 @@ function closeOptionRegistration(doRegister){
 registerBootStep(function(){
   snapshotMaterialMakers(); // マスタ→仕入れ管理のメーカー反映の基準（起動時点のメーカー）
   // データに入っているメーカー名を、設定の分類の「メーカー」へ追加する（起動のたびに。以前は初回だけで、後から入ったメーカーが反映されなかった）
+  ensureBushoOptions(); // 仕入れの「部署」の選択肢に、部門の名称を入れる
   syncMakerOptionsFromData();
   autoRegisterOptionsFromData(); // 分類・単位・仕入れ先なども、同様に自動で追加する
 });
+// 仕入れの「部署」の選択肢に、部門の名称（全体を除く）が無ければ追加する（削除はしない）
+function ensureBushoOptions(){
+  if(!Array.isArray(OPTIONS.busho)) OPTIONS.busho = [];
+  let changed = false;
+  memberDepts().forEach(d=>{ if(!OPTIONS.busho.includes(d.name)){ OPTIONS.busho.push(d.name); changed = true; } });
+  if(changed){ try{ appStore.setItem(OPTIONS_KEY, JSON.stringify(OPTIONS)); }catch(e){ console.warn(e); } }
+  return changed;
+}
 // 原料・資材・半製品マスタ・仕入れ管理に入っているメーカー名で、設定の分類にないものを、設定の分類に自動で追加する（削除はしない）。
 // 追加があれば true。入力中の画面の値を消さないよう、選択肢は作り直さず、足すだけにする。
 function syncMakerOptionsFromData(){
@@ -4187,6 +4288,9 @@ registerBootStep(function(){
     if(p.bunrui === "送料"){ p.bunrui = "送料/その他"; changed = true; }
   });
   if(changed) appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
+  // 他の部門の「部署」が付いた行が、この部門のデータに入っていれば、その部門へ移す（行は消さない）
+  const own = routePurchasesToOwnDept(purchases);
+  if(own.length !== purchases.length){ purchases = own; appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases)); }
 });
 
 // 原料・資材・半製品マスタの「ステータス」は、仕入れ管理に仕入れデータが1件でもあれば「在庫〇」、
@@ -4254,7 +4358,32 @@ function absorbNewSupplierNames(supplierNames){
   return added;
 }
 
+// 仕入れ行の「部署」の表示名。未設定なら、その行が入っている部門（全体では元の部門）の名称。
+function purchaseBushoLabel(p){
+  if(p && p.busho) return p.busho;
+  if(p && p._dept){ const d = DEPARTMENTS.find(x=>x.id === p._dept); if(d) return d.name; }
+  return currentDeptId === ALL_DEPT_ID ? "" : getCurrentDept().name;
+}
+// 他の部門の「部署」が付いた仕入れ行を、その部門の仕入れデータへ移す（行は消さず、移し先に追加・更新する）。戻り値は、この部門に残る行。
+function routePurchasesToOwnDept(list){
+  if(currentDeptId === ALL_DEPT_ID) return list; // 全体では、保存時に、部署の部門へ振り分ける
+  const own = [], moved = {};
+  list.forEach(p=>{
+    const d = deptIdForBusho(p && p.busho);
+    if(d && d !== currentDeptId) (moved[d] = moved[d] || []).push(p); else own.push(p);
+  });
+  Object.keys(moved).forEach(d=>{
+    const real = deptRealKey(d, PURCHASES_STORAGE_KEY);
+    let arr = [];
+    try{ arr = JSON.parse(_regiDailyCache.has(real) ? _regiDailyCache.get(real) : "[]") || []; }catch(e){ arr = []; }
+    const pos = new Map(arr.map((x, i)=>[x && x.id, i]));
+    moved[d].forEach(r=>{ if(pos.has(r.id)) arr[pos.get(r.id)] = r; else arr.push(r); });
+    _storeSetReal(real, JSON.stringify(arr));
+  });
+  return own;
+}
 function savePurchases(){
+  { const own = routePurchasesToOwnDept(purchases); if(own.length !== purchases.length) purchases = own; }
   syncMakerOptionsFromData(); // メーカーは、設定の分類へ自動で追加する
   scheduleOptionRegistrationCheck(); // 設定にない値があれば、保存のあとで登録確認を出す
   invalidateMaterialOtherExpenseCache();
@@ -4286,6 +4415,7 @@ function openPurchaseForm(purchase){
   document.getElementById("f_pu_invoiceNumber").value = purchase ? (purchase.invoiceNumber || "") : "";
   document.getElementById("f_pu_deliveryDate").value = purchase ? (purchase.deliveryDate || "") : "";
   document.getElementById("f_pu_billingDate").value = purchase ? (purchase.billingDate || "") : "";
+  document.getElementById("f_pu_busho").value = purchase ? purchaseBushoLabel(purchase) : (currentDeptId === ALL_DEPT_ID ? "" : getCurrentDept().name);
   document.getElementById("f_pu_department").value = purchase ? (purchase.department || "") : "";
   document.getElementById("f_pu_bunrui").value = purchase ? (purchase.bunrui || "") : "";
   refreshPurchaseCategoryOptions(purchase ? (purchase.category || "") : "");
@@ -4503,6 +4633,7 @@ function savePurchase(){
   const invoiceNumber = document.getElementById("f_pu_invoiceNumber").value.trim();
   const deliveryDate = document.getElementById("f_pu_deliveryDate").value;
   const billingDate = document.getElementById("f_pu_billingDate").value;
+  const busho = document.getElementById("f_pu_busho").value;
   const department = document.getElementById("f_pu_department").value;
   const category = document.getElementById("f_pu_category").value;
   const bunrui = document.getElementById("f_pu_bunrui").value;
@@ -4530,7 +4661,7 @@ function savePurchase(){
     .map(it=>({ materialId: it.materialId || "", qty: (hasValidQty(it) ? parseFloat(it.qty) : (isOtherExpense && !it.materialId ? 1 : 0)), amount: parseFloat(it.amount) || 0 }));
 
   const record = {
-    id, date, supplier, status, itemName, invoiceNumber, deliveryDate, billingDate, department, category, bunrui, unit, qtyLevel, orderUnit, memo, packQty, packUnit, lotQty, largeQty, lotUnit, maker, items,
+    id, date, supplier, status, itemName, invoiceNumber, deliveryDate, billingDate, busho, department, category, bunrui, unit, qtyLevel, orderUnit, memo, packQty, packUnit, lotQty, largeQty, lotUnit, maker, items,
     quotationFile: currentQuotationFile,
     invoiceFile: currentInvoiceFile,
     // その他経費の按分先（空＝請求書内の全ての通常行へ均等に按分）。その他経費の行でのみ有効。
@@ -5068,6 +5199,7 @@ function renderPurchaseRow(p, otherExpenseShare, extraRowStyle){
       <td>${formatDateDisplay(p.date)}</td>
       <td>${formatDateDisplay(p.deliveryDate)}</td>
       <td>${formatDateDisplay(p.billingDate)}</td>
+      <td class="text">${escAttr(purchaseBushoLabel(p))}</td>
       <td class="text" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escAttr(p.itemName||"")}">${p.itemName || ""}</td>
       <td>${p.department || ""}</td>
       <td>${p.bunrui || ""}</td>
@@ -5141,7 +5273,7 @@ function renderPurchases(){
       const targetedNote = ag.targetedTotal ? `／個別指定 ${fmtNum(Math.round(ag.targetedTotal*100)/100)}円は指定した行へ` : "";
       otherExpenseNote = ` <span style="font-weight:400;color:var(--muted);">（その他経費${fmtNum(Math.round(otherExpenseTotal*100)/100)}円：全体按分 ${fmtNum(Math.round(ag.generalTotal*100)/100)}円を通常行${regularItems.length}件へ均等に＝1行あたり${fmtNum(Math.round(ag.share*100)/100)}円${targetedNote}）</span>`;
     }
-    const headerRow = `<tr class="group-header"><td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(g.label)} <span style="font-weight:400;color:var(--muted);">（${g.items.length}件・合計${fmtNum(Math.round(groupTotal*100)/100)}円）</span>${otherExpenseNote}</td></tr>`;
+    const headerRow = `<tr class="group-header"><td colspan="23" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);">${escAttr(g.label)} <span style="font-weight:400;color:var(--muted);">（${g.items.length}件・合計${fmtNum(Math.round(groupTotal*100)/100)}円）</span>${otherExpenseNote}</td></tr>`;
     const rowsHtml = g.items.map(p=>{
       if(isOtherExpensePurchase(p)) return renderPurchaseRow(p, null);
       // その他経費按分(送料/その他・イニシャルコスト・値引・コスト・割引)は、金額比例ではなく
@@ -5343,7 +5475,7 @@ function renderPurchaseBunruiView(){
   body.innerHTML = keys.map(key=>{
     const items = groupsMap.get(key).slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
     const total = items.reduce((s,p)=>s+purchaseItemsTotal(p),0);
-    const headerRow = `${purchaseGroupHeaderOpen("bunrui", key)}<td colspan="22" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);"><span class="pg-chev">▼</span> ${escAttr(key)} <span style="font-weight:400;color:var(--muted);">（${items.length}件・合計${fmtNum(Math.round(total*100)/100)}円）</span></td></tr>`;
+    const headerRow = `${purchaseGroupHeaderOpen("bunrui", key)}<td colspan="23" style="text-align:left;background:var(--bg);font-weight:700;color:var(--main-dark);"><span class="pg-chev">▼</span> ${escAttr(key)} <span style="font-weight:400;color:var(--muted);">（${items.length}件・合計${fmtNum(Math.round(total*100)/100)}円）</span></td></tr>`;
     const rowsHtml = items.map(p=>renderPurchaseRow(p, null).replace(/<tr/, `<tr data-pgkey="${escAttr(key)}"`)).join("");
     return headerRow + rowsHtml;
   }).join("");
@@ -5498,7 +5630,7 @@ function purchaseDraftFromRecord(p){
   return {
     id: p.id, date: p.date || "", supplier: p.supplier || "",
     status: p.status || "", itemName: p.itemName || "", invoiceNumber: p.invoiceNumber || "", deliveryDate: p.deliveryDate || "",
-    billingDate: p.billingDate || "", department: p.department || "", category: p.category || "", bunrui: p.bunrui || "", unit: p.unit || "", qtyLevel: purchaseQtyLevel(p), orderUnit: p.orderUnit || "",
+    billingDate: p.billingDate || "", busho: purchaseBushoLabel(p), department: p.department || "", category: p.category || "", bunrui: p.bunrui || "", unit: p.unit || "", qtyLevel: purchaseQtyLevel(p), orderUnit: p.orderUnit || "",
     memo: p.memo || "",
     packQty: p.packQty ?? "", packUnit: p.packUnit || "", lotQty: p.lotQty ?? "", largeQty: p.largeQty ?? "", lotUnit: p.lotUnit || "", maker: p.maker || "",
     materialId: primary.materialId || "", qty: primary.qty ?? "", amount: primary.amount ?? "",
@@ -5522,7 +5654,7 @@ function closePurchasesBulk(){
 }
 
 function addPurchaseBulkRow(){
-  purchasesBulkDraft.push({ id:"", date: todayStr(), supplier:"", status:"発注済み", itemName:"", invoiceNumber:"", deliveryDate:"", billingDate:"", bunrui:"", unit:"", qtyLevel:"中", memo:"", packQty:"", packUnit:"", lotQty:"", largeQty:"", lotUnit:"", maker:"", materialId:"", qty:"", amount:"", extraItems:[], quotationFile:null, invoiceFile:null });
+  purchasesBulkDraft.push({ id:"", date: todayStr(), supplier:"", status:"発注済み", itemName:"", invoiceNumber:"", deliveryDate:"", billingDate:"", busho: (currentDeptId === ALL_DEPT_ID ? "" : getCurrentDept().name), bunrui:"", unit:"", qtyLevel:"中", memo:"", packQty:"", packUnit:"", lotQty:"", largeQty:"", lotUnit:"", maker:"", materialId:"", qty:"", amount:"", extraItems:[], quotationFile:null, invoiceFile:null });
   renderPurchasesBulkGrid();
 }
 
@@ -5590,6 +5722,7 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>仕入れ日 *</label><input type="date" value="${escAttr(r.date)}" oninput="updatePurchaseBulk(${i},'date',this.value)"></div>
         <div class="form-field"><label>納品日</label><input type="date" value="${escAttr(r.deliveryDate)}" oninput="updatePurchaseBulk(${i},'deliveryDate',this.value)"></div>
         <div class="form-field"><label>請求日</label><input type="date" value="${escAttr(r.billingDate)}" oninput="updatePurchaseBulk(${i},'billingDate',this.value)"></div>
+        <div class="form-field"><label>部署</label>${bulkSelect(OPTIONS.busho, r.busho, `updatePurchaseBulk(${i},'busho',this.value)`)}</div>
         <div class="form-field"><label>請求書番号</label><input type="text" value="${escAttr(r.invoiceNumber)}" oninput="updatePurchaseBulk(${i},'invoiceNumber',this.value)"></div>
         <div class="form-field"><label>品名</label><input type="text" value="${escAttr(r.itemName)}" oninput="updatePurchaseBulk(${i},'itemName',this.value)"></div>
         <div class="form-field"><label>大分類</label>${bulkSelect(OPTIONS.department, r.department, `updatePurchaseBulk(${i},'department',this.value)`)}</div>
@@ -5660,7 +5793,7 @@ function savePurchasesBulk(){
       id, date: r.date, supplier: r.supplier || "",
       status: r.status || "", itemName: (r.itemName||"").toString().trim(),
       invoiceNumber: (r.invoiceNumber||"").toString().trim(), deliveryDate: r.deliveryDate || "",
-      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: (r.qtyLevel === "発注" || r.qtyLevel === "大" || r.qtyLevel === "小" || r.qtyLevel === "なし") ? r.qtyLevel : "中", orderUnit: (r.orderUnit||"").toString().trim(),
+      billingDate: r.billingDate || "", busho: (r.busho||"").toString().trim(), department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: (r.qtyLevel === "発注" || r.qtyLevel === "大" || r.qtyLevel === "小" || r.qtyLevel === "なし") ? r.qtyLevel : "中", orderUnit: (r.orderUnit||"").toString().trim(),
       memo: (r.memo||"").toString().trim(),
       packQty: parseFloat(r.packQty) || 0, packUnit: r.packUnit || "", lotQty: parseFloat(r.lotQty) || 0, largeQty: parseFloat(r.largeQty) || 0, lotUnit: r.lotUnit || "", maker: (r.maker||"").toString().trim(),
       items,
@@ -5690,7 +5823,7 @@ function buildPurchasesExportTable(){
   // 請求書アップロード用テンプレート（Googleスプレッドシート）の見出しと並びに合わせる。
   // 末尾の「請求書番号」「発注数の単位区分」は、取り込み直したときに請求書のまとまり・発注数の区分を戻すための列。
   // 取込側は旧い見出し名でも読み込める（PURCHASE_*_HEADER_ALIASES参照）。
-  const headers = ["ステータス","仕入れ日","納品日","請求日","品名","大分類","中分類","小分類","発注数","発注数の単位","価格税込(中)","金額合計税込","その他経費按分","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(中)","単位(中)","数量(大)","単位(大)","メーカー","請求書番号","発注数の単位区分"];
+  const headers = ["ステータス","仕入れ日","納品日","請求日","部署","品名","大分類","中分類","小分類","発注数","発注数の単位","価格税込(中)","金額合計税込","その他経費按分","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(中)","単位(中)","数量(大)","単位(大)","メーカー","請求書番号","発注数の単位区分"];
   const allocCtx = computePurchaseAllocationContext();
   const rows = [];
   purchases.forEach(p=>{
@@ -5702,7 +5835,7 @@ function buildPurchasesExportTable(){
       const qtyNum = parseFloat(it.qty) || 0;
       const amountNum = parseFloat(it.amount) || 0;
       const unitPrice = qtyNum ? Math.round((amountNum / (qtyNum * purchaseQtyMidFactor(p))) * 100) / 100 : "";
-      rows.push([p.status||"", p.date||"", p.deliveryDate||"", p.billingDate||"", p.itemName||"", p.department||"", p.bunrui||"", p.category||"",
+      rows.push([p.status||"", p.date||"", p.deliveryDate||"", p.billingDate||"", purchaseBushoLabel(p), p.itemName||"", p.department||"", p.bunrui||"", p.category||"",
         it.qty ?? "", purchaseQtyUnitPlain(p), unitPrice, it.amount ?? "", share, p.supplier||"", p.memo||"",
         p.packQty ?? "", p.packUnit||"", p.lotQty ?? "", p.unit||"", largeQty, p.lotUnit||"", p.maker||"", p.invoiceNumber||"", purchaseQtyLevel(p)]);
     });
@@ -5721,9 +5854,9 @@ function exportPurchasesCSV(){
 function exportPurchasesExcel(){
   const { headers, rows } = buildPurchasesExportTable();
   exportXlsxWithOptions({ fileName: "仕入れ管理.xlsx", sheetName: "シート1", headers, rows,
-    optionKeys: ["department", "bunrui", "category", "lotUnit", "unitMid", "unit", "maker", "supplier", "purchaseStatus"],
+    optionKeys: ["busho", "department", "bunrui", "category", "lotUnit", "unitMid", "unit", "maker", "supplier", "purchaseStatus"],
     extraColumns: [{ label: "発注数の単位区分", values: ["中", "発注", "大", "小", "なし"] }],
-    validations: { "ステータス": "purchaseStatus", "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "メーカー": "maker", "仕入れ先": "supplier", "発注数の単位区分": "extra:0" } });
+    validations: { "ステータス": "purchaseStatus", "部署": "busho", "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "メーカー": "maker", "仕入れ先": "supplier", "発注数の単位区分": "extra:0" } });
 }
 
 
@@ -5865,7 +5998,7 @@ function mergeImportedPurchaseRows(rows){
       id:"", date: r.date || "", supplier: r.supplier || "",
       // CSV・Excelで取り込む仕入れは、既に届いた請求書・納品書をもとに登録するものとして扱い、ステータスは自動で「納品済み」にする
       status: "納品済み", itemName: r.itemName || "", invoiceNumber: r.invoiceNumber || "", deliveryDate: r.deliveryDate || "",
-      billingDate: r.billingDate || "", department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: r.qtyLevel || "中", orderUnit: r.orderUnit || "",
+      billingDate: r.billingDate || "", busho: (r.busho||"").toString().trim(), department: r.department || "", category: r.category || "", bunrui: r.bunrui || "", unit: r.unit || "", qtyLevel: r.qtyLevel || "中", orderUnit: r.orderUnit || "",
       memo: r.memo || "",
       packQty: r.packQty || "", packUnit: r.packUnit || "", lotQty: r.lotQty || "", largeQty: r.largeQty || "", lotUnit: r.lotUnit || "", maker: r.maker || "",
       materialId: material ? material.id : "", qty: r.qty ?? "", amount: r.amount ?? "",
@@ -6399,7 +6532,7 @@ function importPurchasesCSV(event){
       return -1;
     };
     const iStatus = colIndex("ステータス"), iDate = colIndex("仕入れ日"), iDeliveryDate = colIndex("納品日"),
-      iBillingDate = colIndex("請求日"), iInvoiceNumber = colIndex("請求書番号"), iItemName = colIndex("品名"),
+      iBillingDate = colIndex("請求日"), iBusho = colIndex("部署"), iInvoiceNumber = colIndex("請求書番号"), iItemName = colIndex("品名"),
       iDepartment = colIndex("大分類"), iCategory = colIndex("小分類"),
       iBunrui = colIndex("中分類"), iSupplier = colIndex("仕入れ先"), iMemo = colIndex("メモ"), iMaker = colIndex("メーカー");
     // 項目名変更(数量→発注数 等)の前後どちらの見出し名でも読み込めるよう、別名一覧から一致した列を使う
@@ -6434,7 +6567,7 @@ function importPurchasesCSV(event){
         department: cell(cols, iDepartment), category: cell(cols, iCategory),
         bunrui: normalizeImportedBunrui(cell(cols, iBunrui)), unit: cell(cols, iUnit),
         qty, amount,
-        deliveryDate: normalizeImportedDateStr(cell(cols, iDeliveryDate)), billingDate: normalizeImportedDateStr(cell(cols, iBillingDate)), invoiceNumber: cell(cols, iInvoiceNumber),
+        deliveryDate: normalizeImportedDateStr(cell(cols, iDeliveryDate)), billingDate: normalizeImportedDateStr(cell(cols, iBillingDate)), invoiceNumber: cell(cols, iInvoiceNumber), busho: cell(cols, iBusho),
         memo: cell(cols, iMemo),
         packQty: cell(cols, iPackQty), packUnit: cell(cols, iPackUnit),
         lotQty: cell(cols, iLotQty), lotUnit: cell(cols, iLotUnit), maker: cell(cols, iMaker),
@@ -6512,6 +6645,7 @@ function importPurchasesExcel(event){
         qty, amount,
         deliveryDate: toDateStr(row["納品日"]),
         billingDate: toDateStr(row["請求日"]),
+        busho: (row["部署"]||"").toString().trim(),
         invoiceNumber: (row["請求書番号"]||"").toString().trim(),
         memo: (row["メモ"]||"").toString().trim(),
         packQty: (pickRowValue(row, PURCHASE_PACK_QTY_HEADER_ALIASES)||"").toString().trim(),
@@ -6879,6 +7013,11 @@ function renderDeptBanner(){
   const box = document.getElementById("deptBanner");
   if(!box) return;
   if(currentDeptId === DEFAULT_DEPT_ID){ box.style.display = "none"; box.innerHTML = ""; return; }
+  if(currentDeptId === ALL_DEPT_ID){
+    box.style.display = "";
+    box.innerHTML = `<b>現在の部門：全体</b>　全部門のデータを合わせて表示しています。追加・編集・削除は、元の部門のデータに反映されます（新しく追加したものは、仕入れ管理は「部署」の部門、それ以外はクラフトビール事業部に保存されます）。設定や、レコードの一覧でないデータは、クラフトビール事業部のものを表示します。`;
+    return;
+  }
   const craft = DEPARTMENTS.find(d=>d.id === DEFAULT_DEPT_ID);
   const canSwitch = accountAllowedDepts().includes(DEFAULT_DEPT_ID);
   box.style.display = "";
@@ -7141,6 +7280,7 @@ function initSelects(){
   fillSelect("f_i_supplier", OPTIONS.supplier);
   fillSelect("f_pu_supplier", OPTIONS.supplier);
   fillSelect("f_pu_status", OPTIONS.purchaseStatus);
+  fillSelect("f_pu_busho", OPTIONS.busho);
   fillSelect("f_pu_department", OPTIONS.department);
   fillSelect("f_pu_category", OPTIONS.category);
   fillSelect("f_pu_bunrui", OPTIONS.bunrui);
@@ -7558,7 +7698,8 @@ const OPTION_DATA_TARGETS = {
     { label:"原料・資材・半製品", rows:()=>materials, fields:["supplier"], key:()=>MATERIALS_STORAGE_KEY, whole:()=>materials },
     { label:"仕入れ", rows:()=>purchases, fields:["supplier"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }
   ],
-  purchaseStatus: [{ label:"仕入れ", rows:()=>purchases, fields:["status"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }]
+  purchaseStatus: [{ label:"仕入れ", rows:()=>purchases, fields:["status"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }],
+  busho: [{ label:"仕入れ", rows:()=>purchases, fields:["busho"], key:()=>PURCHASES_STORAGE_KEY, whole:()=>purchases }]
 };
 // システムの動作（ビューの振り分け・按分計算・ステータスの自動判定など）が名称そのものを前提にしている値
 const OPTION_PROTECTED_VALUES = {
@@ -19476,7 +19617,7 @@ function deptDiagRealKey(deptId, logicalKey){
 // 全データ（_regiDailyCache）を、部門ごと・データの種類ごとに集計する
 function collectDeptDiagnosis(){
   const table = {}; // deptId -> groupId -> { count, keys:[logicalKey], dates:[] }
-  DEPARTMENTS.forEach(d=>{ table[d.id] = {}; });
+  memberDepts().forEach(d=>{ table[d.id] = {}; });
   _regiDailyCache.forEach((v, real)=>{
     let dept = DEFAULT_DEPT_ID, logical = real;
     const m = /^dept:([^:]+):(.*)$/.exec(real);
@@ -19503,9 +19644,9 @@ function renderDeptDataDiagnosis(){
     if(c.dates.length){ const ds = c.dates.slice().sort(); range = `<div class="hint" style="margin:0;">${ds[0]}〜${ds[ds.length-1]}</div>`; }
     return `<b>${fmtNum(c.count)}</b>${g.unit}${range}`;
   };
-  const head = `<tr><th style="text-align:left;">データ</th>${DEPARTMENTS.map(d=>`<th>${escAttr(d.name)}${d.id === currentDeptId ? '<br><span class="count-badge">表示中</span>' : ""}</th>`).join("")}</tr>`;
-  const rows = DEPT_DIAG_GROUPS.map(g=>`<tr><td class="text" style="text-align:left;white-space:nowrap;">${g.label}</td>${DEPARTMENTS.map(d=>`<td>${cellText(table[d.id][g.id], g)}</td>`).join("")}</tr>`).join("");
-  const opts = DEPARTMENTS.map(d=>`<option value="${d.id}">${escAttr(d.name)}</option>`).join("");
+  const head = `<tr><th style="text-align:left;">データ</th>${memberDepts().map(d=>`<th>${escAttr(d.name)}${d.id === currentDeptId ? '<br><span class="count-badge">表示中</span>' : ""}</th>`).join("")}</tr>`;
+  const rows = DEPT_DIAG_GROUPS.map(g=>`<tr><td class="text" style="text-align:left;white-space:nowrap;">${g.label}</td>${memberDepts().map(d=>`<td>${cellText(table[d.id][g.id], g)}</td>`).join("")}</tr>`).join("");
+  const opts = memberDepts().map(d=>`<option value="${d.id}">${escAttr(d.name)}</option>`).join("");
   box.innerHTML = `
     <table style="min-width:0;font-size:12.5px;"><thead>${head}</thead><tbody>${rows}</tbody></table>
     <div class="toolbar" style="margin-top:10px;align-items:center;flex-wrap:wrap;gap:8px;">
