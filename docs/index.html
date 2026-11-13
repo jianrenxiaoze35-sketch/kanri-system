@@ -733,7 +733,7 @@
           <thead>
             <tr>
               <th><input type="checkbox" id="purchaseSelectAllCheckbox" onchange="toggleSelectAllPurchases(this.checked)"></th>
-              <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
+              <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部門</th><th>品名</th>
               <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
               <th>仕入れ先</th><th>メモ</th>
               <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -803,7 +803,7 @@
             <thead>
               <tr>
                 <th><input type="checkbox" disabled></th>
-                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
+                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部門</th><th>品名</th>
                 <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -823,7 +823,7 @@
             <thead>
               <tr>
                 <th><input type="checkbox" disabled></th>
-                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部署</th><th>品名</th>
+                <th>ステータス</th><th>仕入れ日</th><th>納品日</th><th>請求日</th><th>部門</th><th>品名</th>
                 <th>大分類</th><th>中分類</th><th>小分類</th><th>発注数</th><th>発注数の単位</th><th>価格税込(中)</th><th>金額合計税込</th><th>その他経費按分</th>
                 <th>仕入れ先</th><th>メモ</th>
                 <th>内容量(小)</th><th>単位(小)</th><th>ロット入数(中)</th><th>単位(中)</th><th>数量(大)</th><th>単位(大)</th><th>メーカー</th>
@@ -2336,7 +2336,7 @@
       <div class="form-field"><label>納品日</label><input type="date" id="f_pu_deliveryDate"></div>
       <div class="form-field"><label>請求日</label><input type="date" id="f_pu_billingDate" onchange="refreshPurchaseAllocBox()"></div>
       <div class="form-field"><label>請求書番号</label><input type="text" id="f_pu_invoiceNumber" oninput="refreshPurchaseAllocBox()"></div>
-      <div class="form-field"><label>部署</label><select id="f_pu_busho"></select></div>
+      <div class="form-field"><label>部門</label><select id="f_pu_busho"></select></div>
       <div class="form-field"><label>品名</label><input type="text" id="f_pu_itemName" placeholder="請求書・納品書に記載の品名など"></div>
       <div class="form-field"><label>大分類</label><select id="f_pu_department"></select></div>
       <div class="form-field"><label>小分類</label><select id="f_pu_category" onchange="refreshPurchaseAllocBox()"></select></div>
@@ -2792,7 +2792,7 @@ const DEPARTMENTS = [
 const ALL_DEPT_ID = "all";
 const DEFAULT_DEPT_ID = "craft";
 function memberDepts(){ return DEPARTMENTS.filter(d=>d.id !== ALL_DEPT_ID); }
-// 仕入れの「部署」（設定の分類）の値から、対応する部門IDを返す（部門の名称と一致するもの。なければnull）
+// 仕入れの「部門」（設定の分類）の値から、対応する部門IDを返す（部門の名称と一致するもの。なければnull）
 function deptIdForBusho(v){
   const n = (v === undefined || v === null) ? "" : String(v).replace(/\s/g, "");
   if(!n) return null;
@@ -2832,7 +2832,7 @@ function deptVisibleKeys(){
 /* ---- 全体（全部門）の読み書き ----
    読む：配列（レコードの一覧）のデータは、全部門のものを合わせて返す（各レコードに、元の部門を _dept として付ける）。
          配列でないデータ（設定など）は、クラフトビール事業部のものを返す。
-   書く：配列は、レコードを元の部門へ振り分けて保存する（_dept → 仕入れの「部署」 → 元の部門にあるid → クラフトビール事業部、の順で決める）。
+   書く：配列は、レコードを元の部門へ振り分けて保存する（_dept → 仕入れの「部門」 → 元の部門にあるid → クラフトビール事業部、の順で決める）。
          配列でないデータは、クラフトビール事業部へ保存する。
    ※ 全体でレコードを全件空にする保存は、全部門のデータを一度に消してしまうため、受け付けない（1件ずつの削除は可能）。 */
 function _allParse(v){
@@ -3643,7 +3643,7 @@ const FIELD_LABELS = {
   maker: "メーカー（原料・資材）",
   supplier: "仕入れ先（原料・資材）",
   purchaseStatus: "ステータス（仕入れ）",
-  busho: "部署（仕入れ）"
+  busho: "部門（仕入れ）"
 };
 const OPTIONS_KEY = "product_master_options_v1";
 let OPTIONS = JSON.parse(JSON.stringify(DEFAULT_OPTIONS)); // 安全なデフォルト値。実際の内容はブート時に読み込む
@@ -3896,7 +3896,7 @@ const OPTION_REG_FIELDS = {
     { opt: "supplier", f: "supplier", label: "仕入れ先" },
     { opt: "maker", f: "maker", label: "メーカー" },
     { opt: "purchaseStatus", f: "status", label: "ステータス" },
-    { opt: "busho", f: "busho", label: "部署" },
+    { opt: "busho", f: "busho", label: "部門" },
     { opt: "unitMid", f: "unit", label: "単位(中)" },
     { opt: "unit", f: "packUnit", label: "単位(小)" },
     { opt: "lotUnit", f: "lotUnit", label: "単位(大)" }
@@ -4071,11 +4071,11 @@ function closeOptionRegistration(doRegister){
 registerBootStep(function(){
   snapshotMaterialMakers(); // マスタ→仕入れ管理のメーカー反映の基準（起動時点のメーカー）
   // データに入っているメーカー名を、設定の分類の「メーカー」へ追加する（起動のたびに。以前は初回だけで、後から入ったメーカーが反映されなかった）
-  ensureBushoOptions(); // 仕入れの「部署」の選択肢に、部門の名称を入れる
+  ensureBushoOptions(); // 仕入れの「部門」の選択肢に、部門の名称を入れる
   syncMakerOptionsFromData();
   autoRegisterOptionsFromData(); // 分類・単位・仕入れ先なども、同様に自動で追加する
 });
-// 仕入れの「部署」の選択肢に、部門の名称（全体を除く）が無ければ追加する（削除はしない）
+// 仕入れの「部門」の選択肢に、部門の名称（全体を除く）が無ければ追加する（削除はしない）
 function ensureBushoOptions(){
   if(!Array.isArray(OPTIONS.busho)) OPTIONS.busho = [];
   let changed = false;
@@ -4288,7 +4288,7 @@ registerBootStep(function(){
     if(p.bunrui === "送料"){ p.bunrui = "送料/その他"; changed = true; }
   });
   if(changed) appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases));
-  // 他の部門の「部署」が付いた行が、この部門のデータに入っていれば、その部門へ移す（行は消さない）
+  // 他の部門の「部門」が付いた行が、この部門のデータに入っていれば、その部門へ移す（行は消さない）
   const own = routePurchasesToOwnDept(purchases);
   if(own.length !== purchases.length){ purchases = own; appStore.setItem(PURCHASES_STORAGE_KEY, JSON.stringify(purchases)); }
 });
@@ -4364,7 +4364,7 @@ function purchaseBushoLabel(p){
   if(p && p._dept){ const d = DEPARTMENTS.find(x=>x.id === p._dept); if(d) return d.name; }
   return currentDeptId === ALL_DEPT_ID ? "" : getCurrentDept().name;
 }
-// 他の部門の「部署」が付いた仕入れ行を、その部門の仕入れデータへ移す（行は消さず、移し先に追加・更新する）。戻り値は、この部門に残る行。
+// 他の部門の「部門」が付いた仕入れ行を、その部門の仕入れデータへ移す（行は消さず、移し先に追加・更新する）。戻り値は、この部門に残る行。
 function routePurchasesToOwnDept(list){
   if(currentDeptId === ALL_DEPT_ID) return list; // 全体では、保存時に、部署の部門へ振り分ける
   const own = [], moved = {};
@@ -5722,7 +5722,7 @@ function renderPurchasesBulkGrid(){
         <div class="form-field"><label>仕入れ日 *</label><input type="date" value="${escAttr(r.date)}" oninput="updatePurchaseBulk(${i},'date',this.value)"></div>
         <div class="form-field"><label>納品日</label><input type="date" value="${escAttr(r.deliveryDate)}" oninput="updatePurchaseBulk(${i},'deliveryDate',this.value)"></div>
         <div class="form-field"><label>請求日</label><input type="date" value="${escAttr(r.billingDate)}" oninput="updatePurchaseBulk(${i},'billingDate',this.value)"></div>
-        <div class="form-field"><label>部署</label>${bulkSelect(OPTIONS.busho, r.busho, `updatePurchaseBulk(${i},'busho',this.value)`)}</div>
+        <div class="form-field"><label>部門</label>${bulkSelect(OPTIONS.busho, r.busho, `updatePurchaseBulk(${i},'busho',this.value)`)}</div>
         <div class="form-field"><label>請求書番号</label><input type="text" value="${escAttr(r.invoiceNumber)}" oninput="updatePurchaseBulk(${i},'invoiceNumber',this.value)"></div>
         <div class="form-field"><label>品名</label><input type="text" value="${escAttr(r.itemName)}" oninput="updatePurchaseBulk(${i},'itemName',this.value)"></div>
         <div class="form-field"><label>大分類</label>${bulkSelect(OPTIONS.department, r.department, `updatePurchaseBulk(${i},'department',this.value)`)}</div>
@@ -5823,7 +5823,7 @@ function buildPurchasesExportTable(){
   // 請求書アップロード用テンプレート（Googleスプレッドシート）の見出しと並びに合わせる。
   // 末尾の「請求書番号」「発注数の単位区分」は、取り込み直したときに請求書のまとまり・発注数の区分を戻すための列。
   // 取込側は旧い見出し名でも読み込める（PURCHASE_*_HEADER_ALIASES参照）。
-  const headers = ["ステータス","仕入れ日","納品日","請求日","部署","品名","大分類","中分類","小分類","発注数","発注数の単位","価格税込(中)","金額合計税込","その他経費按分","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(中)","単位(中)","数量(大)","単位(大)","メーカー","請求書番号","発注数の単位区分"];
+  const headers = ["ステータス","仕入れ日","納品日","請求日","部門","品名","大分類","中分類","小分類","発注数","発注数の単位","価格税込(中)","金額合計税込","その他経費按分","仕入れ先","メモ","内容量(小)","単位(小)","ロット入数(中)","単位(中)","数量(大)","単位(大)","メーカー","請求書番号","発注数の単位区分"];
   const allocCtx = computePurchaseAllocationContext();
   const rows = [];
   purchases.forEach(p=>{
@@ -5856,7 +5856,7 @@ function exportPurchasesExcel(){
   exportXlsxWithOptions({ fileName: "仕入れ管理.xlsx", sheetName: "シート1", headers, rows,
     optionKeys: ["busho", "department", "bunrui", "category", "lotUnit", "unitMid", "unit", "maker", "supplier", "purchaseStatus"],
     extraColumns: [{ label: "発注数の単位区分", values: ["中", "発注", "大", "小", "なし"] }],
-    validations: { "ステータス": "purchaseStatus", "部署": "busho", "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "メーカー": "maker", "仕入れ先": "supplier", "発注数の単位区分": "extra:0" } });
+    validations: { "ステータス": "purchaseStatus", "部門": "busho", "大分類": "department", "中分類": "bunrui", "小分類": "category", "単位(小)": "unit", "単位(中)": "unitMid", "単位(大)": "lotUnit", "メーカー": "maker", "仕入れ先": "supplier", "発注数の単位区分": "extra:0" } });
 }
 
 
@@ -6532,7 +6532,7 @@ function importPurchasesCSV(event){
       return -1;
     };
     const iStatus = colIndex("ステータス"), iDate = colIndex("仕入れ日"), iDeliveryDate = colIndex("納品日"),
-      iBillingDate = colIndex("請求日"), iBusho = colIndex("部署"), iInvoiceNumber = colIndex("請求書番号"), iItemName = colIndex("品名"),
+      iBillingDate = colIndex("請求日"), iBusho = (colIndex("部門") >= 0 ? colIndex("部門") : colIndex("部署")), iInvoiceNumber = colIndex("請求書番号"), iItemName = colIndex("品名"),
       iDepartment = colIndex("大分類"), iCategory = colIndex("小分類"),
       iBunrui = colIndex("中分類"), iSupplier = colIndex("仕入れ先"), iMemo = colIndex("メモ"), iMaker = colIndex("メーカー");
     // 項目名変更(数量→発注数 等)の前後どちらの見出し名でも読み込めるよう、別名一覧から一致した列を使う
@@ -6645,7 +6645,7 @@ function importPurchasesExcel(event){
         qty, amount,
         deliveryDate: toDateStr(row["納品日"]),
         billingDate: toDateStr(row["請求日"]),
-        busho: (row["部署"]||"").toString().trim(),
+        busho: (row["部門"] ?? row["部署"] ?? "").toString().trim(),
         invoiceNumber: (row["請求書番号"]||"").toString().trim(),
         memo: (row["メモ"]||"").toString().trim(),
         packQty: (pickRowValue(row, PURCHASE_PACK_QTY_HEADER_ALIASES)||"").toString().trim(),
@@ -7015,7 +7015,7 @@ function renderDeptBanner(){
   if(currentDeptId === DEFAULT_DEPT_ID){ box.style.display = "none"; box.innerHTML = ""; return; }
   if(currentDeptId === ALL_DEPT_ID){
     box.style.display = "";
-    box.innerHTML = `<b>現在の部門：全体</b>　全部門のデータを合わせて表示しています。追加・編集・削除は、元の部門のデータに反映されます（新しく追加したものは、仕入れ管理は「部署」の部門、それ以外はクラフトビール事業部に保存されます）。設定や、レコードの一覧でないデータは、クラフトビール事業部のものを表示します。`;
+    box.innerHTML = `<b>現在の部門：全体</b>　全部門のデータを合わせて表示しています。追加・編集・削除は、元の部門のデータに反映されます（新しく追加したものは、仕入れ管理は「部門」の項目の部門、それ以外はクラフトビール事業部に保存されます）。設定や、レコードの一覧でないデータは、クラフトビール事業部のものを表示します。`;
     return;
   }
   const craft = DEPARTMENTS.find(d=>d.id === DEFAULT_DEPT_ID);
