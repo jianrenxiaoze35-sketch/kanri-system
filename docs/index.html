@@ -1346,6 +1346,12 @@
             <button class="secondary" onclick="document.getElementById('bulkSmaregiFilesInput').click()">スマレジ取引データCSVをまとめて選択</button>
             <input type="file" id="bulkSmaregiFilesInput" accept=".csv" multiple style="display:none" onchange="bulkImportSmaregiFiles(event)">
           </div>
+          <div class="toolbar" style="margin:4px 0 8px;flex-wrap:wrap;align-items:center;gap:6px;padding-top:8px;border-top:1px dashed var(--border);">
+            <span style="font-weight:700;font-size:13px;">📂 共有ドライブ「レジ締め」から取り込む</span>
+            <input type="month" id="regiSlipDriveMonth" style="width:auto;">
+            <button class="secondary" onclick="regiSlipImportFromDrive('funfo')">この月のfunfo伝票を取り込む</button>
+            <span class="hint" style="margin:0;">「レジ伝票データ(月別)」の月のフォルダから読みます。取り込み済みの伝票は重複追加しません。ここや上の欄で取り込んだ伝票・CSVは、元のファイルのままこのフォルダにも保存します。</span>
+          </div>
           <div id="bulkUploadResult"></div>
         </div>
 
@@ -16631,6 +16637,8 @@ async function importFunfoFiles(event){
   recomputeAggregate();
   renderFunfoSlips();
   event.target.value = "";
+  // 2026-11-13 元のファイルを共有ドライブ「レジ締め」の月のフォルダにも置く
+  if(files.length && regiCurrentDate) regiSlipSaveToDrive("funfo", files.map(f=>({ file: f, ym: String(regiCurrentDate).slice(0, 7) })));
 }
 /* 日時セルの値（Dateオブジェクト／Excelシリアル値／文字列）から "HH:MM" 形式の時刻を抽出 */
 function extractTimeHHMM(value){
@@ -16981,22 +16989,30 @@ async function bulkImportFunfoFiles(event){
   const files = Array.from(event.target.files);
   event.target.value = "";
   if(!files.length) return;
+  await bulkImportFunfoFileList(files, false);
+}
+/* funfo伝票のファイル群を日付ごとに振り分けて取り込む。fromDrive のときは共有ドライブから読んだもの（保存し直さない） */
+async function bulkImportFunfoFileList(files, fromDrive){
   const resultEl = document.getElementById("bulkUploadResult");
   if(resultEl) resultEl.innerHTML = `<div class="hint">funfo伝票 ${files.length}件を処理中…</div>`;
   const byDate = {};
   const errors = [];
+  const toDrive = [];
   for(const f of files){
     try{
       const slip = await parseFunfoFile(f);
       const iso = normalizeFunfoDateToISO(slip.date, f.name);
       if(!iso){ errors.push(`${f.name}：日付を特定できませんでした`); continue; }
       (byDate[iso] = byDate[iso] || []).push(slip);
+      if(!fromDrive) toDrive.push({ file: f, ym: iso.slice(0, 7) });
     }catch(err){
       errors.push(`${f.name}：読み込み失敗（${(err&&err.message)||err}）`);
     }
   }
   const summary = applyBulkFunfoSlipsByDate(byDate);
   renderBulkUploadResult(Object.assign({ kind: "funfo", fileCount: files.length, errors }, summary));
+  if(toDrive.length) regiSlipSaveToDrive("funfo", toDrive);
+  return summary;
 }
 /* 日付別にグルーピングされたスマレジ取引明細（{date: [row,...]}）を、それぞれの対象日の
    regi_sales_v1_*へ反映する。同じ対象日は通常の単一ファイルアップロードと同様、その対象日分の
@@ -17078,6 +17094,53 @@ async function bulkImportSmaregiFiles(event){
   }
   const summary = applyBulkSmaregiRowsByDate(byDate, meta);
   renderBulkUploadResult(Object.assign({ kind: "smaregi", fileCount: files.length, errors }, summary));
+  if(summary.dateCount) regiSlipSaveToDrive("smaregi", files.map(f=>({ file: f, ym: "" })));
+}
+/* ---- 共有ドライブ「レジ締め」› レジ伝票データ(月別)（2026-11-13） ----
+   ・取り込んだ伝票・CSVを、元のファイルのまま保存する（funfo は月のフォルダ、スマレジはフォルダ直下。同じ名前・大きさなら置かない）
+   ・月を選んで、その月のfunfo伝票をまとめて取り込む（足りない日を埋めるとき） */
+async function regiSlipSaveToDrive(kind, list){
+  let saved = 0, same = 0, failed = 0;
+  for(const x of list){
+    try{
+      const buf = await readFileAsArrayBuffer(x.file);
+      const res = await cloudApi("regiSlipSave", { kind, ym: x.ym || "", name: x.file.name, mime: x.file.type || "", b64: otherPayArrayBufferToBase64(buf) });
+      if(res.skipped) same++; else saved++;
+    }catch(err){ console.warn("伝票のドライブ保存に失敗:", x.file && x.file.name, err); failed++; }
+  }
+  const el = document.getElementById("bulkUploadResult");
+  if(el && (saved || failed)){
+    const d = document.createElement("div"); d.className = "hint"; d.style.marginTop = "4px";
+    d.textContent = `共有ドライブ「レジ締め」へ：保存${saved}件` + (same ? `・保存済み${same}件` : "") + (failed ? `・失敗${failed}件（取り込みは済んでいます）` : "");
+    el.appendChild(d);
+  }
+}
+async function regiSlipImportFromDrive(kind){
+  const ym = (document.getElementById("regiSlipDriveMonth").value || "").trim();
+  const el = document.getElementById("bulkUploadResult");
+  if(!/^\d{4}-\d{2}$/.test(ym)){ alert("取り込む月を選んでください"); return; }
+  if(_cloudMode !== "cloud"){ alert("クラウドに接続しているときだけ使えます"); return; }
+  try{
+    if(el) el.innerHTML = `<div class="hint">共有ドライブで ${ym} の伝票を探しています…</div>`;
+    const list = await cloudApi("regiSlipList", { kind, ym });
+    const files = list.files || [];
+    if(!files.length){ if(el) el.innerHTML = `<div class="hint">共有ドライブに ${ym} のfunfo伝票はありませんでした。</div>`; return; }
+    if(!confirm(`共有ドライブ「${list.folder}」の funfo 伝票 ${files.length}件を取り込みます。\n取り込み済みの伝票は重複追加しません。よろしいですか？`)) { if(el) el.innerHTML = ""; return; }
+    const got = [];
+    for(let i = 0; i < files.length; i += 40){
+      if(el) el.innerHTML = `<div class="hint">共有ドライブから読み込み中… ${Math.min(i + 40, files.length)} / ${files.length}</div>`;
+      const res = await cloudApi("regiSlipGet", { ids: files.slice(i, i + 40).map(f=>f.id) });
+      (res.files || []).forEach(f=>{
+        if(!f.b64) return;
+        const bin = atob(f.b64), bytes = new Uint8Array(bin.length);
+        for(let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+        got.push(new File([bytes], f.name, { type: f.mime || "" }));
+      });
+    }
+    await bulkImportFunfoFileList(got, true);
+  }catch(err){
+    if(el) el.innerHTML = `<div class="hint" style="color:var(--danger);">共有ドライブから取り込めませんでした（${cloudEsc((err && (err.message || err.code)) || err)}）</div>`;
+  }
 }
 function renderBulkUploadResult(info){
   const el = document.getElementById("bulkUploadResult");

@@ -51,6 +51,9 @@ function doPost(e) {
       case 'put': { const res = put_(req); readableAfterPut_(req); return json_(res); }
       case 'fieldLog': return json_(fieldLog_(req));
       case 'otherpayCsv': return json_(otherpayCsv_(req));   // 2026-11-12 取り込んだキャッシュレス決済のCSVをドライブへ（Tana.gs）
+      case 'regiSlipList': return json_(regiSlipList_(req));   // 2026-11-13 共有ドライブ「レジ締め」の伝票（Tana.gs）
+      case 'regiSlipGet': return json_(regiSlipGet_(req));
+      case 'regiSlipSave': return json_(regiSlipSave_(req));
       case 'theory': return json_(theoryForKanri_());
       case 'logList': return json_(logList_(req));
       case 'changePass': return json_(changePass_(req));

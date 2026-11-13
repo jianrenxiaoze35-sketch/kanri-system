@@ -441,6 +441,79 @@ function otherpaySheetNow() {
   console.log('キャッシュレス決済: ' + n);
   return n;
 }
+/* ---- レジ伝票の置き場（2026-11-13） ----
+ * 共有ドライブ「レジ締め」› レジ伝票データ(月別) › funfo伝票データ › 「2026年8月-funfo伝票」（1枚＝1ファイルの xlsx）
+ *                                          › スマレジ伝票データ（月ごとの取引データCSV。月のフォルダは無い）
+ * ①読む：月を選んで、その月のファイルの一覧と中身を返す（画面の「共有ドライブから取り込む」）
+ * ②置く：画面で取り込んだ伝票・CSVを、元のファイルのままここへ保存する（同じ名前・同じ大きさのものがあれば置かない）
+ * フォルダはスクリプトプロパティ REGI_SLIP_FUNFO_FOLDER_ID / REGI_SLIP_SMAREGI_FOLDER_ID で差し替えられる */
+const REGI_SLIP_DEFAULT = { funfo: '1GlH06LbI1iOeDBFdH5HeU9udkvXuTbgO', smaregi: '1ipkMHc39sbxi8fAy5U5PP-nOl6g8gC1P' };
+const REGI_SLIP_MAX = 5 * 1024 * 1024;
+function regiSlipRoot_(kind) {
+  if (!REGI_SLIP_DEFAULT[kind]) throw new Error('bad_kind');
+  const id = PropertiesService.getScriptProperties().getProperty('REGI_SLIP_' + kind.toUpperCase() + '_FOLDER_ID') || REGI_SLIP_DEFAULT[kind];
+  return DriveApp.getFolderById(id);
+}
+/** funfo は月のフォルダ（例「2026年8月-funfo伝票」）。スマレジは月のフォルダが無いので、置き場そのもの */
+function regiSlipFolder_(kind, ym, create) {
+  const root = regiSlipRoot_(kind);
+  if (kind !== 'funfo') return root;
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) throw new Error('bad_month');
+  const name = m[1] + '年' + Number(m[2]) + '月-funfo伝票';
+  const it = root.getFoldersByName(name);
+  if (it.hasNext()) return it.next();
+  return create ? root.createFolder(name) : null;
+}
+function regiSlipList_(req) {
+  const kind = String(req.kind || ''), folder = regiSlipFolder_(kind, req.ym, false);
+  if (!folder) return { ok: true, files: [], folder: '' };
+  const files = [], it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.isTrashed()) continue;
+    const name = f.getName();
+    if (kind === 'funfo' ? !/\.xlsx?$/i.test(name) : !/\.csv$/i.test(name)) continue;
+    files.push({ id: f.getId(), name: name, size: f.getSize() });
+  }
+  files.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+  return { ok: true, files: files, folder: folder.getName(), url: folder.getUrl() };
+}
+/** 中身をまとめて返す（1回に40件・合わせて8MBまで） */
+function regiSlipGet_(req) {
+  const ids = (req.ids || []).slice(0, 40), out = [];
+  let total = 0;
+  ids.forEach(function (id) {
+    const f = DriveApp.getFileById(String(id));
+    const bytes = f.getBlob().getBytes();
+    total += bytes.length;
+    if (bytes.length > REGI_SLIP_MAX || total > 8 * 1024 * 1024) { out.push({ id: id, name: f.getName(), error: 'too_large' }); return; }
+    out.push({ id: id, name: f.getName(), mime: f.getMimeType(), b64: Utilities.base64Encode(bytes) });
+  });
+  return { ok: true, files: out };
+}
+function regiSlipSave_(req) {
+  const kind = String(req.kind || '');
+  const name = String(req.name || '').replace(/[\\/]/g, '_').slice(0, 200);
+  if (!name || !req.b64) return { ok: false, error: 'bad_file' };
+  const bytes = Utilities.base64Decode(String(req.b64));
+  if (bytes.length > REGI_SLIP_MAX) return { ok: false, error: 'too_large' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const folder = regiSlipFolder_(kind, req.ym, true);
+    const same = folder.getFilesByName(name);
+    while (same.hasNext()) { const f = same.next(); if (!f.isTrashed() && f.getSize() === bytes.length) return { ok: true, skipped: true, id: f.getId() }; }
+    const file = folder.createFile(Utilities.newBlob(bytes, String(req.mime || 'application/octet-stream'), name));
+    return { ok: true, skipped: false, id: file.getId() };
+  } finally { lock.releaseLock(); }
+}
+/** 持ち主がエディタから実行して、共有ドライブの置き場が読めるか確かめる（読むだけ） */
+function regiSlipCheck() {
+  ['funfo', 'smaregi'].forEach(function (k) { const r = regiSlipRoot_(k); console.log(k + ': ' + r.getName() + ' ' + r.getUrl()); });
+  const aug = regiSlipList_({ kind: 'funfo', ym: '2026-08' });
+  console.log('2026-08 funfo: ' + aug.files.length + '件（' + aug.folder + '）');
+}
 /** 全部作り直す（最初の1回用）。何度呼んでも同じ結果。5分に1回まで */
 function tanaSheetSync_() {
   const p = PropertiesService.getScriptProperties(), last = Number(p.getProperty('SHEET_SYNC_AT')) || 0, now = Date.now();
