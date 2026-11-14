@@ -56,6 +56,8 @@ function doPost(e) {
       case 'regiSlipSave': return json_(regiSlipSave_(req));
       case 'theory': return json_(theoryForKanri_());
       case 'logList': return json_(logList_(req));
+      case 'kigenRead': return json_(kigenRead_());   // 2026-11-14 賞味期限・ポーション基準のシート（Kigen.gs）
+      case 'kigenAdd': return json_(kigenAdd_(req));
       case 'changePass': return json_(changePass_(req));
       default: return json_({ ok: false, error: 'unknown_action' });
     }
