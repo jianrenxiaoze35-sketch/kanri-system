@@ -17,7 +17,7 @@ const TANA_DONE_SHEET = 'tana_done';
 const TANA_DONE_HEADER = ['日時', '棚卸回', '部門', '保管場所', '人', '操作'];
 // 現場入力：在庫入力アプリの「使った・捨てた／届いた／足りない」。1行＝1回の入力。消さず、取消列に時刻を入れる
 const FIELD_SHEET = '現場入力';
-const FIELD_HEADER = ['ID', '日時', '種類', '品目ID', '品名', '数', '単位', '最小単位の数', '最小単位', '内訳', '理由', '賞味期限', 'メモ', '人', '端末', '取消'];
+const FIELD_HEADER = ['ID', '日時', '種類', '品目ID', '品名', '数', '単位', '最小単位の数', '最小単位', '内訳', '理由', '賞味期限', 'メモ', '人', '端末', '取消', '写真'];   // 写真は v16（2026-11-14）。ドライブのリンク、複数は空白区切り
 const FIELD_KINDS = ['使った・捨てた', '届いた', '足りない'];
 
 function tanaRoute_(req) {
@@ -240,16 +240,21 @@ function tanaFieldPut_(req) {
   const blank = x.v === null || x.v === undefined || x.v === '';
   const row = [id, at, kind, String(x.id), String(x.name || '').slice(0, 200), blank ? '' : Number(x.v), String(x.unit || ''),
     blank ? '' : Number(x.small), String(x.smallUnit || ''), String(x.detail || '').slice(0, 200), String(x.reason || '').slice(0, 60),
-    String(x.exp || '').slice(0, 10), String(x.memo || '').slice(0, 500), String(req.staff).slice(0, 40), String(req.route || '').slice(0, 80), ''];
+    String(x.exp || '').slice(0, 10), String(x.memo || '').slice(0, 500), String(req.staff).slice(0, 40), String(req.route || '').slice(0, 80), '',
+    String(x.photo || '').split(/\s+/).filter(function (u) { return /^https:\/\/drive\.google\.com\//.test(u); }).slice(0, 3).join(' ')];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
-  try { tanaAppend_(FIELD_SHEET, FIELD_HEADER, [row]); } finally { lock.releaseLock(); }
+  try {
+    const sh = tanaSheet_(FIELD_SHEET, FIELD_HEADER);   // 前からあるシートには 写真 の見出しが無い
+    if (String(sh.getRange(1, FIELD_HEADER.length).getValue()) !== '写真') sh.getRange(1, FIELD_HEADER.length).setValue('写真');
+    tanaAppend_(FIELD_SHEET, FIELD_HEADER, [row]);
+  } finally { lock.releaseLock(); }
   return { ok: true, id: id, at: at };
 }
 function fieldRowObj_(r) {
   return { rowId: String(r[0]), at: String(r[1]), kind: String(r[2]), id: String(r[3]), name: String(r[4]), v: r[5] === '' ? null : Number(r[5]), unit: String(r[6]),
     small: r[7] === '' ? null : Number(r[7]), smallUnit: String(r[8]), detail: String(r[9]), reason: String(r[10]), exp: String(r[11]), memo: String(r[12]),
-    by: String(r[13]), route: String(r[14]), canceled: String(r[15]) };
+    by: String(r[13]), route: String(r[14]), canceled: String(r[15]), photo: String(r[16] || '') };
 }
 function tanaFieldList_(req) {
   const limit = Math.min(Math.max(Number(req.limit) || 50, 1), 300), kind = String(req.kind || '');
