@@ -723,6 +723,7 @@
           <input type="file" id="purchaseCsvInput" accept=".csv" style="display:none" onchange="importPurchasesCSV(event)">
           <button class="secondary" onclick="document.getElementById('purchaseExcelInput').click()">Excel取込</button>
           <input type="file" id="purchaseExcelInput" accept=".xlsx,.xls" style="display:none" onchange="importPurchasesExcel(event)">
+          <button class="secondary" onclick="openPurchaseImportSkipped()" title="CSV・Excelの取り込みで、取り込まれなかった行とその理由を確認します">取り込めなかったデータ</button>
           <button class="secondary" onclick="openPurchasesBulk()">一括編集・一括登録</button>
           <button class="secondary" onclick="bulkRelinkUnlinkedPurchaseItems()" title="品名が資材マスタと一致する「資材未紐付け」の明細を、現在の資材マスタと一括で自動照合して紐付け直します">🔗 未紐付け明細を資材に一括紐付け</button>
           <button class="danger" onclick="deleteSelectedPurchases()">選択した項目を削除</button>
@@ -5966,7 +5967,69 @@ function fillPurchaseRowBlanksFromMaterial(r, m, summary){
   });
 }
 
-function mergeImportedPurchaseRows(rows){
+/* ---- CSV・Excel取り込みで、取り込めなかった行の確認 ----
+   取り込めなかった行（日付・品名がすべて空の行／すでに登録済みの重複／ファイル内の重複）を、行番号と理由つきで一覧にする。
+   画面の「取り込めなかったデータ」ボタンで、直近の取り込み分を、あとからも確認できる（この端末に保存）。Excelへの書き出しもできる。 */
+const PURCHASE_IMPORT_SKIPPED_KEY = "kanri_purchase_import_skipped_v1";
+let lastPurchaseImportSkipped = { file: "", at: "", items: [] };
+try{ const v = JSON.parse(localStorage.getItem(PURCHASE_IMPORT_SKIPPED_KEY) || "null"); if(v && Array.isArray(v.items)) lastPurchaseImportSkipped = v; }catch(e){}
+function splitImportedPurchaseRows(parsedRows){
+  const rows = [], skipped = [];
+  const hasAny = r=>[r.supplier, r.invoiceNumber, r.memo, r.category, r.department, r.maker, r.busho, r.bunrui, r.unit].some(v=>v !== undefined && v !== null && String(v).trim() !== "")
+    || (r.amount !== "" && r.amount !== undefined) || (r.qty !== "" && r.qty !== undefined);
+  parsedRows.forEach(r=>{
+    if(r.date || r.billingDate || r.deliveryDate || r.itemName) rows.push(r);
+    else if(hasAny(r)) skipped.push({ srcRow: r.srcRow, reason: "仕入れ日・納品日・請求日・品名がすべて空のため", row: r });
+  });
+  return { rows, skipped };
+}
+function recordPurchaseImportSkipped(list, fileName){
+  const items = (list || []).slice(0, 1000).map(x=>{
+    const r = x.row || {};
+    return { srcRow: x.srcRow || "", reason: x.reason || "", date: r.date || "", deliveryDate: r.deliveryDate || "", billingDate: r.billingDate || "", invoiceNumber: r.invoiceNumber || "",
+      supplier: r.supplier || "", itemName: r.itemName || "", qty: r.qty ?? "", amount: r.amount ?? "", busho: r.busho || "" };
+  });
+  lastPurchaseImportSkipped = { file: fileName || "", at: new Date().toLocaleString("ja-JP"), items };
+  try{ localStorage.setItem(PURCHASE_IMPORT_SKIPPED_KEY, JSON.stringify(lastPurchaseImportSkipped)); }catch(e){}
+}
+function openPurchaseImportSkipped(){
+  const d = lastPurchaseImportSkipped;
+  let ov = document.getElementById("purchaseImportSkippedOverlay");
+  if(ov) ov.remove(); // 一括編集の画面より手前に出すため、毎回作り直す
+  ov = document.createElement("div");
+  ov.className = "modal-overlay";
+  ov.id = "purchaseImportSkippedOverlay";
+  document.body.appendChild(ov);
+  const body = d.items.length
+    ? `<div style="max-height:56vh;overflow:auto;"><table class="bulk-table compact-table" style="min-width:0;width:100%;">
+        <thead><tr><th>行</th><th style="text-align:left;">取り込めなかった理由</th><th>仕入れ日</th><th>請求日</th><th>請求書番号</th><th>仕入れ先</th><th>品名</th><th>発注数</th><th>金額</th></tr></thead>
+        <tbody>${d.items.map(x=>`<tr><td>${escAttr(x.srcRow)}</td><td class="text" style="text-align:left;white-space:normal;">${escAttr(x.reason)}</td><td>${escAttr(x.date)}</td><td>${escAttr(x.billingDate)}</td><td class="text">${escAttr(x.invoiceNumber)}</td><td class="text">${escAttr(x.supplier)}</td><td class="text">${escAttr(x.itemName)}</td><td>${escAttr(x.qty)}</td><td>${escAttr(x.amount)}</td></tr>`).join("")}</tbody></table></div>`
+    : `<div class="hint">取り込めなかったデータはありません。</div>`;
+  ov.innerHTML = `<div class="modal" style="width:980px;max-width:96vw;">
+    <h3>取り込めなかったデータ${d.items.length ? `（${d.items.length}件）` : ""}</h3>
+    <div class="hint" style="margin-bottom:8px;">${d.file ? `ファイル：${escAttr(d.file)}　` : ""}${d.at ? `取り込み日時：${escAttr(d.at)}` : ""}<br>「行」は、取り込んだファイルでの行番号（見出しが1行目）です。重複は、すでに登録済み、またはファイル内の同じ行のため、取り込んでいません。内容を直して取り込み直す場合は、書き出したExcelの行を直して、もう一度取り込んでください。</div>
+    ${body}
+    <div class="modal-footer">
+      ${d.items.length ? `<button class="secondary" onclick="exportPurchaseImportSkippedExcel()">Excelに書き出す</button>` : ""}
+      <button onclick="document.getElementById('purchaseImportSkippedOverlay').classList.remove('show')">閉じる</button>
+    </div>
+  </div>`;
+  ov.classList.add("show");
+}
+function exportPurchaseImportSkippedExcel(){
+  const d = lastPurchaseImportSkipped;
+  if(!d.items.length){ alert("書き出すデータがありません。"); return; }
+  if(typeof XLSX === "undefined"){ alert("Excel機能の読み込みに失敗しました。インターネット接続を確認して再度お試しください。"); return; }
+  const head = ["行","取り込めなかった理由","仕入れ日","納品日","請求日","部門","請求書番号","仕入れ先","品名","発注数","金額合計税込"];
+  const rows = d.items.map(x=>[x.srcRow, x.reason, x.date, x.deliveryDate, x.billingDate, x.busho, x.invoiceNumber, x.supplier, x.itemName, x.qty, x.amount]);
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  ws["!cols"] = [6, 60, 12, 12, 12, 14, 16, 22, 28, 10, 14].map(w=>({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "取り込めなかったデータ");
+  XLSX.writeFile(wb, `仕入れ_取り込めなかったデータ_${todayStr()}.xlsx`);
+}
+
+function mergeImportedPurchaseRows(rows, preSkipped, fileName){
   const baseDraft = purchases.map(purchaseDraftFromRecord);
   const fuzzyMatches = [];
   // 既存の仕入れデータ（purchases）に既に存在する行と、同一インポート内で既に採用した行の重複キーを
@@ -5974,6 +6037,10 @@ function mergeImportedPurchaseRows(rows){
   const seenKeys = new Set(purchases.map(p=>purchaseImportDedupKey({
     date: p.date, supplier: p.supplier, itemName: p.itemName, invoiceNumber: p.invoiceNumber, amount: purchaseItemsTotal(p)
   })));
+  const existingKeys = new Set(seenKeys); // すでに登録されている仕入れ（重複の理由の判別用）
+  const skippedRows = (preSkipped || []).slice(); // 取り込めなかった行（理由つき）
+  const DUP_EXISTING = "すでに登録されている仕入れと同じ内容（仕入れ日・仕入れ先・品名・請求書番号・金額が一致）のため";
+  const DUP_IN_FILE = "同じファイル内の別の行と同じ内容（重複）のため";
   let skippedCount = 0;
   const importedDraft = [];
   const filledSummary = {}; // 空白を、マスタの値で補った項目ごとの件数
@@ -5982,6 +6049,7 @@ function mergeImportedPurchaseRows(rows){
     const key0 = purchaseImportDedupKey(r);
     if(seenKeys.has(key0)){
       skippedCount++;
+      skippedRows.push({ srcRow: r.srcRow, reason: existingKeys.has(key0) ? DUP_EXISTING : DUP_IN_FILE, row: r });
       return;
     }
     // 送料/その他・イニシャルコスト・値引、および小分類が送料・イニシャルコスト・サービス料・割引の行は
@@ -5996,6 +6064,7 @@ function mergeImportedPurchaseRows(rows){
     const key = purchaseImportDedupKey(r);
     if(seenKeys.has(key)){
       skippedCount++;
+      skippedRows.push({ srcRow: r.srcRow, reason: existingKeys.has(key) ? DUP_EXISTING : DUP_IN_FILE, row: r });
       return;
     }
     seenKeys.add(key0);
@@ -6028,8 +6097,10 @@ function mergeImportedPurchaseRows(rows){
   }
   document.getElementById("purchasesBulkModalOverlay").classList.add("show");
   const filledLines = Object.keys(filledSummary).map(k=>`${k}：${filledSummary[k]}件`);
-  if(skippedCount > 0 || filledLines.length){
-    alert((skippedCount > 0 ? `重複のため${skippedCount}件を取り込みませんでした。\n` : "") +
+  recordPurchaseImportSkipped(skippedRows, fileName);
+  if(skippedRows.length) openPurchaseImportSkipped();
+  if(filledLines.length){
+    alert(
       (filledLines.length ? `ファイルの空白を、登録済みの原料・資材・半製品マスタの値で補いました。\n${filledLines.join("\n")}\n（内容は、一括編集画面で確認・修正できます）` : ""));
   }
 }
@@ -6525,7 +6596,8 @@ function importPurchasesCSV(event){
   const reader = new FileReader();
   reader.onload = function(e){
     const text = e.target.result.replace(/^﻿/, "");
-    const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+    const lines = [], lineNos = []; // 空行は除き、元のファイルでの行番号を覚えておく（取り込めなかった行の案内用）
+    text.split(/\r?\n/).forEach((l, i)=>{ if(l.trim().length){ lines.push(l); lineNos.push(i + 1); } });
     if(!lines.length){
       alert("取込可能なデータが見つかりませんでした。見出し行（ステータス,仕入れ日,納品日,請求日,請求書番号,品名,大分類,中分類,小分類,発注数(中),単位(中),価格税込(中),金額合計税込,仕入れ先,メモ,内容量(小),単位(小),ロット入数(大),単位(大),メーカー）を含むCSVをご用意ください。");
       event.target.value = "";
@@ -6557,7 +6629,7 @@ function importPurchasesCSV(event){
     const iAmount = firstColIndex(PURCHASE_AMOUNT_HEADER_ALIASES);
     const iUnitPrice = firstColIndex(PURCHASE_UNIT_PRICE_HEADER_ALIASES);
     const cell = (cols, i)=> (i>=0 && cols[i]!==undefined) ? cols[i].trim() : "";
-    const rows = dataLines.map(line=>{
+    const parsedRows = dataLines.map((line, li)=>{
       const cols = parseCSVLine(line);
       const qtyRaw = cell(cols, iQty);
       const qty = qtyRaw === "" ? "" : (parseFloat(qtyRaw)||0);
@@ -6570,6 +6642,7 @@ function importPurchasesCSV(event){
         }
       }
       return {
+        srcRow: lineNos[li + 1],
         date: normalizeImportedDateStr(cell(cols, iDate)), supplier: cell(cols, iSupplier),
         itemName: cell(cols, iItemName), status: cell(cols, iStatus),
         department: cell(cols, iDepartment), category: cell(cols, iCategory),
@@ -6582,13 +6655,15 @@ function importPurchasesCSV(event){
         orderUnit: iOrderUnit >= 0 ? cell(cols, iOrderUnit) : "", largeQty: iLargeQty >= 0 ? cell(cols, iLargeQty) : "",
         qtyLevelRaw: iQtyLevel >= 0 ? cell(cols, iQtyLevel) : ""
       };
-    }).filter(r=>r.date || r.billingDate || r.deliveryDate || r.itemName);
+    });
+    const { rows, skipped } = splitImportedPurchaseRows(parsedRows);
     if(!rows.length){
+      if(skipped.length){ recordPurchaseImportSkipped(skipped, file.name); openPurchaseImportSkipped(); }
       alert("取込可能なデータが見つかりませんでした。見出し行（ステータス,仕入れ日,納品日,請求日,請求書番号,品名,大分類,中分類,小分類,発注数(中),単位(中),価格税込(中),金額合計税込,仕入れ先,メモ,内容量(小),単位(小),ロット入数(大),単位(大),メーカー）を含むCSVをご用意ください。列の順番が異なっていても、見出し名が一致していれば正しく取り込まれます（金額列は「合計金額(税込)」などの表記でも認識します。旧項目名「数量」「単位」「1P入り数」等のファイルもそのまま取り込めます）。");
       event.target.value = "";
       return;
     }
-    mergeImportedPurchaseRows(rows);
+    mergeImportedPurchaseRows(rows, skipped, file.name);
     event.target.value = "";
   };
   reader.readAsText(file, "UTF-8");
@@ -6608,8 +6683,8 @@ function importPurchasesExcel(event){
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      sheetRows = XLSX.utils.sheet_to_json(ws, { defval: "" }).map(r=>{
-        const o = {};
+      sheetRows = XLSX.utils.sheet_to_json(ws, { defval: "", blankrows: true }).map((r, i)=>{
+        const o = { __srcRow: i + 2 }; // 見出しが1行目のときの、Excelでの行番号
         Object.keys(r).forEach(k=>{ o[String(k).trim()] = r[k]; }); // 見出しの前後の空白・改行は無視する
         return o;
       });
@@ -6628,7 +6703,7 @@ function importPurchasesExcel(event){
       }
       return "";
     };
-    const rows = sheetRows.map(row=>{
+    const parsedRows = sheetRows.map(row=>{
       // 項目名変更(数量→発注数 等)の前後どちらの見出し名でも読み込めるよう、別名一覧から拾う
       const qtyRaw = pickRowValue(row, PURCHASE_QTY_HEADER_ALIASES);
       const qty = qtyRaw === "" ? "" : (parseFloat(qtyRaw)||0);
@@ -6642,6 +6717,7 @@ function importPurchasesExcel(event){
         }
       }
       return {
+        srcRow: row.__srcRow,
         date: toDateStr(row["仕入れ日"]),
         supplier: (row["仕入れ先"]||"").toString().trim(),
         itemName: (row["品名"]||"").toString().trim(),
@@ -6665,13 +6741,15 @@ function importPurchasesExcel(event){
         largeQty: (pickRowValue(row, PURCHASE_LARGE_QTY_HEADER_ALIASES)||"").toString().trim(),
         qtyLevelRaw: (pickRowValue(row, PURCHASE_QTY_LEVEL_HEADER_ALIASES)||"").toString().trim()
       };
-    }).filter(r=>r.date || r.billingDate || r.deliveryDate || r.itemName);
+    });
+    const { rows, skipped } = splitImportedPurchaseRows(parsedRows);
     if(!rows.length){
+      if(skipped.length){ recordPurchaseImportSkipped(skipped, file.name); openPurchaseImportSkipped(); }
       alert("取込可能なデータが見つかりませんでした。列見出し（ステータス／仕入れ日／納品日／請求日／請求書番号／品名／大分類／中分類／小分類／発注数(中)／単位(中)／価格税込(中)／金額合計税込／仕入れ先／メモ／内容量(小)／単位(小)／ロット入数(大)／単位(大)／メーカー）をご確認ください（金額列は「合計金額(税込)」などの表記でも認識します。旧項目名「数量」「単位」「1P入り数」等のファイルもそのまま取り込めます）。");
       event.target.value = "";
       return;
     }
-    mergeImportedPurchaseRows(rows);
+    mergeImportedPurchaseRows(rows, skipped, file.name);
     event.target.value = "";
   };
   reader.readAsArrayBuffer(file);
