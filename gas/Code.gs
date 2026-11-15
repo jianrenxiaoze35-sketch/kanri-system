@@ -48,7 +48,12 @@ function doPost(e) {
       case 'ping': return json_({ ok: true, meta: meta_() });
       case 'meta': return json_({ ok: true, meta: meta_() });
       case 'load': return json_(load_());
-      case 'put': { const res = put_(req); readableAfterPut_(req); return json_(res); }
+      case 'put': {
+        const res = put_(req); readableAfterPut_(req);
+        // 2026-11-14 原料マスタを保存したら、賞味期限シートの保管場所を合わせる（Kigen.gs）
+        if (res && res.ok && (req.items || []).some(function (it) { return it && it.k === 'material_master_data_v1' && !it.del; })) kigenSyncSafe_();
+        return json_(res);
+      }
       case 'fieldLog': return json_(fieldLog_(req));
       case 'otherpayCsv': return json_(otherpayCsv_(req));   // 2026-11-12 取り込んだキャッシュレス決済のCSVをドライブへ（Tana.gs）
       case 'regiSlipList': return json_(regiSlipList_(req));   // 2026-11-13 共有ドライブ「レジ締め」の伝票（Tana.gs）

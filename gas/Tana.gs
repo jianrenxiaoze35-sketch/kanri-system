@@ -219,6 +219,7 @@ function tanaPlace_(req) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try { tanaAppend_(TANA_LOC_SHEET, TANA_LOC_HEADER, [row]); } finally { lock.releaseLock(); }
+  kigenSyncSafe_();   // 2026-11-14 賞味期限シートの保管場所を合わせる（Kigen.gs）
   return { ok: true, at: at };
 }
 function tanaDone_(req) {

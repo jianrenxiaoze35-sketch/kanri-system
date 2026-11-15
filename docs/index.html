@@ -21953,10 +21953,10 @@ let _appBootReady = runBootSteps();
   #kigenWrap .kg-sum span.warn{background:#fff3cd;}
   #kigenWrap .kg-sum span.bad{background:#fde2e0;}
   #kigenWrap .kg-msg{font-size:13px;color:var(--muted);}
-  #kigenWrap table{border-collapse:collapse;width:100%;min-width:1500px;font-size:12px;}
+  #kigenWrap table{border-collapse:collapse;width:100%;min-width:1200px;font-size:12px;}
   #kigenWrap th,#kigenWrap td{border-bottom:1px solid var(--border);padding:5px 6px;text-align:left;vertical-align:top;}
   #kigenWrap th{position:sticky;top:0;background:#f6f8f7;font-weight:600;white-space:nowrap;}
-  #kigenWrap th.g1{background:#fff8d6;} #kigenWrap th.g2{background:#e3effa;}
+  #kigenWrap th.g1{background:#fff8d6;}
   #kigenWrap td.num{text-align:right;white-space:nowrap;}
   #kigenWrap td.nm{min-width:220px;}
   #kigenWrap tr.kg-nosheet td{background:#fff8e1;}
@@ -21969,6 +21969,7 @@ let _appBootReady = runBootSteps();
 <script>
 /* ---- 賞味期限・ポーション基準（2026-11-14） ----
    スタッフが書くのはスプレッドシート（GAS の KIGEN_SHEET_ID）のまま。ここは読んで原料マスタと並べるだけ。
+   11/14：②ポーションはシートから外した。保管場所の列は GAS が商品管理の値（原料マスタ＋棚卸の場所）で書く。
    つなぎ方は品名（商品管理の表記）。商品管理に有ってシートに無い食材は、ボタンでシートに行を足せる。 */
 const KIGEN_SHEET_URL = "https:\/\/docs.google.com/spreadsheets/d/1T-LhnDp1zoKdgYC8wSfhCMXn1eJ3REHjcRV5_DABEVs/edit";
 // シートの対象＝大分類 レストラン・中分類 原料。日本酒・飲料・添加物（炭酸ガス）は外す（11/14 の表の作り方）
@@ -21981,7 +21982,7 @@ function kigenTarget(m){
     && !KIGEN_EXCLUDE_SUB.includes(m.subCategory) && m.status !== "未取り扱い" && kigenNorm(m.name);
 }
 function kigenFilled(r){
-  return !!(r.unopened || r.openDays || r.thawDays || r.prepDays || r.portion);
+  return !!(r.unopened || r.openDays || r.thawDays || r.prepDays || r.onExpire);
 }
 function kigenShow(on){
   const wrap = document.getElementById("kigenWrap");
@@ -22033,6 +22034,7 @@ function kigenJoin(){
   missing.forEach(m=>out.push({ r: null, m, kind: "nosheet" }));
   return { out, missing };
 }
+function kigenMasterPlace(m){ return ((m && m.storageLocations) || []).join("、"); }
 function kigenCell(v, suffix){
   return v ? escAttr(v) + (suffix || "") : '<span class="kg-empty">—</span>';
 }
@@ -22043,7 +22045,7 @@ function kigenRender(){
   let html = `<div class="kg-bar">
       <button class="secondary" type="button" onclick="window.open('${escAttr(sheetUrl)}','_blank','noopener')">シートを開く ↗</button>
       <button class="secondary" type="button" onclick="kigenLoad()" ${kigenLoading ? "disabled" : ""}>読み込み直す</button>
-      <span class="kg-msg">書き込むのはシートです。ここは見るだけ（品名でつないでいます）。</span>
+      <span class="kg-msg">書き込むのはシートです。ここは見るだけ（品名でつないでいます）。保管場所は商品管理の値がシートに自動で入ります。</span>
     </div>`;
   if(kigenMsg) html += `<div class="kg-msg" style="margin-bottom:8px;">${escAttr(kigenMsg)}</div>`;
   if(!kigenData){ wrap.innerHTML = html; return; }
@@ -22076,7 +22078,6 @@ function kigenRender(){
   const head = `<tr>
       <th>No</th><th>品名</th><th>品目コード</th><th>分類</th><th>入荷時</th><th>保管場所</th>
       <th class="g1">未開封</th><th class="g1">開封後</th><th class="g1">解凍</th><th class="g1">解凍後</th><th class="g1">仕込み後</th><th class="g1">期限切れ・迷ったとき</th>
-      <th class="g2">ポーション</th><th class="g2">1ポーション</th><th class="g2">1箱の数</th><th class="g2">箱の置き場所</th><th class="g2">先出し</th>
       <th>記入</th><th>確認</th><th>メモ</th></tr>`;
   const body = list.map(x=>{
     const r = x.r || {}, m = x.m;
@@ -22085,17 +22086,15 @@ function kigenRender(){
     const name = escAttr(x.r ? r.name : m.name);
     const nameCell = m ? `<a href="#" onclick="editIngredientById('${m.id}');return false;">${name}</a>` : name;
     const cls = x.kind === "nosheet" ? ' class="kg-nosheet"' : x.kind === "nokanri" ? ' class="kg-nokanri"' : "";
-    if(!x.r) return `<tr${cls}><td></td><td class="nm">${nameCell}${tag}</td><td>${escAttr((m && m.itemCode) || "")}</td><td>${escAttr(m.subCategory || "")}</td><td colspan="16" class="kg-empty">シートに行がありません</td></tr>`;
+    if(!x.r) return `<tr${cls}><td></td><td class="nm">${nameCell}${tag}</td><td>${escAttr((m && m.itemCode) || "")}</td><td>${escAttr(m.subCategory || "")}</td><td></td><td>${kigenCell(kigenMasterPlace(m))}</td><td colspan="9" class="kg-empty">シートに行がありません</td></tr>`;
     return `<tr${cls}>
       <td class="num">${escAttr(r.no)}</td><td class="nm">${nameCell}${tag}</td><td>${escAttr((m && m.itemCode) || "")}</td><td>${escAttr(r.bunrui)}</td>
       <td>${kigenCell(r.arrive)}</td><td>${kigenCell(r.place)}</td>
       <td>${kigenCell(r.unopened)}</td><td class="num">${kigenCell(r.openDays, "日")}</td><td>${kigenCell(r.thaw)}</td>
       <td class="num">${kigenCell(r.thawDays, "日")}</td><td class="num">${kigenCell(r.prepDays, "日")}</td><td>${kigenCell(r.onExpire)}</td>
-      <td>${kigenCell(r.portion)}</td><td class="num">${r.portionQty ? escAttr(r.portionQty) + escAttr(r.portionUnit || "") : '<span class="kg-empty">—</span>'}</td>
-      <td class="num">${kigenCell(r.perBox)}</td><td>${kigenCell(r.boxPlace)}</td><td>${kigenCell(r.fifo)}</td>
       <td>${escAttr([r.by, r.date].filter(Boolean).join(" "))}</td><td>${r.checked ? "✓" : ""}</td><td>${escAttr(r.memo)}</td></tr>`;
   }).join("");
-  html += `<div class="kg-scroll"><table><thead>${head}</thead><tbody>${body || '<tr><td colspan="20" class="kg-empty">該当なし</td></tr>'}</tbody></table></div>`;
+  html += `<div class="kg-scroll"><table><thead>${head}</thead><tbody>${body || '<tr><td colspan="15" class="kg-empty">該当なし</td></tr>'}</tbody></table></div>`;
   if(nokanri) html += `<div class="kg-msg" style="margin-top:8px;">「商品管理に無い品名」は、シートの品名が商品管理の表記と違う行です。商品管理で名前を変えたときは、シートの品名も同じに直してください。</div>`;
   wrap.innerHTML = html;
 }
