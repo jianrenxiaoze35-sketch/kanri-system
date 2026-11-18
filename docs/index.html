@@ -17935,6 +17935,11 @@ function renderPosSystemSummary(){
 
 // ②売上集計の表示用：税込の金額・単価（集計の元の値）から、税抜の値を求める（税率はその行の税率。円未満は四捨五入）
 function regiExclTax(v, rate){ return Math.round((Number(v) || 0) / (1 + (Number(rate) || 10) / 100)); }
+// 税抜の合計（税率ごと）に税率をかけて、税込の合計を求める（税率ごとに円未満を四捨五入して足す）。②売上集計の表と、提出用Excelの合計に使う。
+function regiAddRate(map, rate, excl){ map[rate] = (map[rate] || 0) + excl; }
+function regiMergeRate(dst, src){ Object.keys(src).forEach(r=>regiAddRate(dst, r, src[r])); }
+function regiSumRate(map){ return Object.keys(map).reduce((s, r)=>s + map[r], 0); }
+function regiInclFromExcl(map){ return Object.keys(map).reduce((s, r)=>s + Math.round(map[r] * (1 + Number(r) / 100)), 0); }
 function regiBuildTemplateRows(bucketData, bucket){
   const items = Object.values(bucketData);
   const byDept = {};
@@ -17962,18 +17967,18 @@ function regiBuildTemplateRows(bucketData, bucket){
     <tr>
     <th>小分類</th><th>税率</th><th>コード</th><th style="text-align:left;">商品名</th><th>数量</th><th>単価(税抜)</th><th>金額(税抜)</th><th>金額(税込)</th><th></th>
   </tr>`;
-  let grand = 0, grandQty = 0, grandExcl = 0;
+  let grand = 0, grandQty = 0, grandExcl = 0, grandInclCalc = 0; const grandRate = {}, groupRate = {};
   const groupTotals = {};
   const groupCreditAccounts = {};
 
   depts.forEach(dept=>{
     const tierMap = byDept[dept];
-    let deptSub = 0, deptQty = 0, deptExcl = 0, deptHtml = "", deptHasAny = false;
+    let deptSub = 0, deptQty = 0, deptExcl = 0, deptHtml = "", deptHasAny = false; const deptRate = {};
     REGI_TIER_ORDER.forEach(tier=>{
       const tierItems = tierMap[tier];
       if(!tierItems || !tierItems.length) return;
       deptHasAny = true;
-      let tierSub = 0, tierQty = 0, tierExcl = 0;
+      let tierSub = 0, tierQty = 0, tierExcl = 0; const tierRate = {};
       deptHtml += `<tr class="regi-tier-header"><td colspan="9" style="text-align:left;padding:3px 8px;">▸ ${REGI_TIER_LABELS[tier]}</td></tr>`;
       tierItems.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||""), "ja", { numeric: true })).forEach(it=>{
         const code = it.code && !String(it.code).startsWith("未登録") ? it.code : "-";
@@ -17996,19 +18001,20 @@ function regiBuildTemplateRows(bucketData, bucket){
             ${it.isManual ? `<button class="danger" style="padding:2px 6px;font-size:11px;" onclick="deleteManualEntry('${bucket}','${encodeURIComponent(rowKey)}')">✕</button>` : ""}
           </td>
         </tr>`;
-        tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0; tierExcl += amountExcl;
+        tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0; tierExcl += amountExcl; regiAddRate(tierRate, rate, amountExcl);
         const grp = it.group || "食品売上";
+        regiAddRate(groupRate[grp] = groupRate[grp] || {}, rate, amountExcl);
         groupTotals[grp] = (groupTotals[grp]||0) + (Number(it.amount)||0);
         if(it.creditAccount) groupCreditAccounts[grp] = it.creditAccount;
       });
-      deptHtml += `<tr class="regi-tier-total"><td colspan="4" class="text">${escAttr(dept)} ${REGI_TIER_LABELS[tier]}合計</td><td style="text-align:right;">${tierQty}</td><td></td><td style="text-align:right;">${fmtNum(tierExcl)}</td><td style="text-align:right;">${fmtNum(tierSub)}</td><td></td></tr>`;
-      deptSub += tierSub; deptQty += tierQty; deptExcl += tierExcl;
+      deptHtml += `<tr class="regi-tier-total"><td colspan="4" class="text">${escAttr(dept)} ${REGI_TIER_LABELS[tier]}合計</td><td style="text-align:right;">${tierQty}</td><td></td><td style="text-align:right;">${fmtNum(tierExcl)}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(tierRate))}</td><td></td></tr>`;
+      deptSub += tierSub; deptQty += tierQty; deptExcl += tierExcl; regiMergeRate(deptRate, tierRate);
     });
     if(!deptHasAny) return;
     html += `<tr class="regi-dept-header"><td colspan="9" style="padding:5px 8px;text-align:left;">【 ${escAttr(dept)} 】</td></tr>`;
     html += deptHtml;
-    html += `<tr class="regi-dept-total"><td colspan="4" class="text">${escAttr(dept)} 全体合計</td><td style="text-align:right;">${deptQty}</td><td></td><td style="text-align:right;">${fmtNum(deptExcl)}</td><td style="text-align:right;">${fmtNum(deptSub)}</td><td></td></tr>`;
-    grand += deptSub; grandQty += deptQty; grandExcl += deptExcl;
+    html += `<tr class="regi-dept-total"><td colspan="4" class="text">${escAttr(dept)} 全体合計</td><td style="text-align:right;">${deptQty}</td><td></td><td style="text-align:right;">${fmtNum(deptExcl)}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(deptRate))}</td><td></td></tr>`;
+    grand += deptSub; grandQty += deptQty; grandExcl += deptExcl; regiMergeRate(grandRate, deptRate);
   });
 
   if(Object.keys(groupTotals).length){
@@ -18017,12 +18023,12 @@ function regiBuildTemplateRows(bucketData, bucket){
     const allGrps = [...grpOrder, ...Object.keys(groupTotals).filter(g=>!grpOrder.includes(g))];
     allGrps.forEach(g=>{
       if(!groupTotals[g]) return;
-      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td></td><td style="text-align:right;">${fmtNum(groupTotals[g])}</td><td></td></tr>`;
+      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(regiSumRate(groupRate[g] || {}))}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(groupRate[g] || {}))}</td><td></td></tr>`;
     });
   }
-  html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grandExcl)}</td><td style="text-align:right;">${fmtNum(grand)}</td><td></td></tr>`;
+  html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grandExcl)}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(grandRate))}</td><td></td></tr>`;
   html += "</table>";
-  return { html, grand, groupTotals, groupCreditAccounts };
+  return { html, grand, groupTotals, groupCreditAccounts, grandInclCalc: regiInclFromExcl(grandRate), grandExcl };
 }
 let lastRegiCashSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
 let lastRegiOtherSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
@@ -19644,19 +19650,20 @@ function buildRegiSalesAOA(bucketData, sheetTitle){
   const wd = ["日","月","火","水","木","金","土"][d.getDay()];
   const aoa = [];
   aoa.push([sheetTitle+"　"+regiSettings.storeName+"　明細表"]);
-  aoa.push(["", "", "", "", d.getFullYear()+"年", (d.getMonth()+1)+"月", d.getDate()+"日", wd+"曜日"]);
-  aoa.push(["大分類","価格区分","税率(%)","小分類","商品コード","商品名","数量","単価","金額"]);
+  aoa.push(["", "", "", "", "", d.getFullYear()+"年", (d.getMonth()+1)+"月", d.getDate()+"日", wd+"曜日"]);
+  aoa.push(["大分類","価格区分","税率(%)","小分類","商品コード","商品名","数量","単価(税抜)","金額(税抜)","金額(税込)"]);
 
-  let grand = 0;
-  const groupTotals = {};
+  let grandQty = 0;
+  const grandRate = {}, groupRate = {};
   depts.forEach(dept=>{
-    let deptSub = 0;
-    const taxByRate = {};
+    let deptQty = 0, deptExcl = 0;
+    const deptRate = {};
     let any = false;
     REGI_TIER_ORDER.forEach(tier=>{
       const tierItems = byDept[dept][tier];
       if(!tierItems || !tierItems.length) return;
-      let tierSub = 0, tierQty = 0;
+      let tierQty = 0, tierExcl = 0;
+      const tierRate = {};
       tierItems.sort((a,b)=>{
         const aCode = a.code && !String(a.code).startsWith("未登録") ? String(a.code) : null;
         const bCode = b.code && !String(b.code).startsWith("未登録") ? String(b.code) : null;
@@ -19671,33 +19678,35 @@ function buildRegiSalesAOA(bucketData, sheetTitle){
         const code = it.code && !String(it.code).startsWith("未登録") ? it.code : "";
         const rate = it.taxRate || 10;
         const unitPriceAOA = it.unitPrice != null ? it.unitPrice : (it.qty !== 0 ? Math.round(it.amount/it.qty) : 0);
-        aoa.push([dept, REGI_TIER_LABELS[tier], rate+"%", it.category||"", code, it.name, it.qty, unitPriceAOA, it.amount]);
-        tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0;
-        taxByRate[rate] = (taxByRate[rate]||0) + (Number(it.amount)||0);
+        const amountExcl = regiExclTax(it.amount, rate);
+        aoa.push([dept, REGI_TIER_LABELS[tier], rate+"%", it.category||"", code, it.name, it.qty, it.qty !== 0 ? regiExclTax(unitPriceAOA, rate) : "", amountExcl, it.amount]);
+        tierQty += Number(it.qty)||0; tierExcl += amountExcl;
+        regiAddRate(tierRate, rate, amountExcl);
         const grp = it.group || "食品売上";
-        groupTotals[grp] = (groupTotals[grp]||0) + (Number(it.amount)||0);
+        regiAddRate(groupRate[grp] = groupRate[grp] || {}, rate, amountExcl);
       });
-      aoa.push([dept+" "+REGI_TIER_LABELS[tier]+"合計","","","","","",tierQty,"",tierSub]);
-      deptSub += tierSub;
+      aoa.push([dept+" "+REGI_TIER_LABELS[tier]+"合計","","","","","",tierQty,"",tierExcl,regiInclFromExcl(tierRate)]);
+      deptQty += tierQty; deptExcl += tierExcl; regiMergeRate(deptRate, tierRate);
     });
     if(!any) return;
-    Object.entries(taxByRate).sort((a,b)=>Number(b[0])-Number(a[0])).forEach(([rate,incl])=>{
-      const excl = Math.round(incl/(1+Number(rate)/100)); const tax = incl-excl;
-      aoa.push(["　税率"+rate+"%","","","税抜",excl,"消費税",tax,""]);
+    Object.entries(deptRate).sort((a,b)=>Number(b[0])-Number(a[0])).forEach(([rate,excl])=>{
+      const tax = Math.round(excl * Number(rate) / 100);
+      aoa.push(["　税率"+rate+"%","","","","","","","税抜",excl,"消費税",tax]);
     });
-    aoa.push([dept+" 全体合計（税込）","","","","","","","",deptSub]);
-    grand += deptSub;
+    aoa.push([dept+" 全体合計","","","","","",deptQty,"",deptExcl,regiInclFromExcl(deptRate)]);
+    grandQty += deptQty; regiMergeRate(grandRate, deptRate);
   });
   aoa.push([""]);
   aoa.push(["▼ 会計区分別合計"]);
   const grpOrder = OPTIONS.accounting;
-  [...grpOrder, ...Object.keys(groupTotals).filter(g=>!grpOrder.includes(g))].forEach(g=>{
-    if(!groupTotals[g]) return;
-    const incl = groupTotals[g]; const excl = Math.round(incl/1.1); const tax = incl-excl;
-    aoa.push([g,"","税抜",excl,"消費税",tax,"税込",incl]);
+  [...grpOrder, ...Object.keys(groupRate).filter(g=>!grpOrder.includes(g))].forEach(g=>{
+    if(!groupRate[g]) return;
+    const excl = regiSumRate(groupRate[g]); const incl = regiInclFromExcl(groupRate[g]);
+    if(!excl && !incl) return;
+    aoa.push([g,"","","","","","","","税抜",excl,"消費税",incl-excl,"税込",incl]);
   });
   aoa.push([""]);
-  aoa.push(["〈〈"+sheetTitle+" 総合計（税込）〉〉","","","","","","","",grand]);
+  aoa.push(["〈〈"+sheetTitle+" 総合計〉〉","","","","","",grandQty,"",regiSumRate(grandRate),regiInclFromExcl(grandRate)]);
   return aoa;
 }
 
@@ -19707,7 +19716,7 @@ function exportRegiSalesExcel(){
   const wb = XLSX.utils.book_new();
   const wsCash = XLSX.utils.aoa_to_sheet(buildRegiSalesAOA(regiSalesState.agg.cash, "現金決済"));
   const wsOther = XLSX.utils.aoa_to_sheet(buildRegiSalesAOA(regiSalesState.agg.other, "その他（カード・QR・電子マネー等）"));
-  wsCash["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:6},{wch:12},{wch:26},{wch:5},{wch:10}];
+  wsCash["!cols"] = [{wch:10},{wch:12},{wch:12},{wch:8},{wch:12},{wch:26},{wch:6},{wch:11},{wch:12},{wch:12}];
   wsOther["!cols"] = wsCash["!cols"];
   XLSX.utils.book_append_sheet(wb, wsCash, "現金決済");
   XLSX.utils.book_append_sheet(wb, wsOther, "その他決済");
