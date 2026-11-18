@@ -17933,6 +17933,8 @@ function renderPosSystemSummary(){
   ${!hasData ? '<p class="hint" style="margin-top:8px;">まだデータがありません。funfo伝票またはスマレジCSVをアップロードしてください。</p>' : ""}`;
 }
 
+// ②売上集計の表示用：税込の金額・単価（集計の元の値）から、税抜の値を求める（税率はその行の税率。円未満は四捨五入）
+function regiExclTax(v, rate){ return Math.round((Number(v) || 0) / (1 + (Number(rate) || 10) / 100)); }
 function regiBuildTemplateRows(bucketData, bucket){
   const items = Object.values(bucketData);
   const byDept = {};
@@ -17954,28 +17956,29 @@ function regiBuildTemplateRows(bucketData, bucket){
 
   let html = `<table class="regi-detail-table" style="table-layout:fixed;">
     <colgroup>
-      <col style="width:14%"><col style="width:8%"><col style="width:10%"><col style="width:28%">
-      <col style="width:8%"><col style="width:12%"><col style="width:12%"><col style="width:8%">
+      <col style="width:12%"><col style="width:6%"><col style="width:9%"><col style="width:24%">
+      <col style="width:7%"><col style="width:10%"><col style="width:11%"><col style="width:11%"><col style="width:6%">
     </colgroup>
     <tr>
-    <th>小分類</th><th>税率</th><th>コード</th><th style="text-align:left;">商品名</th><th>数量</th><th>単価</th><th>金額</th><th></th>
+    <th>小分類</th><th>税率</th><th>コード</th><th style="text-align:left;">商品名</th><th>数量</th><th>単価(税抜)</th><th>金額(税抜)</th><th>金額(税込)</th><th></th>
   </tr>`;
-  let grand = 0, grandQty = 0;
+  let grand = 0, grandQty = 0, grandExcl = 0;
   const groupTotals = {};
   const groupCreditAccounts = {};
 
   depts.forEach(dept=>{
     const tierMap = byDept[dept];
-    let deptSub = 0, deptQty = 0, deptHtml = "", deptHasAny = false;
+    let deptSub = 0, deptQty = 0, deptExcl = 0, deptHtml = "", deptHasAny = false;
     REGI_TIER_ORDER.forEach(tier=>{
       const tierItems = tierMap[tier];
       if(!tierItems || !tierItems.length) return;
       deptHasAny = true;
-      let tierSub = 0, tierQty = 0;
-      deptHtml += `<tr class="regi-tier-header"><td colspan="8" style="text-align:left;padding:3px 8px;">▸ ${REGI_TIER_LABELS[tier]}</td></tr>`;
+      let tierSub = 0, tierQty = 0, tierExcl = 0;
+      deptHtml += `<tr class="regi-tier-header"><td colspan="9" style="text-align:left;padding:3px 8px;">▸ ${REGI_TIER_LABELS[tier]}</td></tr>`;
       tierItems.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||""), "ja", { numeric: true })).forEach(it=>{
         const code = it.code && !String(it.code).startsWith("未登録") ? it.code : "-";
         const rate = it.taxRate || 10;
+        const amountExcl = regiExclTax(it.amount, rate);
         const unitPriceDisp = it.unitPrice != null ? it.unitPrice : (it.qty !== 0 ? Math.round(it.amount/it.qty) : 0);
         const rowKey = it._aggKey || ((it.code || it.name) + "::" + it.tier);
         const manualStyle = it.isManual ? "background:rgba(58,134,200,0.08);" : (it.viaMatch ? "background:rgba(160,120,0,0.08);" : (it.unmatched ? "background:rgba(192,57,43,0.06);" : ""));
@@ -17985,38 +17988,39 @@ function regiBuildTemplateRows(bucketData, bucket){
           <td style="text-align:center;">${escAttr(code)}</td>
           <td class="text">${escAttr(it.name)}${it.isManual?' <span style="font-size:10px;color:var(--accent);">[手動]</span>':""}${it.viaMatch?' <span style="font-size:10px;color:#a07800;">[未マッチ→マッチ済み]</span>':""}${it.unmatched?' <span style="font-size:10px;color:#c0392b;">[未マッチ]</span>':""}</td>
           <td style="text-align:right;">${it.qty}</td>
-          <td style="text-align:right;" class="calc">${it.qty!==0?fmtNum(unitPriceDisp):""}</td>
+          <td style="text-align:right;" class="calc">${it.qty!==0?fmtNum(regiExclTax(unitPriceDisp, rate)):""}</td>
+          <td style="text-align:right;" class="calc">${fmtNum(amountExcl)}</td>
           <td style="text-align:right;" class="calc">${fmtNum(it.amount)}</td>
           <td style="text-align:center;white-space:nowrap;">
             <button class="secondary" style="padding:2px 6px;font-size:11px;" onclick="openManualEdit('${bucket}','${encodeURIComponent(rowKey)}')">✎</button>
             ${it.isManual ? `<button class="danger" style="padding:2px 6px;font-size:11px;" onclick="deleteManualEntry('${bucket}','${encodeURIComponent(rowKey)}')">✕</button>` : ""}
           </td>
         </tr>`;
-        tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0;
+        tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0; tierExcl += amountExcl;
         const grp = it.group || "食品売上";
         groupTotals[grp] = (groupTotals[grp]||0) + (Number(it.amount)||0);
         if(it.creditAccount) groupCreditAccounts[grp] = it.creditAccount;
       });
-      deptHtml += `<tr class="regi-tier-total"><td colspan="4" class="text">${escAttr(dept)} ${REGI_TIER_LABELS[tier]}合計</td><td style="text-align:right;">${tierQty}</td><td></td><td style="text-align:right;">${fmtNum(tierSub)}</td><td></td></tr>`;
-      deptSub += tierSub; deptQty += tierQty;
+      deptHtml += `<tr class="regi-tier-total"><td colspan="4" class="text">${escAttr(dept)} ${REGI_TIER_LABELS[tier]}合計</td><td style="text-align:right;">${tierQty}</td><td></td><td style="text-align:right;">${fmtNum(tierExcl)}</td><td style="text-align:right;">${fmtNum(tierSub)}</td><td></td></tr>`;
+      deptSub += tierSub; deptQty += tierQty; deptExcl += tierExcl;
     });
     if(!deptHasAny) return;
-    html += `<tr class="regi-dept-header"><td colspan="8" style="padding:5px 8px;text-align:left;">【 ${escAttr(dept)} 】</td></tr>`;
+    html += `<tr class="regi-dept-header"><td colspan="9" style="padding:5px 8px;text-align:left;">【 ${escAttr(dept)} 】</td></tr>`;
     html += deptHtml;
-    html += `<tr class="regi-dept-total"><td colspan="4" class="text">${escAttr(dept)} 全体合計（税込）</td><td style="text-align:right;">${deptQty}</td><td></td><td style="text-align:right;">${fmtNum(deptSub)}</td><td></td></tr>`;
-    grand += deptSub; grandQty += deptQty;
+    html += `<tr class="regi-dept-total"><td colspan="4" class="text">${escAttr(dept)} 全体合計</td><td style="text-align:right;">${deptQty}</td><td></td><td style="text-align:right;">${fmtNum(deptExcl)}</td><td style="text-align:right;">${fmtNum(deptSub)}</td><td></td></tr>`;
+    grand += deptSub; grandQty += deptQty; grandExcl += deptExcl;
   });
 
   if(Object.keys(groupTotals).length){
-    html += `<tr class="regi-group-total"><td colspan="8" style="text-align:left;padding:4px 8px;font-weight:700;">▼ 会計区分別合計</td></tr>`;
+    html += `<tr class="regi-group-total"><td colspan="9" style="text-align:left;padding:4px 8px;font-weight:700;">▼ 会計区分別合計</td></tr>`;
     const grpOrder = OPTIONS.accounting;
     const allGrps = [...grpOrder, ...Object.keys(groupTotals).filter(g=>!grpOrder.includes(g))];
     allGrps.forEach(g=>{
       if(!groupTotals[g]) return;
-      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(groupTotals[g])}</td><td></td></tr>`;
+      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td></td><td style="text-align:right;">${fmtNum(groupTotals[g])}</td><td></td></tr>`;
     });
   }
-  html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計（税込）</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grand)}</td><td></td></tr>`;
+  html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grandExcl)}</td><td style="text-align:right;">${fmtNum(grand)}</td><td></td></tr>`;
   html += "</table>";
   return { html, grand, groupTotals, groupCreditAccounts };
 }
