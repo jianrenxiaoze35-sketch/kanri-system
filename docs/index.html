@@ -17940,6 +17940,21 @@ function regiAddRate(map, rate, excl){ map[rate] = (map[rate] || 0) + excl; }
 function regiMergeRate(dst, src){ Object.keys(src).forEach(r=>regiAddRate(dst, r, src[r])); }
 function regiSumRate(map){ return Object.keys(map).reduce((s, r)=>s + map[r], 0); }
 function regiInclFromExcl(map){ return Object.keys(map).reduce((s, r)=>s + Math.round(map[r] * (1 + Number(r) / 100)), 0); }
+// 各部分（会計区分・システム区分など）の「税抜の合計（税率ごと）」から、税込の合計を求める。
+// 部分ごとに求めた税込の合計が、全体で求めた税込の合計と1円単位でずれる場合は、差を、最も金額の大きい部分で調整して、部分の合計＝全体の合計にそろえる。
+function regiDistributeIncl(rateMaps){
+  const all = {};
+  Object.keys(rateMaps).forEach(k=>regiMergeRate(all, rateMaps[k]));
+  const total = regiInclFromExcl(all);
+  const res = {}; let sum = 0;
+  Object.keys(rateMaps).forEach(k=>{ res[k] = regiInclFromExcl(rateMaps[k]); sum += res[k]; });
+  const diff = total - sum;
+  if(diff){
+    const big = Object.keys(res).sort((a, b)=>res[b] - res[a])[0];
+    if(big !== undefined) res[big] += diff;
+  }
+  return { parts: res, total };
+}
 function regiBuildTemplateRows(bucketData, bucket){
   const items = Object.values(bucketData);
   const byDept = {};
@@ -18017,18 +18032,22 @@ function regiBuildTemplateRows(bucketData, bucket){
     grand += deptSub; grandQty += deptQty; grandExcl += deptExcl; regiMergeRate(grandRate, deptRate);
   });
 
+  // 会計区分別の合計は、税抜の合計×税率で求め直す（伝票・照合に渡す値もこの値）。区分の合計と総合計は、1円単位でそろえる。
+  const groupDist = regiDistributeIncl(groupRate);
+  const groupExclTotals = {}, groupTotalsActual = Object.assign({}, groupTotals);
+  Object.keys(groupRate).forEach(g=>{ groupTotals[g] = groupDist.parts[g]; groupExclTotals[g] = regiSumRate(groupRate[g]); });
   if(Object.keys(groupTotals).length){
     html += `<tr class="regi-group-total"><td colspan="9" style="text-align:left;padding:4px 8px;font-weight:700;">▼ 会計区分別合計</td></tr>`;
     const grpOrder = OPTIONS.accounting;
     const allGrps = [...grpOrder, ...Object.keys(groupTotals).filter(g=>!grpOrder.includes(g))];
     allGrps.forEach(g=>{
       if(!groupTotals[g]) return;
-      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(regiSumRate(groupRate[g] || {}))}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(groupRate[g] || {}))}</td><td></td></tr>`;
+      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(groupExclTotals[g] || 0)}</td><td style="text-align:right;">${fmtNum(groupTotals[g])}</td><td></td></tr>`;
     });
   }
   html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grandExcl)}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(grandRate))}</td><td></td></tr>`;
   html += "</table>";
-  return { html, grand, groupTotals, groupCreditAccounts, grandInclCalc: regiInclFromExcl(grandRate), grandExcl };
+  return { html, grand: regiInclFromExcl(grandRate), grandActual: grand, groupTotals, groupTotalsActual, groupExclTotals, groupCreditAccounts, grandExcl };
 }
 let lastRegiCashSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
 let lastRegiOtherSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
@@ -18055,7 +18074,7 @@ function saveRegiSlipSettings(){
   renderSlips();
 }
 
-function slipDocHTML(title, debitAccount, memoLabel, groupTotals, partner, dateStr, groupCreditAccounts){
+function slipDocHTML(title, debitAccount, memoLabel, groupTotals, partner, dateStr, groupCreditAccounts, groupExcl){
   // デフォルトの会計区分→貸方科目マッピング（商品ごとの設定がない場合のフォールバック）
   const GRP_ORDER  = ["酒類売上","発泡酒売上","食品売上","雑貨売上"];
   const GRP_CREDIT = {"酒類売上":"製品売上高", "発泡酒売上":"製品売上高", "食品売上":"食品売上高", "雑貨売上":"商品売上高"};
@@ -18078,7 +18097,7 @@ function slipDocHTML(title, debitAccount, memoLabel, groupTotals, partner, dateS
   } else {
     allGroups.forEach(g=>{
       const incl = Math.round(groupTotals[g]||0);
-      const excl = Math.round(incl/1.1);
+      const excl = (groupExcl && groupExcl[g] !== undefined) ? Math.round(groupExcl[g]) : Math.round(incl/1.1); // 税抜は、②売上集計の税率ごとの合計から
       const tax  = incl - excl;
       totalIncl += incl;
       const credit = creditMap[g] || (g + "（売上）");
@@ -18087,7 +18106,7 @@ function slipDocHTML(title, debitAccount, memoLabel, groupTotals, partner, dateS
       isFirst = false;
       bodyRows += `
         <tr><td class="c">${escAttr(dateCell)}</td><td class="c">${escAttr(partnerCell)}</td><td class="l">${escAttr(g)}</td><td></td><td></td><td class="c">${escAttr(credit)}</td><td>${regiYen(excl)}</td></tr>
-        <tr><td></td><td></td><td class="l">消費税（10％）</td><td></td><td></td><td class="c">仮受消費税</td><td>${regiYen(tax)}</td></tr>`;
+        <tr><td></td><td></td><td class="l">${groupExcl ? "消費税" : "消費税（10％）"}</td><td></td><td></td><td class="c">仮受消費税</td><td>${regiYen(tax)}</td></tr>`;
     });
   }
 
@@ -18114,15 +18133,15 @@ function renderSlips(){
   recomputeAggregate();
   renderSalesTables();
   const html = `<div class="slip-page">
-    ${slipDocHTML("入　金　伝　票", "現金", "現金売上分計", lastRegiCashSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiCashSummary.groupCreditAccounts)}
+    ${slipDocHTML("入　金　伝　票", "現金", "現金売上分計", lastRegiCashSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiCashSummary.groupCreditAccounts, lastRegiCashSummary.groupExclTotals)}
     <div class="kiri-line"></div>
-    ${slipDocHTML('振　替　伝　票<br><span style="font-size:0.65em;letter-spacing:1px;">（クレジット・QR・電子マネー決済）</span>', "未収入金", "その他決済分計", lastRegiOtherSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiOtherSummary.groupCreditAccounts)}
+    ${slipDocHTML('振　替　伝　票<br><span style="font-size:0.65em;letter-spacing:1px;">（クレジット・QR・電子マネー決済）</span>', "未収入金", "その他決済分計", lastRegiOtherSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiOtherSummary.groupCreditAccounts, lastRegiOtherSummary.groupExclTotals)}
   </div>`;
   document.getElementById("slipsArea").innerHTML = html;
 }
 
 // 伝票（入金伝票・振替伝票）の内容を、slipDocHTMLと同じロジックでExcel出力用の配列(AOA)に変換する。
-function slipDocToAOA(title, debitAccount, memoLabel, groupTotals, partner, dateStr, groupCreditAccounts){
+function slipDocToAOA(title, debitAccount, memoLabel, groupTotals, partner, dateStr, groupCreditAccounts, groupExcl){
   const GRP_ORDER  = ["酒類売上","発泡酒売上","食品売上","雑貨売上"];
   const GRP_CREDIT = {"酒類売上":"製品売上高", "発泡酒売上":"製品売上高", "食品売上":"食品売上高", "雑貨売上":"商品売上高"};
   const creditMap  = Object.assign({}, GRP_CREDIT, groupCreditAccounts||{});
@@ -18145,12 +18164,12 @@ function slipDocToAOA(title, debitAccount, memoLabel, groupTotals, partner, date
   } else {
     allGroups.forEach(g=>{
       const incl = Math.round(groupTotals[g]||0);
-      const excl = Math.round(incl/1.1);
+      const excl = (groupExcl && groupExcl[g] !== undefined) ? Math.round(groupExcl[g]) : Math.round(incl/1.1);
       const tax  = incl - excl;
       totalIncl += incl;
       const credit = creditMap[g] || (g + "（売上）");
       aoa.push([isFirst?dateStr:"", isFirst?partner:"", g, "", "", credit, excl]);
-      aoa.push(["", "", "消費税（10％）", "", "", "仮受消費税", tax]);
+      aoa.push(["", "", groupExcl ? "消費税" : "消費税（10％）", "", "", "仮受消費税", tax]);
       isFirst = false;
     });
   }
@@ -18164,8 +18183,8 @@ function exportSlipsToExcel(){
   recomputeAggregate();
   renderSalesTables();
   const wb = XLSX.utils.book_new();
-  const wsCash = XLSX.utils.aoa_to_sheet(slipDocToAOA("入金伝票", "現金", "現金売上分計", lastRegiCashSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiCashSummary.groupCreditAccounts));
-  const wsOther = XLSX.utils.aoa_to_sheet(slipDocToAOA("振替伝票（クレジット・QR・電子マネー決済）", "未収入金", "その他決済分計", lastRegiOtherSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiOtherSummary.groupCreditAccounts));
+  const wsCash = XLSX.utils.aoa_to_sheet(slipDocToAOA("入金伝票", "現金", "現金売上分計", lastRegiCashSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiCashSummary.groupCreditAccounts, lastRegiCashSummary.groupExclTotals));
+  const wsOther = XLSX.utils.aoa_to_sheet(slipDocToAOA("振替伝票（クレジット・QR・電子マネー決済）", "未収入金", "その他決済分計", lastRegiOtherSummary.groupTotals, regiSettings.partner, regiCurrentDate, lastRegiOtherSummary.groupCreditAccounts, lastRegiOtherSummary.groupExclTotals));
   const colWidths = [{wch:12},{wch:14},{wch:16},{wch:12},{wch:12},{wch:14},{wch:12}];
   wsCash["!cols"] = colWidths;
   wsOther["!cols"] = colWidths;
@@ -18471,9 +18490,9 @@ function renderHistorySlipsView(sst){
     <button class="secondary" onclick="printRegiHistorySlips()">🖨 印刷</button>
   </div>
   <div id="rhSlipPage" class="slip-page">
-    ${slipDocHTML("入　金　伝　票","現金","現金売上分計",cashRes.groupTotals,regiSettings.partner,_rhDate,cashRes.groupCreditAccounts)}
+    ${slipDocHTML("入　金　伝　票","現金","現金売上分計",cashRes.groupTotals,regiSettings.partner,_rhDate,cashRes.groupCreditAccounts,cashRes.groupExclTotals)}
     <div class="kiri-line"></div>
-    ${slipDocHTML('振　替　伝　票<br><span style="font-size:0.65em;letter-spacing:1px;">（クレジット・QR・電子マネー決済）</span>',"未収入金","その他決済分計",otherRes.groupTotals,regiSettings.partner,_rhDate,otherRes.groupCreditAccounts)}
+    ${slipDocHTML('振　替　伝　票<br><span style="font-size:0.65em;letter-spacing:1px;">（クレジット・QR・電子マネー決済）</span>',"未収入金","その他決済分計",otherRes.groupTotals,regiSettings.partner,_rhDate,otherRes.groupCreditAccounts,otherRes.groupExclTotals)}
   </div>`;
 }
 
@@ -19699,9 +19718,10 @@ function buildRegiSalesAOA(bucketData, sheetTitle){
   aoa.push([""]);
   aoa.push(["▼ 会計区分別合計"]);
   const grpOrder = OPTIONS.accounting;
+  const groupDist = regiDistributeIncl(groupRate); // 区分の合計と総合計を、1円単位でそろえる
   [...grpOrder, ...Object.keys(groupRate).filter(g=>!grpOrder.includes(g))].forEach(g=>{
     if(!groupRate[g]) return;
-    const excl = regiSumRate(groupRate[g]); const incl = regiInclFromExcl(groupRate[g]);
+    const excl = regiSumRate(groupRate[g]); const incl = groupDist.parts[g];
     if(!excl && !incl) return;
     aoa.push([g,"","","","","","","","税抜",excl,"消費税",incl-excl,"税込",incl]);
   });
@@ -20636,7 +20656,26 @@ function computeChannelRawTotals(st){
    売れた場合）ため、手動調整していないのに「手動調整額」がずれる不具合があった。
    sourceChannelには明細ごとの実際の取込元（自動集計分はfunfo伝票／スマレジCSVの区別、手動追加・編集分は
    入力時に選択した区分）が入っているので、常にこちらを優先して使う。 */
+// 元の（税込の）金額をそのまま足した、システム区分ごとの現金・その他の合計。手動調整額（元データ－集計結果）の計算に使う。
+// システム区分ごとの現金・その他の合計。②売上集計の表と同じく、税抜の合計×税率で求める（区分の合計は、表の総合計と1円単位でそろえる）。
 function computeChannelFinalTotals(st){
+  const result = { funfo: { cash: 0, other: 0 }, smaregi: { cash: 0, other: 0 }, unclassified: { cash: 0, other: 0 } };
+  ["cash","other"].forEach(b=>{
+    const maps = { funfo: {}, smaregi: {}, unclassified: {} };
+    Object.values((st.agg && st.agg[b]) || {}).forEach(it=>{
+      let channel = null;
+      if(it.sourceChannel==="funfo") channel = "funfo";
+      else if(it.sourceChannel==="スマレジ" || it.sourceChannel==="smaregi") channel = "smaregi";
+      else channel = REGI_DEPT_TO_CHANNEL[it.department] || null;
+      if(!channel) channel = "unclassified";
+      regiAddRate(maps[channel], it.taxRate || 10, regiExclTax(it.amount, it.taxRate || 10));
+    });
+    const dist = regiDistributeIncl(maps);
+    Object.keys(maps).forEach(ch=>{ result[ch][b] = dist.parts[ch]; });
+  });
+  return result;
+}
+function computeChannelFinalTotalsActual(st){
   const result = { funfo: { cash: 0, other: 0 }, smaregi: { cash: 0, other: 0 }, unclassified: { cash: 0, other: 0 } };
   ["cash","other"].forEach(b=>{
     Object.values((st.agg && st.agg[b]) || {}).forEach(it=>{
@@ -20698,9 +20737,10 @@ function autofillPosCashFromSales(){
 function computeSystemCashOtherTotals(st){
   const raw = computeChannelRawTotals(st);
   const final = computeChannelFinalTotals(st);
+  const finalActual = computeChannelFinalTotalsActual(st); // 手動調整額は、税率の計算を使わない、元の金額どうしの差
   const manualAdjustment = {
-    funfo: { cash: raw.funfo.cash - final.funfo.cash, other: raw.funfo.other - final.funfo.other },
-    smaregi: { cash: raw.smaregi.cash - final.smaregi.cash, other: raw.smaregi.other - final.smaregi.other }
+    funfo: { cash: raw.funfo.cash - finalActual.funfo.cash, other: raw.funfo.other - finalActual.funfo.other },
+    smaregi: { cash: raw.smaregi.cash - finalActual.smaregi.cash, other: raw.smaregi.other - finalActual.smaregi.other }
   };
   return { funfo: final.funfo, smaregi: final.smaregi, unclassified: final.unclassified, manualAdjustment, funfoMethod: raw.funfoMethod, smaregiRaw: raw.smaregiRaw };
 }
