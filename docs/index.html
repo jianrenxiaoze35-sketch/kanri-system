@@ -17982,7 +17982,7 @@ function regiBuildTemplateRows(bucketData, bucket){
     <tr>
     <th>小分類</th><th>税率</th><th>コード</th><th style="text-align:left;">商品名</th><th>数量</th><th>単価(税抜)</th><th>金額(税抜)</th><th>金額(税込)</th><th></th>
   </tr>`;
-  let grand = 0, grandQty = 0, grandExcl = 0, grandInclCalc = 0; const grandRate = {}, groupRate = {};
+  let grand = 0, grandQty = 0, grandExcl = 0, grandInclCalc = 0; const grandRate = {}, groupRate = {}, groupInclRate = {};
   const groupTotals = {};
   const groupCreditAccounts = {};
 
@@ -18019,6 +18019,7 @@ function regiBuildTemplateRows(bucketData, bucket){
         tierSub += Number(it.amount)||0; tierQty += Number(it.qty)||0; tierExcl += amountExcl; regiAddRate(tierRate, rate, amountExcl);
         const grp = it.group || "食品売上";
         regiAddRate(groupRate[grp] = groupRate[grp] || {}, rate, amountExcl);
+        regiAddRate(groupInclRate[grp] = groupInclRate[grp] || {}, rate, Number(it.amount)||0);
         groupTotals[grp] = (groupTotals[grp]||0) + (Number(it.amount)||0);
         if(it.creditAccount) groupCreditAccounts[grp] = it.creditAccount;
       });
@@ -18032,22 +18033,27 @@ function regiBuildTemplateRows(bucketData, bucket){
     grand += deptSub; grandQty += deptQty; grandExcl += deptExcl; regiMergeRate(grandRate, deptRate);
   });
 
-  // 会計区分別の合計は、税抜の合計×税率で求め直す（伝票・照合に渡す値もこの値）。区分の合計と総合計は、1円単位でそろえる。
+  // 表に出す会計区分別合計は、税抜の合計×税率で求める（区分の合計と総合計は、1円単位でそろえる）。
+  // 伝票・照合に渡す値（groupTotals・grand）は、レジの実際の税込の金額のまま。伝票の税抜は、実際の税込から、税率ごとに1回丸めた消費税を引いて求める。
   const groupDist = regiDistributeIncl(groupRate);
-  const groupExclTotals = {}, groupTotalsActual = Object.assign({}, groupTotals);
-  Object.keys(groupRate).forEach(g=>{ groupTotals[g] = groupDist.parts[g]; groupExclTotals[g] = regiSumRate(groupRate[g]); });
-  if(Object.keys(groupTotals).length){
+  const groupDisp = {}, groupExclDisp = {}, groupExclTotals = {}, groupTotalsActual = Object.assign({}, groupTotals);
+  Object.keys(groupRate).forEach(g=>{
+    groupDisp[g] = groupDist.parts[g]; groupExclDisp[g] = regiSumRate(groupRate[g]);
+    const tax = Object.keys(groupInclRate[g] || {}).reduce((sum, r)=>sum + Math.round(groupInclRate[g][r] * Number(r) / (100 + Number(r))), 0);
+    groupExclTotals[g] = Math.round(groupTotals[g] || 0) - tax;
+  });
+  if(Object.keys(groupDisp).length){
     html += `<tr class="regi-group-total"><td colspan="9" style="text-align:left;padding:4px 8px;font-weight:700;">▼ 会計区分別合計</td></tr>`;
     const grpOrder = OPTIONS.accounting;
-    const allGrps = [...grpOrder, ...Object.keys(groupTotals).filter(g=>!grpOrder.includes(g))];
+    const allGrps = [...grpOrder, ...Object.keys(groupDisp).filter(g=>!grpOrder.includes(g))];
     allGrps.forEach(g=>{
-      if(!groupTotals[g]) return;
-      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(groupExclTotals[g] || 0)}</td><td style="text-align:right;">${fmtNum(groupTotals[g])}</td><td></td></tr>`;
+      if(!groupDisp[g]) return;
+      html += `<tr class="regi-group-total"><td colspan="4" class="text">${escAttr(g)}</td><td></td><td></td><td style="text-align:right;">${fmtNum(groupExclDisp[g] || 0)}</td><td style="text-align:right;">${fmtNum(groupDisp[g])}</td><td></td></tr>`;
     });
   }
   html += `<tr class="regi-grand-total"><td colspan="4" class="text">総合計</td><td style="text-align:right;">${grandQty}</td><td></td><td style="text-align:right;">${fmtNum(grandExcl)}</td><td style="text-align:right;">${fmtNum(regiInclFromExcl(grandRate))}</td><td></td></tr>`;
   html += "</table>";
-  return { html, grand: regiInclFromExcl(grandRate), grandActual: grand, groupTotals, groupTotalsActual, groupExclTotals, groupCreditAccounts, grandExcl };
+  return { html, grand, grandCalc: regiInclFromExcl(grandRate), groupTotals, groupTotalsActual, groupExclTotals, groupCreditAccounts, grandExcl };
 }
 let lastRegiCashSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
 let lastRegiOtherSummary = { grand: 0, groupTotals: {}, groupCreditAccounts: {} };
@@ -20656,26 +20662,8 @@ function computeChannelRawTotals(st){
    売れた場合）ため、手動調整していないのに「手動調整額」がずれる不具合があった。
    sourceChannelには明細ごとの実際の取込元（自動集計分はfunfo伝票／スマレジCSVの区別、手動追加・編集分は
    入力時に選択した区分）が入っているので、常にこちらを優先して使う。 */
-// 元の（税込の）金額をそのまま足した、システム区分ごとの現金・その他の合計。手動調整額（元データ－集計結果）の計算に使う。
-// システム区分ごとの現金・その他の合計。②売上集計の表と同じく、税抜の合計×税率で求める（区分の合計は、表の総合計と1円単位でそろえる）。
+// システム区分ごとの現金・その他の合計（レジの実際の税込の金額をそのまま足す。税抜の計算はしない）。
 function computeChannelFinalTotals(st){
-  const result = { funfo: { cash: 0, other: 0 }, smaregi: { cash: 0, other: 0 }, unclassified: { cash: 0, other: 0 } };
-  ["cash","other"].forEach(b=>{
-    const maps = { funfo: {}, smaregi: {}, unclassified: {} };
-    Object.values((st.agg && st.agg[b]) || {}).forEach(it=>{
-      let channel = null;
-      if(it.sourceChannel==="funfo") channel = "funfo";
-      else if(it.sourceChannel==="スマレジ" || it.sourceChannel==="smaregi") channel = "smaregi";
-      else channel = REGI_DEPT_TO_CHANNEL[it.department] || null;
-      if(!channel) channel = "unclassified";
-      regiAddRate(maps[channel], it.taxRate || 10, regiExclTax(it.amount, it.taxRate || 10));
-    });
-    const dist = regiDistributeIncl(maps);
-    Object.keys(maps).forEach(ch=>{ result[ch][b] = dist.parts[ch]; });
-  });
-  return result;
-}
-function computeChannelFinalTotalsActual(st){
   const result = { funfo: { cash: 0, other: 0 }, smaregi: { cash: 0, other: 0 }, unclassified: { cash: 0, other: 0 } };
   ["cash","other"].forEach(b=>{
     Object.values((st.agg && st.agg[b]) || {}).forEach(it=>{
@@ -20737,7 +20725,7 @@ function autofillPosCashFromSales(){
 function computeSystemCashOtherTotals(st){
   const raw = computeChannelRawTotals(st);
   const final = computeChannelFinalTotals(st);
-  const finalActual = computeChannelFinalTotalsActual(st); // 手動調整額は、税率の計算を使わない、元の金額どうしの差
+  const finalActual = final;
   const manualAdjustment = {
     funfo: { cash: raw.funfo.cash - finalActual.funfo.cash, other: raw.funfo.other - finalActual.funfo.other },
     smaregi: { cash: raw.smaregi.cash - finalActual.smaregi.cash, other: raw.smaregi.other - finalActual.smaregi.other }
