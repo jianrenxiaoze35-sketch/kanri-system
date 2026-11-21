@@ -1353,7 +1353,7 @@
             <span style="font-weight:700;font-size:13px;">📂 共有ドライブ「レジ締め」から取り込む</span>
             <input type="month" id="regiSlipDriveMonth" style="width:auto;">
             <button class="secondary" onclick="regiSlipImportFromDrive('funfo')">この月のfunfo伝票を取り込む</button>
-            <span class="hint" style="margin:0;">「レジ伝票データ(月別)」の月のフォルダから読みます。取り込み済みの伝票は重複追加しません。ここや上の欄で取り込んだ伝票・CSVは、元のファイルのままこのフォルダにも保存します。</span>
+            <span class="hint" style="margin:0;">「レジ伝票データ(月別)」の月のフォルダから読みます。取り込み済みの伝票は重複追加しません。ここや上の欄で取り込んだ伝票・CSVは、元のファイルのままこのフォルダにも保存します。funfo伝票は「2026.11.13-funfo伝票-伝票番号.xlsx」の名前で置き、同じ伝票がもうフォルダにあれば置きません。</span>
           </div>
           <div id="bulkUploadResult"></div>
         </div>
@@ -1953,11 +1953,17 @@
       <div class="hint" style="margin-bottom:12px;">⚙️設定の「表示設定」で、在庫・棚卸に表示する大分類・中分類・小分類の組み合わせを選び、月末に棚卸表で実数を記録・確定します。数量は、資材ごとに選んだ在庫単位（大・中・小。原料・資材・半製品マスタで選びます）で数えます（ロット実数は大の数で、実数合計に在庫単位へ換算して加えます）。確定すると記録タブに保存され、原料・資材・半製品マスタの「在庫数(棚卸)」に反映されます。棚卸表の理論値・原料マスタの「在庫数(計算)」は、仕入れ管理に登録された仕入れ数量が自動的に積み上がる形で計算されます。</div>
 
       <div class="seg-tabs">
+        <button class="secondary" id="invViewFieldBtn" onclick="switchInventoryView('field')">📱 現場入力（棚卸・使った捨てた・届いた）</button>
         <button class="secondary" id="invViewFacilityBtn" onclick="switchInventoryView('facility')">施設の在庫（自動取得）</button>
         <button class="secondary" id="invViewStockBtn" onclick="switchInventoryView('stock')">在庫一覧</button>
         <button class="secondary active" id="invViewSheetBtn" onclick="switchInventoryView('sheet')">棚卸表</button>
         <button class="secondary" id="invViewRecordsBtn" onclick="switchInventoryView('records')">記録</button>
         <button class="secondary" id="invViewSettingsBtn" onclick="switchInventoryView('settings')">設定</button>
+      </div>
+
+      <div id="invFieldView" style="display:none;">
+        <div class="hint" style="margin:0 0 6px;">旧「在庫入力アプリ」と同じ画面です。入力は同じシート（現場入力・tana・受入記録）に入ります。最初に「数える人」で自分の名前を選んでください。</div>
+        <iframe id="invFieldFrame" title="現場入力" style="width:100%;height:calc(100vh - 190px);min-height:560px;border:1px solid var(--border);border-radius:8px;background:#fff;"></iframe>
       </div>
 
       <div id="invFacilityView" style="display:none;">
@@ -2524,6 +2530,7 @@
         <div class="section-title">単位・価格</div>
         <div class="form-field"><label>数値(小)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">中1つの内容量（例：1000）</span></label><input type="number" id="f_i_packQty" step="0.01" oninput="recalcIngredient()"></div>
         <div class="form-field"><label>単位(小)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">例：g</span></label><select id="f_i_unit" onchange="refreshStockLevelOptions();recalcIngredient()"></select></div>
+        <div class="form-field"><label>単位(小)1つの重さ(g)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">玉・本・ml・パックなどのとき。現場入力で kg でも数えられます（例：1玉＝250）</span></label><input type="number" id="f_i_unitWeight" step="0.01" min="0"></div>
         <div class="form-field"><label>数値(中)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">大1つに入る中の数（例：12）</span></label><input type="number" id="f_i_lotQty" step="0.01"></div>
         <div class="form-field"><label>単位(中)<br><span style="font-size:10.5px;font-weight:normal;color:var(--muted);">在庫はこの単位で数えます（例：本）</span></label><select id="f_i_midUnit" onchange="refreshStockLevelOptions()"></select></div>
         <div class="form-field"><label>価格(中)税込<br><span id="f_i_recipeCostNote" style="display:none;font-size:10.5px;font-weight:normal;color:var(--muted);">※レシピの原価から自動計算されるため、この入力値は使用されません</span></label><input type="number" id="f_i_packPrice" step="1" oninput="recalcIngredient()"></div>
@@ -3061,7 +3068,20 @@ function cloudEsc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"
 function cloudGetPass(){ try{ return localStorage.getItem(CLOUD_PASS_KEY) || ""; }catch(e){ return ""; } }
 
 /* ---- GAS呼び出し ---- */
+/* 2026-11-15 現場モード（合言葉なし）。この端末で「現場スタッフとして入る」を選ぶか、?genba=1 で開くと続く。
+   2026-11-20 小沢さん「現場入力だけ」：商品管理のデータは読み込まず、📱 現場入力（zaiko.html。在庫入力のGASを呼ぶ）だけを全画面で出す。
+   GitHub Pages も GAS の URL もだれでも見られるので、合言葉なしで商品管理のデータを渡す入口は作らない。 */
+const STAFF_MODE_KEY = "kanri_staff_mode_v1";
+function isStaffMode(){ try{ return localStorage.getItem(STAFF_MODE_KEY) === "1"; }catch(e){ return false; } }
+function staffEnter(){ try{ localStorage.setItem(STAFF_MODE_KEY, "1"); }catch(e){} }
+if(/[?&]genba=1(&|$)/.test(location.search)) staffEnter();   // iPad やハブのリンクから現場として開く
+function staffLeaveToAdmin(){
+  try{ localStorage.removeItem(STAFF_MODE_KEY); }catch(e){}
+  _cloudReloading = true;
+  location.href = location.pathname;   // ?genba=1 を外して開き直す（付けたままだと現場に戻る）
+}
 async function cloudApi(action, body, passOverride){
+  if(isStaffMode()) throw {code: "staff_readonly", message: "現場モードでは使えません（管理者として入り直してください）"};
   const payload = Object.assign({}, body || {}, {action, pass: passOverride !== undefined ? passOverride : cloudGetPass(), tab: CLOUD_TAB_ID});
   let res;
   for(let i=0;;i++){
@@ -3328,6 +3348,10 @@ function cloudAskPass(message){
       <input type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:9px 10px;font-size:15px;border:1px solid var(--border);border-radius:6px;" placeholder="合言葉">
       <div class="cloud-pass-msg" style="color:var(--danger);font-size:12px;min-height:18px;margin:8px 0;">${message ? cloudEsc(message) : ""}</div>
       <button type="submit" style="width:100%;padding:10px;font-size:14px;">開く</button>
+      <div style="border-top:1px solid var(--border);margin:16px 0 0;padding-top:14px;">
+        <div class="hint" style="margin-bottom:8px;">現場のスタッフは合言葉なしで入れます。棚卸・使った捨てた・届いたなどを入れる「現場入力」だけが開きます（ほかのメニューは合言葉で）。</div>
+        <button type="button" class="secondary cloud-staff-btn" style="width:100%;padding:10px;font-size:14px;">現場スタッフとして入る</button>
+      </div>
     </form>`;
     document.body.appendChild(wrap);
     const form = wrap.querySelector("form");
@@ -3335,6 +3359,7 @@ function cloudAskPass(message){
     const msg = wrap.querySelector(".cloud-pass-msg");
     const btn = wrap.querySelector("button");
     setTimeout(()=>input.focus(), 50);
+    wrap.querySelector(".cloud-staff-btn").addEventListener("click", ()=>{ staffEnter(); wrap.remove(); resolve("staff"); });
     form.addEventListener("submit", async e=>{
       e.preventDefault();
       const pass = input.value.trim();
@@ -3378,9 +3403,10 @@ function cloudGoLocal(reason){
 async function cloudInit(){
   if(!document.getElementById("embeddedBackupData")) _localHadDataBeforeSeed = _regiDailyCache.size > 0;
   cloudBootMessage("クラウドに接続中…");
+  if(isStaffMode()) return staffCloudInit();
   // 合言葉：保存済みなら確かめる。無い・違うときは入力してもらう（入れるまで先へ進まない）
   if(!cloudGetPass()){
-    await cloudAskPass("");
+    if(await cloudAskPass("") === "staff") return staffCloudInit();
   } else {
     try{ await cloudApi("ping"); }
     catch(err){
@@ -3469,6 +3495,33 @@ async function cloudInit(){
   setInterval(check, 60000);
   document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) check(); });
   cloudSettingsInit();
+}
+
+// 現場モード：商品管理のデータは読み込まない。管理者の合言葉が残っていない端末は、端末の中の控えも空にする（前に使った人のデータを残さない）
+async function staffCloudInit(){
+  if(!cloudGetPass()){
+    _regiDailyCache.clear();
+    try{ await regiIdbReplaceAll([]); }catch(e){ console.warn("staff: 端末内の控えの消去に失敗", e); }
+  }
+  _cloudMode = "staff";
+}
+// 現場モードの画面：📱 現場入力だけを全画面で出す（商品管理のメニューは組み立てない）
+function staffShowField(){
+  const overlay = document.getElementById("appBootLoadingOverlay");
+  if(overlay) overlay.remove();
+  document.title = "現場入力｜商品管理システム";
+  const wrap = document.createElement("div");
+  wrap.id = "staffFieldScreen";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;background:var(--bg);";
+  wrap.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--main-dark);color:#fff;">
+      <span style="font-weight:700;font-size:15px;">📱 現場入力</span>
+      <span style="font-size:12px;opacity:.8;">商品管理システム</span>
+      <span style="flex:1;"></span>
+      <button type="button" style="font-size:12px;padding:4px 10px;background:transparent;color:#ffe6a8;border:1px solid #ffe6a8;border-radius:5px;cursor:pointer;">🔑 管理者として入る</button>
+    </div>
+    <iframe title="現場入力" src="zaiko.html${/[?&]mock=1/.test(location.search) ? "?mock=1" : ""}" style="flex:1;width:100%;border:0;background:#fff;"></iframe>`;
+  wrap.querySelector("button").addEventListener("click", staffLeaveToAdmin);
+  document.body.appendChild(wrap);
 }
 
 /* ---- 表示 ---- */
@@ -3591,6 +3644,7 @@ const _bootSteps = [];
 function registerBootStep(fn){ _bootSteps.push(fn); }
 async function runBootSteps(){
   await _regiDailyStoreReady;
+  if(isStaffMode()){ staffShowField(); return; }   // 2026-11-20 現場は現場入力だけ
   await appAccountGate(); // アカウントが登録されていれば、部門選択→氏名選択→暗証番号（無ければ何もしない）
   _appDataLoaded = true;
   for(const step of _bootSteps){
@@ -4224,6 +4278,7 @@ const INGREDIENT_SORT_COLUMNS = [
   { key: "subCategory", label: "小分類", type: "text" },
   { key: "packQty", label: "数値(小)", type: "num" },
   { key: "unit", label: "単位(小)", type: "text" },
+  { key: "unitWeight", label: "単位(小)1つの<br>重さ(g)", type: "num" },
   { key: "lotQty", label: "数値(中)", type: "num" },
   { key: "midUnit", label: "単位(中)", type: "text" },
   { key: "packPriceTaxDisplay", label: "価格(中)<br>税込", type: "num" },
@@ -6841,6 +6896,7 @@ function accountLogout(){
 }
 // 起動時のログイン処理。アカウントが無ければ何もしない（従来どおり制限なし）。
 async function appAccountGate(){
+  if(isStaffMode()){ currentAccount = null; return; }   // 現場モードはログインなし
   const accounts = loadAccounts();
   currentAccount = null;
   if(!accounts.length) return;
@@ -9326,6 +9382,7 @@ function openIngredientForm(item){
   document.getElementById("f_i_supplier").value = item ? (item.supplier||"") : "";
   document.getElementById("f_i_packQty").value = item ? (item.packQty ?? "") : "";
   document.getElementById("f_i_unit").value = item ? (item.unit||"") : "";
+  document.getElementById("f_i_unitWeight").value = item && item.unitWeight > 0 ? item.unitWeight : "";
   document.getElementById("f_i_midUnit").value = item ? (item.midUnit||"") : "";
   document.getElementById("f_i_largeQty").value = item ? (item.largeQty ?? "") : "";
   document.getElementById("f_i_packPrice").value = item ? (item.packPrice ?? "") : "";
@@ -9372,6 +9429,7 @@ function saveIngredient(){
     supplier: document.getElementById("f_i_supplier").value,
     packQty: parseFloat(document.getElementById("f_i_packQty").value) || 0,
     unit: document.getElementById("f_i_unit").value,
+    unitWeight: parseFloat(document.getElementById("f_i_unitWeight").value) || 0,
     midUnit: document.getElementById("f_i_midUnit").value,
     largeQty: parseFloat(document.getElementById("f_i_largeQty").value) || 0,
     stockLevel: document.getElementById("f_i_stockLevel").value || "中",
@@ -9514,7 +9572,7 @@ function updateMaterialInline(id, field, value){
     Object.assign(m, withUpdatedStockCount(m, value));
   } else if(field === "taxRate"){
     m.taxRate = parseFloat(value) || 0;
-  } else if(field === "packQty" || field === "lotQty" || field === "largeQty"){
+  } else if(field === "packQty" || field === "lotQty" || field === "largeQty" || field === "unitWeight"){
     m[field] = parseFloat(value) || 0;
   } else if(field === "name" || field === "maker"){
     m[field] = String(value||"").trim();
@@ -9841,7 +9899,7 @@ function renderIngredients(){
         return `${x.label}：${gen}${tgt}（この資材への按分 ${fmtNum(Math.round(x.itemShare*100)/100)}円）`;
       }).join("\n"),
       name: m.name, itemCode: m.itemCode || "", department: m.department, bunrui: m.bunrui, subCategory: m.subCategory,
-      packQty: parseFloat(m.packQty) || 0, unit: m.unit, midUnit: m.midUnit || "", lotQty: parseFloat(m.lotQty) || 0, largeQty: parseFloat(m.largeQty) || 0, stockUnitText: materialStockUnitText(m), lotUnit: m.lotUnit,
+      packQty: parseFloat(m.packQty) || 0, unit: m.unit, unitWeight: parseFloat(m.unitWeight) || 0, midUnit: m.midUnit || "", lotQty: parseFloat(m.lotQty) || 0, largeQty: parseFloat(m.largeQty) || 0, stockUnitText: materialStockUnitText(m), lotUnit: m.lotUnit,
       taxRate: parseFloat(m.taxRate) || 0, status: m.status,
       storageLocationsText: (m.storageLocations||[]).join("、"),
       stockCount: parseFloat(m.stockCount) || 0, stockCountAsOfDate: m.stockCountAsOfDate || "",
@@ -9889,6 +9947,7 @@ function renderIngredients(){
         <td${cls("subCategory","text")}><select onchange="updateMaterialInline('${m.id}','subCategory',this.value)">${inlineSelectOptions(filteredCategoryListForBunrui(m.bunrui, m.subCategory), m.subCategory)}</select></td>
         <td${cls("packQty")}><input type="number" step="0.01" value="${m.packQty ?? ''}" onchange="updateMaterialInline('${m.id}','packQty',this.value)"></td>
         <td${cls("unit","text")}><select onchange="updateMaterialInline('${m.id}','unit',this.value)">${inlineSelectOptions(OPTIONS.unit, m.unit)}</select></td>
+        <td><input type="number" step="0.01" min="0" value="${m.unitWeight > 0 ? m.unitWeight : ''}" placeholder="—" style="width:72px;" title="単位(小)1つの重さ(g)。玉・本・ml・パック・袋など重さ以外の単位のときに入れると、現場入力で kg でも数えられます（例：1玉＝250）。g・kg の品目は空のままで構いません" onchange="updateMaterialInline('${m.id}','unitWeight',this.value)"></td>
         <td${cls("lotQty")}><input type="number" step="0.01" value="${m.lotQty ?? ''}" onchange="updateMaterialInline('${m.id}','lotQty',this.value)"></td>
         <td${cls("midUnit","text")}><select onchange="updateMaterialInline('${m.id}','midUnit',this.value)">${inlineSelectOptions(OPTIONS.unitMid, m.midUnit)}</select></td>
         <td${cls("packPrice")}>${fmtNum(Math.round(r.packPriceTaxDisplay*100)/100)}</td>
@@ -9937,7 +9996,7 @@ function openIngredientsBulk(){
   ingredientsBulkDraft = materials.filter(m=>!isHiddenNonMaterial(m)).map(m=>({
     id: m.id, name: m.name, department: m.department, bunrui: m.bunrui, subCategory: m.subCategory, status: m.status, maker: m.maker,
     supplier: m.supplier,
-    packQty: m.packQty, unit: m.unit, midUnit: m.midUnit, packPrice: m.packPrice, lotQty: m.lotQty, largeQty: m.largeQty, stockLevel: materialStockLevel(m), lotUnit: m.lotUnit,
+    packQty: m.packQty, unit: m.unit, unitWeight: m.unitWeight, midUnit: m.midUnit, packPrice: m.packPrice, lotQty: m.lotQty, largeQty: m.largeQty, stockLevel: materialStockLevel(m), lotUnit: m.lotUnit,
     lotPrice: m.lotPrice, taxRate: m.taxRate,
     storageLocationsText: (m.storageLocations||[]).join(","),
     stockSteelRack: m.stockSteelRack, stockChestStocker: m.stockChestStocker,
@@ -10043,7 +10102,7 @@ function saveIngredientsBulk(){
       department: r.department||"",
       bunrui: r.bunrui||"", subCategory: r.subCategory||"", status: r.status||"", maker: (r.maker||"").toString().trim(),
       supplier: r.supplier||"",
-      packQty: parseFloat(r.packQty)||0, unit: r.unit||"", midUnit: r.midUnit||"", packPrice: parseFloat(r.packPrice)||0,
+      packQty: parseFloat(r.packQty)||0, unit: r.unit||"", unitWeight: parseFloat(r.unitWeight)||0, midUnit: r.midUnit||"", packPrice: parseFloat(r.packPrice)||0,
       lotQty: parseFloat(r.lotQty)||0, largeQty: parseFloat(r.largeQty)||0, stockLevel: (r.stockLevel==="大"||r.stockLevel==="小"||r.stockLevel==="なし") ? r.stockLevel : "中", lotUnit: r.lotUnit||"", lotPrice: parseFloat(r.lotPrice)||0,
       taxRate: parseFloat(r.taxRate)||0,
       storageLocations: (r.storageLocationsText||"").split(",").map(s=>s.trim()).filter(Boolean),
@@ -10064,7 +10123,7 @@ function saveIngredientsBulk(){
 
 /* ---------- 原料・資材・半製品マスタ CSV書き出し ---------- */
 function buildIngredientsExportTable(){
-  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","数値(中)","単位(中)","価格(中)税込","数値(大)","単位(大)","価格(大)税込","価格(大)合計金額","うちその他経費按分","総額(按分込み)","総数(在庫単位)","ステータス","保管場所","在庫数(仕入累計)","在庫単位","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先","在庫の単位区分"];
+  const headers = ["名称","大分類","中分類","小分類","数値(小)","単位(小)","数値(中)","単位(中)","価格(中)税込","数値(大)","単位(大)","価格(大)税込","価格(大)合計金額","うちその他経費按分","総額(按分込み)","総数(在庫単位)","ステータス","保管場所","在庫数(仕入累計)","在庫単位","在庫数(棚卸)","在庫数(計算)","メーカー","仕入れ先","使用先","在庫の単位区分","単位(小)1つの重さ(g)"];
   const otherExpenseByMaterial = computeMaterialOtherExpenseAllocations();
   const purchaseHistoryTotals = computeMaterialPurchaseHistoryTotals();
   const list = materials.filter(m=>!isHiddenNonMaterial(m)).sort((a,b)=>{
@@ -10103,7 +10162,7 @@ function buildIngredientsExportTable(){
       Math.round((purchaseHistory.allocatedAmount||0)*100)/100, Math.round(purchaseHistory.totalAmount*100)/100, Math.round(purchaseHistory.totalQty*midToStockFactor(m)*100)/100,
       m.status||"", (m.storageLocations||[]).join("、"),
       Math.round(stockFromLot*100)/100, materialStockUnitText(m), m.stockCount ?? "", stockTotal,
-      m.maker||"", m.supplier||"", usedProductNames.join("、"), materialStockLevel(m)
+      m.maker||"", m.supplier||"", usedProductNames.join("、"), materialStockLevel(m), m.unitWeight > 0 ? m.unitWeight : ""
     ];
   });
   return { headers, rows };
@@ -10248,6 +10307,7 @@ function importIngredientsExcel(event){
         packQty: ing(["数値(小)","内容量(小)","1P内容量","1P入り数","1P入数","内容量"], "num", existing ? existing.packQty : 0),
         unit: ing(["単位(小)","単位(1P)","単位(1P入り数)","単位","1P単位"], "str", existing ? existing.unit : ""),
         midUnit: ing(["単位(中)"], "str", existing ? (existing.midUnit || "") : ""),
+        unitWeight: ing(["単位(小)1つの重さ(g)"], "num", existing ? (existing.unitWeight || 0) : 0),
         packPrice: ing(["価格(中)税込","価格(中)","価格税込(中)","1P価格税込","1P価格"], "num", existing ? existing.packPrice : 0),
         lotQty: ing(["数値(中)","ロット入数(中)","ロット入数(大)","ロット入数","ロット入り数"], "num", existing ? existing.lotQty : 0),
         largeQty: ing(["数値(大)","数量(大)"], "num", existing ? (existing.largeQty || 0) : 0),
@@ -16701,9 +16761,12 @@ function funfoSlipDuplicateReason(slip, existingSlips){
 async function importFunfoFiles(event){
   const files = Array.from(event.target.files);
   const rejected = [];
+  const toDrive = [];
   for(const f of files){
     try{
       const slip = await parseFunfoFile(f);
+      const iso = normalizeFunfoDateToISO(slip.date, f.name);
+      toDrive.push({ file: f, slip, ym: (iso || String(regiCurrentDate || "")).slice(0, 7) });
       const why = funfoSlipDuplicateReason(slip, regiSalesState.funfoSlips);
       if(why){ rejected.push(`${f.name}（${why}）`); continue; }
       regiSalesState.funfoSlips.push(slip);
@@ -16717,8 +16780,9 @@ async function importFunfoFiles(event){
   recomputeAggregate();
   renderFunfoSlips();
   event.target.value = "";
-  // 2026-11-13 元のファイルを共有ドライブ「レジ締め」の月のフォルダにも置く
-  if(files.length && regiCurrentDate) regiSlipSaveToDrive("funfo", files.map(f=>({ file: f, ym: String(regiCurrentDate).slice(0, 7) })));
+  // 2026-11-13 元のファイルを共有ドライブ「レジ締め」の月のフォルダにも置く（読めた伝票だけ。重複はregiSlipSaveToDriveで弾く）
+  const toDriveOk = toDrive.filter(x=>/^\d{4}-\d{2}$/.test(x.ym));
+  if(toDriveOk.length) regiSlipSaveToDrive("funfo", toDriveOk);
 }
 /* 日時セルの値（Dateオブジェクト／Excelシリアル値／文字列）から "HH:MM" 形式の時刻を抽出 */
 function extractTimeHHMM(value){
@@ -17039,6 +17103,9 @@ function normalizeFunfoDateToISO(rawDate, fileName){
   if(m) return m[1] + "-" + String(m[2]).padStart(2,"0") + "-" + String(m[3]).padStart(2,"0");
   m = String(fileName||"").match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
   if(m) return m[1] + "-" + String(m[2]).padStart(2,"0") + "-" + String(m[3]).padStart(2,"0");
+  // 共有ドライブの名前（「2026.11.13-21.08-funfo伝票.xlsx」「2026.11.13-funfo伝票-M….xlsx」）
+  m = String(fileName||"").match(/^(\d{4})\.(\d{2})\.(\d{2})-/);
+  if(m) return m[1] + "-" + m[2] + "-" + m[3];
   return "";
 }
 /* 日付別にグルーピングされたfunfo伝票（{date: [slip,...]}）を、それぞれの対象日のregi_sales_v1_*へ
@@ -17084,7 +17151,7 @@ async function bulkImportFunfoFileList(files, fromDrive){
       const iso = normalizeFunfoDateToISO(slip.date, f.name);
       if(!iso){ errors.push(`${f.name}：日付を特定できませんでした`); continue; }
       (byDate[iso] = byDate[iso] || []).push(slip);
-      if(!fromDrive) toDrive.push({ file: f, ym: iso.slice(0, 7) });
+      if(!fromDrive) toDrive.push({ file: f, slip, ym: iso.slice(0, 7) });
     }catch(err){
       errors.push(`${f.name}：読み込み失敗（${(err&&err.message)||err}）`);
     }
@@ -17178,15 +17245,82 @@ async function bulkImportSmaregiFiles(event){
 }
 /* ---- 共有ドライブ「レジ締め」› レジ伝票データ(月別)（2026-11-13） ----
    ・取り込んだ伝票・CSVを、元のファイルのまま保存する（funfo は月のフォルダ、スマレジはフォルダ直下。同じ名前・大きさなら置かない）
+     funfo は「年月日-funfo伝票-伝票番号」の名前にし、同じ伝票が月のフォルダにもうあれば置かない（2026-11-15）
    ・月を選んで、その月のfunfo伝票をまとめて取り込む（足りない日を埋めるとき） */
+/* funfo伝票をドライブに置くときの名前（2026-11-15）：「2026.11.13-funfo伝票-M17945477535916335.xlsx」
+   日付は伝票の「日付」欄、番号は「伝票番号」。どちらか読めなければ元のファイル名のまま */
+function funfoSlipDriveName(file, slip){
+  const name = String((file && file.name) || "");
+  const iso = slip ? normalizeFunfoDateToISO(slip.date, name) : "";
+  const no = slip ? String(slip.slipNo || "").trim().replace(/[\\\/:*?"<>|\s]/g, "") : "";
+  if(!iso || !no) return name;
+  const ext = (name.match(/\.xlsx?$/i) || [".xlsx"])[0].toLowerCase();
+  return iso.replace(/-/g, ".") + "-funfo伝票-" + no + ext;
+}
+function funfoIsoToDot(iso, addDays){
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + (addDays || 0));
+  return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0");
+}
+/* 同じ伝票が月のフォルダにもうあるか（2026-11-15）。返すのは、もうある項目の Set。
+   ・名前に伝票番号が入っていれば、それで判定（新しい名前・FUNFOそのままの名前）
+   ・林さんの書き出し（「2026.11.13-21.08-funfo伝票.xlsx」）は名前に番号が無いので、名前の日付が伝票の日付か翌日で、
+     大きさが同じファイルだけ中身を読んで伝票番号を比べる（FUNFOの書き出しは、書き出した時刻が違っても同じ大きさになる） */
+async function funfoSlipsAlreadyOnDrive(list){
+  const found = new Set(), byYm = {};
+  list.forEach(x=>{ if(x.slip && x.slip.slipNo && x.ym) (byYm[x.ym] = byYm[x.ym] || []).push(x); });
+  for(const ym of Object.keys(byYm)){
+    const res = await cloudApi("regiSlipList", { kind: "funfo", ym });
+    const files = res.files || [];
+    const pending = [], ids = new Set();
+    byYm[ym].forEach(x=>{
+      const no = String(x.slip.slipNo);
+      if(files.some(f=>String(f.name).includes(no))){ found.add(x); return; }
+      const iso = normalizeFunfoDateToISO(x.slip.date, x.file.name);
+      if(!iso) return;
+      const days = [funfoIsoToDot(iso, 0), funfoIsoToDot(iso, 1)];
+      const cands = files.filter(f=>Number(f.size) === x.file.size && days.some(d=>String(f.name).startsWith(d)));
+      if(cands.length){ pending.push({ x, cands }); cands.forEach(f=>ids.add(f.id)); }
+    });
+    if(!ids.size) continue;
+    const slipNoById = {}, idList = [...ids];
+    for(let i = 0; i < idList.length; i += 40){
+      const got = await cloudApi("regiSlipGet", { ids: idList.slice(i, i + 40) });
+      for(const f of (got.files || [])){
+        if(!f.b64) continue;
+        try{
+          const bin = atob(f.b64), bytes = new Uint8Array(bin.length);
+          for(let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+          const s = await parseFunfoFile(new File([bytes], f.name, { type: f.mime || "" }));
+          slipNoById[f.id] = String(s.slipNo || "");
+        }catch(e){ /* 読めないファイルは比べない */ }
+      }
+    }
+    pending.forEach(p=>{ if(p.cands.some(f=>slipNoById[f.id] === String(p.x.slip.slipNo))) found.add(p.x); });
+  }
+  return found;
+}
 async function regiSlipSaveToDrive(kind, list){
   let saved = 0, same = 0, failed = 0;
+  let onDrive = new Set();
+  if(kind === "funfo"){
+    // 確かめられないときは置かない（林さんの書き出しと二重にしないため）。取り込み自体は済んでいる
+    try{ onDrive = await funfoSlipsAlreadyOnDrive(list); }
+    catch(err){ console.warn("共有ドライブの伝票を確かめられませんでした:", err); list = []; failed = 0; onDrive = null; }
+  }
   for(const x of list){
+    if(onDrive && onDrive.has(x)){ same++; continue; }
     try{
       const buf = await readFileAsArrayBuffer(x.file);
-      const res = await cloudApi("regiSlipSave", { kind, ym: x.ym || "", name: x.file.name, mime: x.file.type || "", b64: otherPayArrayBufferToBase64(buf) });
+      const name = kind === "funfo" ? funfoSlipDriveName(x.file, x.slip) : x.file.name;
+      const res = await cloudApi("regiSlipSave", { kind, ym: x.ym || "", name, mime: x.file.type || "", b64: otherPayArrayBufferToBase64(buf) });
       if(res.skipped) same++; else saved++;
     }catch(err){ console.warn("伝票のドライブ保存に失敗:", x.file && x.file.name, err); failed++; }
+  }
+  if(onDrive === null){
+    const el0 = document.getElementById("bulkUploadResult");
+    if(el0){ const d = document.createElement("div"); d.className = "hint"; d.style.marginTop = "4px"; d.textContent = "共有ドライブ「レジ締め」の伝票を確かめられなかったので、ドライブには置いていません（取り込みは済んでいます）"; el0.appendChild(d); }
+    return;
   }
   const el = document.getElementById("bulkUploadResult");
   if(el && (saved || failed)){
@@ -22017,7 +22151,7 @@ function renderInventorySettingsView(){
 
 function switchInventoryView(view){
   inventoryView = view;
-  ["facility","stock","sheet","records","settings"].forEach(v=>{
+  ["field","facility","stock","sheet","records","settings"].forEach(v=>{
     document.getElementById("invView"+v.charAt(0).toUpperCase()+v.slice(1)+"Btn").classList.toggle("active", v===view);
     document.getElementById("inv"+v.charAt(0).toUpperCase()+v.slice(1)+"View").style.display = v===view ? "" : "none";
   });
@@ -22025,6 +22159,10 @@ function switchInventoryView(view){
 }
 
 function renderInventoryActiveView(){
+  if(inventoryView==="field"){
+    const fr = document.getElementById("invFieldFrame");
+    if(fr && !fr.getAttribute("src")) fr.setAttribute("src", "zaiko.html" + (/[?&]mock=1/.test(location.search) ? "?mock=1" : ""));
+  }
   if(inventoryView==="stock") renderInventoryStockView();
   else if(inventoryView==="facility") renderFacilityView();
   else if(inventoryView==="sheet") renderInventorySheet();

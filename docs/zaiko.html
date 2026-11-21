@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>現場入力｜商品管理システム</title>
+<style>
+/* v11 在庫入力アプリ（2026-10-31）。商品管理システムの派生アプリ。品目はマスタから選ぶだけ。入力は同じスプレッドシートの「tana」「現場入力」に保存 */
+:root{
+  /* テーマは緑と白（端末がダークモードでも同じ） */
+  color-scheme:light;
+  --bg:#fff; --panel:#fff; --sunk:#eef6f1; --ink:#16291f; --mute:#55695e; --line:#cfe0d6;
+  --accent:#2C7259; --accent-ink:#fff; --accent-soft:#dcefe4;
+  --ok:#2C7259; --ok-soft:#dcefe4; --warn:#8a5a00; --warn-soft:#f6e8c8; --bad:#b3362c; --bad-soft:#f6dcd9;
+  --tap:44px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif;
+  padding:0 max(14px,env(safe-area-inset-left,0px)) 80px max(14px,env(safe-area-inset-right,0px))}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wrap{max-width:900px;margin:0 auto}
+header{position:sticky;top:0;z-index:5;background:var(--accent);color:var(--accent-ink);padding:10px 14px;border-radius:0 0 12px 12px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+header b{font-size:19px;letter-spacing:.04em}
+header a{color:var(--accent-ink);font-weight:700;text-decoration:none;font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+[hidden]{display:none!important}
+.bar label{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mute)}
+select,input[type=search]{height:40px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0 10px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;min-height:var(--tap)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{min-height:32px;padding:4px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{color:var(--mute);font-size:13px}
+h2{font-size:17px;margin:18px 0 6px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-top:10px;overflow-x:auto}
+.tabs button{white-space:nowrap;border:0;background:none;padding:10px 14px;font-weight:700;color:var(--mute);border-bottom:3px solid transparent;cursor:pointer}
+.tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chips button{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700}
+.chips button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.locs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:8px}
+.loc{display:grid;grid-template-columns:1fr auto;gap:2px 8px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.loc .n{font-weight:700;font-size:16px}
+.loc .m{grid-column:1/-1;color:var(--mute);font-size:12px;display:flex;justify-content:space-between}
+.loc.done{border-left:5px solid var(--ok)} .loc.part{border-left:5px solid var(--warn)} .loc.unset{border-style:dashed}
+.chip{display:inline-flex;align-self:start;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700;background:var(--sunk);color:var(--mute);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.bad{background:var(--bad-soft);color:var(--bad)}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:8px}
+.item{padding:12px 14px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item.counted{background:color-mix(in srgb,var(--ok-soft) 50%,transparent)}
+.item .nm{font-weight:700;font-size:16px;overflow-wrap:anywhere}
+.item .sub{color:var(--mute);font-size:12px}
+.conv{margin-top:6px;font-size:13px;background:var(--sunk);border-radius:8px;padding:4px 10px;display:inline-block}
+.conv b{font-size:14px}
+.ins{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px}
+.in{display:flex;align-items:center;gap:4px}
+.in button{width:var(--tap);height:var(--tap);border-radius:8px;border:1px solid var(--line);background:var(--sunk);font-size:20px;font-weight:700;cursor:pointer}
+.in input{width:76px;height:var(--tap);text-align:right;border:2px solid var(--line);border-radius:8px;background:var(--panel);padding:0 8px;font-size:18px;font-variant-numeric:tabular-nums}
+.in input:focus{border-color:var(--accent)}
+.in input.gk{border-color:var(--warn);background:var(--warn-soft)}
+.note.gchk{font-size:14px}
+.in input.gh{border-color:var(--bad);background:var(--bad-soft)}
+.note.gbig{font-size:14px;background:var(--bad-soft);color:var(--bad)}
+.in .u{font-size:18px;font-weight:700;min-width:2em}
+.total{margin-top:6px;font-size:14px}
+.total b{font-size:17px;font-variant-numeric:tabular-nums}
+.note{margin-top:6px;font-size:12.5px;border-radius:8px;padding:5px 10px;background:var(--warn-soft);color:var(--warn)}
+.note.info{background:var(--accent-soft);color:var(--accent)}
+.foot{position:sticky;bottom:0;background:var(--bg);padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px}
+.status{font-size:12px;color:var(--mute)}
+.ph{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.ph .th{position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--sunk)}
+.ph .th img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .th button{position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:999px;border:0;background:rgb(0 0 0 / .6);color:#fff;font-weight:700;cursor:pointer;line-height:1}
+.ph label.btn{display:inline-flex;align-items:center;gap:6px}
+.phlinks a{font-weight:700;margin-right:8px}
+.status.err{color:var(--bad);font-weight:700}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);width:min(560px,calc(100vw - 24px));padding:0}
+dialog::backdrop{background:rgb(10 20 26 / .45)}
+.dh{padding:12px 14px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.db{max-height:55vh;overflow:auto}
+.df{padding:10px 14px;border-top:1px solid var(--line);display:flex;justify-content:flex-end}
+.pick{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 14px;cursor:pointer}
+.pick:hover{background:var(--sunk)}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:8px}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:13px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--sunk);color:var(--mute);font-size:12px}
+td.r,th.r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-weight:700;z-index:20;max-width:calc(100vw - 32px)}
+.loading{padding:40px 0;text-align:center;color:var(--mute)}
+.ukeh{font-size:14px;margin:0 0 6px}
+.uin{height:40px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0 10px;max-width:100%}
+.uin.num{width:84px;text-align:right}
+.chk{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px dashed var(--line)}
+.chk:first-of-type{border-top:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);min-width:56px;min-height:40px;font-weight:700;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true].g{background:var(--accent);color:#fff}
+.seg button[aria-pressed=true].b{background:var(--bad);color:#fff}
+.verdict{border-radius:10px;padding:10px 12px}
+.verdict b{font-size:18px}
+.v-ok{background:var(--ok-soft)} .v-warn{background:var(--warn-soft)} .v-bad{background:var(--bad-soft)} .v-none{background:var(--sunk)}
+</style>
+<!-- lineicons -->
+<script>
+/* lineicons v1（2026-11-05）: 画面の絵文字を線のアイコン（Lucide・ISC）に置き換える。
+   どのアプリにも同じものを1つ入れるだけ。後から描かれた部分も MutationObserver で置き換える。
+   入力欄・選択肢・script・style・title の中は触らない。元に戻すときは、この script を消す */
+(function () {
+  if (window.__lineIcons) return; window.__lineIcons = true;
+  var NS = 'http:' + '\/' + '\/www.w3.org\/2000\/svg';
+  var M = {"✅":["circle-check","#16a34a"],"❌":["circle-x","#dc2626"],"⚠":["triangle-alert","#d97706"],"📅":["calendar"],"🍺":["beer"],"📝":["notebook-pen"],"🚨":["siren"],"📁":["folder"],"🎯":["target"],"📋":["clipboard-list"],"📦":["package"],"✏":["pencil"],"📐":["ruler"],"🔗":["link"],"↗":["external-link"],"🔍":["search"],"🔧":["wrench"],"📌":["pin"],"🔁":["repeat"],"📊":["chart-column"],"🗑":["trash-2"],"🖨":["printer"],"⚙":["settings"],"📆":["calendar-days"],"🔄":["refresh-cw"],"🗂":["folders"],"📖":["book-open"],"💧":["droplet"],"📎":["paperclip"],"🗓":["calendar-range"],"👥":["users"],"📢":["megaphone"],"🥫":["cylinder"],"📥":["inbox"],"📄":["file-text"],"↩":["undo-2"],"💾":["save"],"⏳":["hourglass"],"🌡":["thermometer"],"📜":["scroll-text"],"🏭":["factory"],"🌅":["sunrise"],"🌙":["moon"],"👤":["user"],"🧾":["receipt"],"⏰":["alarm-clock"],"🛒":["shopping-cart"],"🔬":["microscope"],"💬":["message-circle"],"▶":["play"],"📚":["library"],"🩺":["stethoscope"],"🛠":["hammer"],"📷":["camera"],"🧼":["sparkles"],"🏪":["store"],"🛢":["database"],"📣":["megaphone"],"🪑":["armchair"],"🧊":["snowflake"],"🔪":["utensils-crossed"],"🗺":["map"],"✍":["signature"],"☑":["square-check"],"🏁":["flag"],"💡":["lightbulb"],"🕘":["clock-9"],"🙋":["hand"],"🔔":["bell"],"🪪":["id-card"],"🧭":["compass"],"⬇":["arrow-down"],"🍙":["cookie"],"👍":["thumbs-up"],"🔒":["lock"],"🧩":["puzzle"],"🔴":["circle-dot","#dc2626"],"🏷":["tag"],"🧪":["flask-conical"],"🍳":["cooking-pot"],"✨":["sparkles"],"📈":["trending-up"],"🚦":["traffic-cone"],"🏠":["house"],"🐻":["paw-print"],"⬆":["arrow-up"],"✔":["check","#16a34a"],"🛡":["shield"],"✂":["scissors"],"🗄":["archive"],"🧑‍⚕":["hospital"],"🔐":["lock-keyhole"],"🪄":["wand-sparkles"],"☀":["sun"],"🪰":["bug"],"🎉":["party-popper"],"🤝":["handshake"],"📧":["mail"],"☁":["cloud"],"🎖":["medal"],"📘":["book"],"◀":["chevron-left"],"🌐":["globe"],"⏱":["timer"],"✖":["x"],"📱":["smartphone"],"📔":["notebook"],"💻":["laptop"],"⏸":["pause"],"🚪":["door-open"],"📤":["send"],"🖼":["image"],"⛓":["link-2"],"➕":["plus"],"🟡":["circle-dot","#d97706"],"👎":["thumbs-down"],"📰":["newspaper"],"🧽":["eraser"],"💰":["coins"],"🧤":["hand"],"🐛":["bug"],"🗜":["package-minus"],"🤖":["bot"],"🧳":["briefcase"],"🍽":["utensils"],"🔎":["search"],"💴":["banknote"],"🙈":["eye-off"],"🌟":["star"],"🎨":["palette"],"🌦":["cloud-sun-rain"],"⬜":["square"],"👅":["smile"],"🚚":["truck"],"🔑":["key-round"],"📒":["notebook-tabs"],"🥘":["soup"],"🌊":["waves"],"📸":["camera"],"📏":["ruler"],"🥕":["carrot"],"🧮":["calculator"],"⚡":["zap"],"✉":["mail"],"📑":["files"],"📉":["trending-down"],"🏗":["construction"],"🏥":["hospital"],"📓":["notebook-text"],"📞":["phone"],"↕":["arrow-up-down"],"🔀":["shuffle"],"🗒":["sticky-note"],"🎪":["tent"],"😣":["frown"],"🥤":["cup-soda"],"🌧":["cloud-rain"],"❄":["snowflake"],"⛈":["cloud-lightning"],"❓":["circle-help"],"📂":["folder-open"],"📭":["mailbox"],"🎓":["graduation-cap"],"↔":["arrow-left-right"],"🚩":["flag"],"🆕":["badge-plus"],"📺":["tv"],"📽":["projector"],"🔊":["volume-2"],"🛎":["bell-ring"],"🎤":["mic"],"🌾":["wheat"],"🗣":["speech"],"📨":["mail-plus"],"🔓":["lock-open"],"📲":["smartphone"],"🌇":["sunset"],"🌫":["cloud-fog"],"🌬":["wind"],"👹":["skull"],"🧹":["brush"],"🎬":["clapperboard"],"⌨":["keyboard"],"🛍":["shopping-bag"],"💸":["hand-coins"],"💳":["credit-card"],"🚶":["footprints"],"🟢":["circle-dot","#16a34a"],"🟠":["circle-dot","#d97706"],"🔵":["circle-dot","#2563eb"],"⚪":["circle"],"⚫":["circle-dot","#6b7280"],"⭐":["star"],"⭕":["circle"],"➡":["arrow-right"],"⬅":["arrow-left"],"🔚":["square-x"],"📃":["file"],"🆗":["circle-check","#16a34a"],"❗":["circle-alert","#dc2626"],"‼":["circle-alert","#dc2626"],"❔":["circle-help"],"🕐":["clock"],"🕒":["clock-3"],"⌛":["hourglass"],"📍":["map-pin"],"🏢":["building-2"],"👀":["eye"],"🗃":["archive"],"💯":["badge-check"],"🧯":["fire-extinguisher"],"🔥":["flame"],"♻":["recycle"],"🍶":["wine"],"🥂":["wine"],"🍻":["beer"],"🍷":["wine"],"🌱":["sprout"],"🎁":["gift"],"💼":["briefcase"],"🆙":["circle-arrow-up"],"⏭":["skip-forward"],"⏮":["skip-back"],"⏹":["square"],"🔙":["arrow-left"],"🔝":["arrow-up"],"📡":["radio"],"🖊":["pen"],"🖋":["pen-tool"],"🖥":["monitor"],"📛":["badge"],"🧷":["paperclip"],"🧲":["magnet"],"🪣":["paint-bucket"],"🫧":["sparkles"],"🧴":["spray-can"],"🥛":["milk"],"🍞":["croissant"],"🍗":["drumstick"],"🥩":["beef"],"🐟":["fish"],"🦐":["fish"],"🥚":["egg"],"🧀":["pizza"],"🍜":["soup"],"🍕":["pizza"],"🍰":["cake-slice"],"☕":["coffee"],"🍵":["coffee"],"🧃":["cup-soda"],"🧂":["salad"],"🥗":["salad"],"🍎":["apple"],"🍋":["citrus"],"🌶":["flame"],"🧅":["carrot"],"🥔":["carrot"],"🍚":["cookie"],"🍱":["package"],"📠":["printer"]};
+  var P = {"circle-check":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/>","circle-x":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m15 9-6 6\"/><path d=\"m9 9 6 6\"/>","triangle-alert":"<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>","calendar":"<path d=\"M8 2v4\"/><path d=\"M16 2v4\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M3 10h18\"/>","beer":"<path d=\"M17 11h1a3 3 0 0 1 0 6h-1\"/><path d=\"M9 12v6\"/><path d=\"M13 12v6\"/><path d=\"M14 7.5c-1 0-1.44.5-3 .5s-2-.5-3-.5-1.72.5-2.5.5a2.5 2.5 0 0 1 0-5c.78 0 1.57.5 2.5.5S9.44 2 11 2s2 1.5 3 1.5 1.72-.5 2.5-.5a2.5 2.5 0 0 1 0 5c-.78 0-1.5-.5-2.5-.5Z\"/><path d=\"M5 8v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8\"/>","notebook-pen":"<path d=\"M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4\"/><path d=\"M2 6h4\"/><path d=\"M2 10h4\"/><path d=\"M2 14h4\"/><path d=\"M2 18h4\"/><path d=\"M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z\"/>","siren":"<path d=\"M7 18v-6a5 5 0 1 1 10 0v6\"/><path d=\"M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z\"/><path d=\"M21 12h1\"/><path d=\"M18.5 4.5 18 5\"/><path d=\"M2 12h1\"/><path d=\"M12 2v1\"/><path d=\"m4.929 4.929.707.707\"/><path d=\"M12 12v6\"/>","folder":"<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>","target":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><circle cx=\"12\" cy=\"12\" r=\"6\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/>","clipboard-list":"<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>","package":"<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/><path d=\"M12 22V12\"/><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\"/><path d=\"m7.5 4.27 9 5.15\"/>","pencil":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"/><path d=\"m15 5 4 4\"/>","ruler":"<path d=\"M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z\"/><path d=\"m14.5 12.5 2-2\"/><path d=\"m11.5 9.5 2-2\"/><path d=\"m8.5 6.5 2-2\"/><path d=\"m17.5 15.5 2-2\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>","external-link":"<path d=\"M15 3h6v6\"/><path d=\"M10 14 21 3\"/><path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/>","search":"<circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/>","wrench":"<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>","pin":"<path d=\"M12 17v5\"/><path d=\"M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z\"/>","repeat":"<path d=\"m17 2 4 4-4 4\"/><path d=\"M3 11v-1a4 4 0 0 1 4-4h14\"/><path d=\"m7 22-4-4 4-4\"/><path d=\"M21 13v1a4 4 0 0 1-4 4H3\"/>","chart-column":"<path d=\"M3 3v16a2 2 0 0 0 2 2h16\"/><path d=\"M18 17V9\"/><path d=\"M13 17V5\"/><path d=\"M8 17v-3\"/>","trash-2":"<path d=\"M3 6h18\"/><path d=\"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6\"/><path d=\"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2\"/><line x1=\"10\" x2=\"10\" y1=\"11\" y2=\"17\"/><line x1=\"14\" x2=\"14\" y1=\"11\" y2=\"17\"/>","printer":"<path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/><path d=\"M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\" rx=\"1\"/>","settings":"<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>","calendar-days":"<path d=\"M8 2v4\"/><path d=\"M16 2v4\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M3 10h18\"/><path d=\"M8 14h.01\"/><path d=\"M12 14h.01\"/><path d=\"M16 14h.01\"/><path d=\"M8 18h.01\"/><path d=\"M12 18h.01\"/><path d=\"M16 18h.01\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/><path d=\"M8 16H3v5\"/>","folders":"<path d=\"M20 17a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.9a2 2 0 0 1-1.69-.9l-.81-1.2a2 2 0 0 0-1.67-.9H8a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2Z\"/><path d=\"M2 8v11a2 2 0 0 0 2 2h14\"/>","book-open":"<path d=\"M12 7v14\"/><path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/>","droplet":"<path d=\"M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z\"/>","paperclip":"<path d=\"M13.234 20.252 21 12.3\"/><path d=\"m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486\"/>","calendar-range":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M16 2v4\"/><path d=\"M3 10h18\"/><path d=\"M8 2v4\"/><path d=\"M17 14h-6\"/><path d=\"M13 18H7\"/><path d=\"M7 14h.01\"/><path d=\"M17 18h.01\"/>","users":"<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>","megaphone":"<path d=\"m3 11 18-5v12L3 14v-3z\"/><path d=\"M11.6 16.8a3 3 0 1 1-5.8-1.6\"/>","cylinder":"<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M3 5v14a9 3 0 0 0 18 0V5\"/>","inbox":"<polyline points=\"22 12 16 12 14 15 10 15 8 12 2 12\"/><path d=\"M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\"/>","file-text":"<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/>","undo-2":"<path d=\"M9 14 4 9l5-5\"/><path d=\"M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11\"/>","save":"<path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/><path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"/><path d=\"M7 3v4a1 1 0 0 0 1 1h7\"/>","hourglass":"<path d=\"M5 22h14\"/><path d=\"M5 2h14\"/><path d=\"M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22\"/><path d=\"M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2\"/>","thermometer":"<path d=\"M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z\"/>","scroll-text":"<path d=\"M15 12h-5\"/><path d=\"M15 8h-5\"/><path d=\"M19 17V5a2 2 0 0 0-2-2H4\"/><path d=\"M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3\"/>","factory":"<path d=\"M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z\"/><path d=\"M17 18h1\"/><path d=\"M12 18h1\"/><path d=\"M7 18h1\"/>","sunrise":"<path d=\"M12 2v8\"/><path d=\"m4.93 10.93 1.41 1.41\"/><path d=\"M2 18h2\"/><path d=\"M20 18h2\"/><path d=\"m19.07 10.93-1.41 1.41\"/><path d=\"M22 22H2\"/><path d=\"m8 6 4-4 4 4\"/><path d=\"M16 18a4 4 0 0 0-8 0\"/>","moon":"<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>","user":"<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\"/><circle cx=\"12\" cy=\"7\" r=\"4\"/>","receipt":"<path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/><path d=\"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8\"/><path d=\"M12 17.5v-11\"/>","alarm-clock":"<circle cx=\"12\" cy=\"13\" r=\"8\"/><path d=\"M12 9v4l2 2\"/><path d=\"M5 3 2 6\"/><path d=\"m22 6-3-3\"/><path d=\"M6.38 18.7 4 21\"/><path d=\"M17.64 18.67 20 21\"/>","shopping-cart":"<circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/>","microscope":"<path d=\"M6 18h8\"/><path d=\"M3 22h18\"/><path d=\"M14 22a7 7 0 1 0 0-14h-1\"/><path d=\"M9 14h2\"/><path d=\"M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z\"/><path d=\"M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3\"/>","message-circle":"<path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\"/>","play":"<polygon points=\"6 3 20 12 6 21 6 3\"/>","library":"<path d=\"m16 6 4 14\"/><path d=\"M12 6v14\"/><path d=\"M8 8v12\"/><path d=\"M4 4v16\"/>","stethoscope":"<path d=\"M11 2v2\"/><path d=\"M5 2v2\"/><path d=\"M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1\"/><path d=\"M8 15a6 6 0 0 0 12 0v-3\"/><circle cx=\"20\" cy=\"10\" r=\"2\"/>","hammer":"<path d=\"m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9\"/><path d=\"m18 15 4-4\"/><path d=\"m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5\"/>","camera":"<path d=\"M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z\"/><circle cx=\"12\" cy=\"13\" r=\"3\"/>","sparkles":"<path d=\"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z\"/><path d=\"M20 3v4\"/><path d=\"M22 5h-4\"/><path d=\"M4 17v2\"/><path d=\"M5 18H3\"/>","store":"<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>","database":"<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/><path d=\"M3 12A9 3 0 0 0 21 12\"/>","armchair":"<path d=\"M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3\"/><path d=\"M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z\"/><path d=\"M5 18v2\"/><path d=\"M19 18v2\"/>","snowflake":"<path d=\"m10 20-1.25-2.5L6 18\"/><path d=\"M10 4 8.75 6.5 6 6\"/><path d=\"m14 20 1.25-2.5L18 18\"/><path d=\"m14 4 1.25 2.5L18 6\"/><path d=\"m17 21-3-6h-4\"/><path d=\"m17 3-3 6 1.5 3\"/><path d=\"M2 12h6.5L10 9\"/><path d=\"m20 10-1.5 2 1.5 2\"/><path d=\"M22 12h-6.5L14 15\"/><path d=\"m4 10 1.5 2L4 14\"/><path d=\"m7 21 3-6-1.5-3\"/><path d=\"m7 3 3 6h4\"/>","utensils-crossed":"<path d=\"m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8\"/><path d=\"M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7\"/><path d=\"m2.1 21.8 6.4-6.3\"/><path d=\"m19 5-7 7\"/>","map":"<path d=\"M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z\"/><path d=\"M15 5.764v15\"/><path d=\"M9 3.236v15\"/>","signature":"<path d=\"m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284\"/><path d=\"M3 21h18\"/>","square-check":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"m9 12 2 2 4-4\"/>","flag":"<path d=\"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z\"/><line x1=\"4\" x2=\"4\" y1=\"22\" y2=\"15\"/>","lightbulb":"<path d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"/><path d=\"M9 18h6\"/><path d=\"M10 22h4\"/>","clock-9":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 7.5 12\"/>","hand":"<path d=\"M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2\"/><path d=\"M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2\"/><path d=\"M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8\"/><path d=\"M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15\"/>","bell":"<path d=\"M10.268 21a2 2 0 0 0 3.464 0\"/><path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\"/>","id-card":"<path d=\"M16 10h2\"/><path d=\"M16 14h2\"/><path d=\"M6.17 15a3 3 0 0 1 5.66 0\"/><circle cx=\"9\" cy=\"11\" r=\"2\"/><rect x=\"2\" y=\"5\" width=\"20\" height=\"14\" rx=\"2\"/>","compass":"<path d=\"m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z\"/><circle cx=\"12\" cy=\"12\" r=\"10\"/>","arrow-down":"<path d=\"M12 5v14\"/><path d=\"m19 12-7 7-7-7\"/>","cookie":"<path d=\"M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5\"/><path d=\"M8.5 8.5v.01\"/><path d=\"M16 15.5v.01\"/><path d=\"M12 12v.01\"/><path d=\"M11 17v.01\"/><path d=\"M7 14v.01\"/>","thumbs-up":"<path d=\"M7 10v12\"/><path d=\"M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z\"/>","lock":"<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>","puzzle":"<path d=\"M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z\"/>","circle-dot":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/>","tag":"<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>","flask-conical":"<path d=\"M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2\"/><path d=\"M6.453 15h11.094\"/><path d=\"M8.5 2h7\"/>","cooking-pot":"<path d=\"M2 12h20\"/><path d=\"M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8\"/><path d=\"m4 8 16-4\"/><path d=\"m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.48a2 2 0 0 1 2.43 1.46l.45 1.8\"/>","trending-up":"<polyline points=\"22 7 13.5 15.5 8.5 10.5 2 17\"/><polyline points=\"16 7 22 7 22 13\"/>","traffic-cone":"<path d=\"M9.3 6.2a4.55 4.55 0 0 0 5.4 0\"/><path d=\"M7.9 10.7c.9.8 2.4 1.3 4.1 1.3s3.2-.5 4.1-1.3\"/><path d=\"M13.9 3.5a1.93 1.93 0 0 0-3.8-.1l-3 10c-.1.2-.1.4-.1.6 0 1.7 2.2 3 5 3s5-1.3 5-3c0-.2 0-.4-.1-.5Z\"/><path d=\"m7.5 12.2-4.7 2.7c-.5.3-.8.7-.8 1.1s.3.8.8 1.1l7.6 4.5c.9.5 2.1.5 3 0l7.6-4.5c.7-.3 1-.7 1-1.1s-.3-.8-.8-1.1l-4.7-2.8\"/>","house":"<path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\"/><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>","paw-print":"<circle cx=\"11\" cy=\"4\" r=\"2\"/><circle cx=\"18\" cy=\"8\" r=\"2\"/><circle cx=\"20\" cy=\"16\" r=\"2\"/><path d=\"M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z\"/>","arrow-up":"<path d=\"m5 12 7-7 7 7\"/><path d=\"M12 19V5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","shield":"<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/>","scissors":"<circle cx=\"6\" cy=\"6\" r=\"3\"/><path d=\"M8.12 8.12 12 12\"/><path d=\"M20 4 8.12 15.88\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M14.8 14.8 20 20\"/>","archive":"<rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\"/><path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\"/><path d=\"M10 12h4\"/>","hospital":"<path d=\"M12 6v4\"/><path d=\"M14 14h-4\"/><path d=\"M14 18h-4\"/><path d=\"M14 8h-4\"/><path d=\"M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2\"/><path d=\"M18 22V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v18\"/>","lock-keyhole":"<circle cx=\"12\" cy=\"16\" r=\"1\"/><rect x=\"3\" y=\"10\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M7 10V7a5 5 0 0 1 10 0v3\"/>","wand-sparkles":"<path d=\"m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72\"/><path d=\"m14 7 3 3\"/><path d=\"M5 6v4\"/><path d=\"M19 14v4\"/><path d=\"M10 2v2\"/><path d=\"M7 8H3\"/><path d=\"M21 16h-4\"/><path d=\"M11 3H9\"/>","sun":"<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/>","bug":"<path d=\"m8 2 1.88 1.88\"/><path d=\"M14.12 3.88 16 2\"/><path d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/><path d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/><path d=\"M12 20v-9\"/><path d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/><path d=\"M6 13H2\"/><path d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/><path d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/><path d=\"M22 13h-4\"/><path d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>","party-popper":"<path d=\"M5.8 11.3 2 22l10.7-3.79\"/><path d=\"M4 3h.01\"/><path d=\"M22 8h.01\"/><path d=\"M15 2h.01\"/><path d=\"M22 20h.01\"/><path d=\"m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10\"/><path d=\"m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17\"/><path d=\"m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7\"/><path d=\"M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z\"/>","handshake":"<path d=\"m11 17 2 2a1 1 0 1 0 3-3\"/><path d=\"m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4\"/><path d=\"m21 3 1 11h-2\"/><path d=\"M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3\"/><path d=\"M3 4h8\"/>","mail":"<rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/><path d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/>","cloud":"<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>","medal":"<path d=\"M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15\"/><path d=\"M11 12 5.12 2.2\"/><path d=\"m13 12 5.88-9.8\"/><path d=\"M8 7h8\"/><circle cx=\"12\" cy=\"17\" r=\"5\"/><path d=\"M12 18v-2h-.5\"/>","book":"<path d=\"M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20\"/>","chevron-left":"<path d=\"m15 18-6-6 6-6\"/>","globe":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/>","timer":"<line x1=\"10\" x2=\"14\" y1=\"2\" y2=\"2\"/><line x1=\"12\" x2=\"15\" y1=\"14\" y2=\"11\"/><circle cx=\"12\" cy=\"14\" r=\"8\"/>","x":"<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>","smartphone":"<rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\"/><path d=\"M12 18h.01\"/>","notebook":"<path d=\"M2 6h4\"/><path d=\"M2 10h4\"/><path d=\"M2 14h4\"/><path d=\"M2 18h4\"/><rect width=\"16\" height=\"20\" x=\"4\" y=\"2\" rx=\"2\"/><path d=\"M16 2v20\"/>","laptop":"<path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\"/>","pause":"<rect x=\"14\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/>","door-open":"<path d=\"M13 4h3a2 2 0 0 1 2 2v14\"/><path d=\"M2 20h3\"/><path d=\"M13 20h9\"/><path d=\"M10 12v.01\"/><path d=\"M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z\"/>","send":"<path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\"/><path d=\"m21.854 2.147-10.94 10.939\"/>","image":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/>","link-2":"<path d=\"M9 17H7A5 5 0 0 1 7 7h2\"/><path d=\"M15 7h2a5 5 0 1 1 0 10h-2\"/><line x1=\"8\" x2=\"16\" y1=\"12\" y2=\"12\"/>","plus":"<path d=\"M5 12h14\"/><path d=\"M12 5v14\"/>","thumbs-down":"<path d=\"M17 14V2\"/><path d=\"M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z\"/>","newspaper":"<path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2\"/><path d=\"M18 14h-8\"/><path d=\"M15 18h-5\"/><path d=\"M10 6h8v4h-8V6Z\"/>","eraser":"<path d=\"m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21\"/><path d=\"M22 21H7\"/><path d=\"m5 11 9 9\"/>","coins":"<circle cx=\"8\" cy=\"8\" r=\"6\"/><path d=\"M18.09 10.37A6 6 0 1 1 10.34 18\"/><path d=\"M7 6h1v4\"/><path d=\"m16.71 13.88.7.71-2.82 2.82\"/>","package-minus":"<path d=\"M16 16h6\"/><path d=\"M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14\"/><path d=\"m7.5 4.27 9 5.15\"/><polyline points=\"3.29 7 12 12 20.71 7\"/><line x1=\"12\" x2=\"12\" y1=\"22\" y2=\"12\"/>","bot":"<path d=\"M12 8V4H8\"/><rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\"/><path d=\"M2 14h2\"/><path d=\"M20 14h2\"/><path d=\"M15 13v2\"/><path d=\"M9 13v2\"/>","briefcase":"<path d=\"M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16\"/><rect width=\"20\" height=\"14\" x=\"2\" y=\"6\" rx=\"2\"/>","utensils":"<path d=\"M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2\"/><path d=\"M7 2v20\"/><path d=\"M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7\"/>","banknote":"<rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M6 12h.01M18 12h.01\"/>","eye-off":"<path d=\"M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49\"/><path d=\"M14.084 14.158a3 3 0 0 1-4.242-4.242\"/><path d=\"M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143\"/><path d=\"m2 2 20 20\"/>","star":"<path d=\"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z\"/>","palette":"<circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\"/><path d=\"M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z\"/>","cloud-sun-rain":"<path d=\"M12 2v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"M20 12h2\"/><path d=\"m19.07 4.93-1.41 1.41\"/><path d=\"M15.947 12.65a4 4 0 0 0-5.925-4.128\"/><path d=\"M3 20a5 5 0 1 1 8.9-4H13a3 3 0 0 1 2 5.24\"/><path d=\"M11 20v2\"/><path d=\"M7 19v2\"/>","square":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>","smile":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M8 14s1.5 2 4 2 4-2 4-2\"/><line x1=\"9\" x2=\"9.01\" y1=\"9\" y2=\"9\"/><line x1=\"15\" x2=\"15.01\" y1=\"9\" y2=\"9\"/>","truck":"<path d=\"M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2\"/><path d=\"M15 18H9\"/><path d=\"M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14\"/><circle cx=\"17\" cy=\"18\" r=\"2\"/><circle cx=\"7\" cy=\"18\" r=\"2\"/>","key-round":"<path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/><circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>","notebook-tabs":"<path d=\"M2 6h4\"/><path d=\"M2 10h4\"/><path d=\"M2 14h4\"/><path d=\"M2 18h4\"/><rect width=\"16\" height=\"20\" x=\"4\" y=\"2\" rx=\"2\"/><path d=\"M15 2v20\"/><path d=\"M15 7h5\"/><path d=\"M15 12h5\"/><path d=\"M15 17h5\"/>","soup":"<path d=\"M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z\"/><path d=\"M7 21h10\"/><path d=\"M19.5 12 22 6\"/><path d=\"M16.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.73 1.62\"/><path d=\"M11.25 3c.27.1.8.53.74 1.36-.05.83-.93 1.2-.98 2.02-.06.78.33 1.24.72 1.62\"/><path d=\"M6.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.74 1.62\"/>","waves":"<path d=\"M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1\"/><path d=\"M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1\"/><path d=\"M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1\"/>","carrot":"<path d=\"M2.27 21.7s9.87-3.5 12.73-6.36a4.5 4.5 0 0 0-6.36-6.37C5.77 11.84 2.27 21.7 2.27 21.7zM8.64 14l-2.05-2.04M15.34 15l-2.46-2.46\"/><path d=\"M22 9s-1.33-2-3.5-2C16.86 7 15 9 15 9s1.33 2 3.5 2S22 9 22 9z\"/><path d=\"M15 2s-2 1.33-2 3.5S15 9 15 9s2-1.84 2-3.5C17 3.33 15 2 15 2z\"/>","calculator":"<rect width=\"16\" height=\"20\" x=\"4\" y=\"2\" rx=\"2\"/><line x1=\"8\" x2=\"16\" y1=\"6\" y2=\"6\"/><line x1=\"16\" x2=\"16\" y1=\"14\" y2=\"18\"/><path d=\"M16 10h.01\"/><path d=\"M12 10h.01\"/><path d=\"M8 10h.01\"/><path d=\"M12 14h.01\"/><path d=\"M8 14h.01\"/><path d=\"M12 18h.01\"/><path d=\"M8 18h.01\"/>","zap":"<path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\"/>","files":"<path d=\"M20 7h-3a2 2 0 0 1-2-2V2\"/><path d=\"M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z\"/><path d=\"M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8\"/>","trending-down":"<polyline points=\"22 17 13.5 8.5 8.5 13.5 2 7\"/><polyline points=\"16 17 22 17 22 11\"/>","construction":"<rect x=\"2\" y=\"6\" width=\"20\" height=\"8\" rx=\"1\"/><path d=\"M17 14v7\"/><path d=\"M7 14v7\"/><path d=\"M17 3v3\"/><path d=\"M7 3v3\"/><path d=\"M10 14 2.3 6.3\"/><path d=\"m14 6 7.7 7.7\"/><path d=\"m8 6 8 8\"/>","notebook-text":"<path d=\"M2 6h4\"/><path d=\"M2 10h4\"/><path d=\"M2 14h4\"/><path d=\"M2 18h4\"/><rect width=\"16\" height=\"20\" x=\"4\" y=\"2\" rx=\"2\"/><path d=\"M9.5 8h5\"/><path d=\"M9.5 12H16\"/><path d=\"M9.5 16H14\"/>","phone":"<path d=\"M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z\"/>","arrow-up-down":"<path d=\"m21 16-4 4-4-4\"/><path d=\"M17 20V4\"/><path d=\"m3 8 4-4 4 4\"/><path d=\"M7 4v16\"/>","shuffle":"<path d=\"m18 14 4 4-4 4\"/><path d=\"m18 2 4 4-4 4\"/><path d=\"M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22\"/><path d=\"M2 6h1.972a4 4 0 0 1 3.6 2.2\"/><path d=\"M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45\"/>","sticky-note":"<path d=\"M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z\"/><path d=\"M15 3v4a2 2 0 0 0 2 2h4\"/>","tent":"<path d=\"M3.5 21 14 3\"/><path d=\"M20.5 21 10 3\"/><path d=\"M15.5 21 12 15l-3.5 6\"/><path d=\"M2 21h20\"/>","frown":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M16 16s-1.5-2-4-2-4 2-4 2\"/><line x1=\"9\" x2=\"9.01\" y1=\"9\" y2=\"9\"/><line x1=\"15\" x2=\"15.01\" y1=\"9\" y2=\"9\"/>","cup-soda":"<path d=\"m6 8 1.75 12.28a2 2 0 0 0 2 1.72h4.54a2 2 0 0 0 2-1.72L18 8\"/><path d=\"M5 8h14\"/><path d=\"M7 15a6.47 6.47 0 0 1 5 0 6.47 6.47 0 0 0 5 0\"/><path d=\"m12 8 1-6h2\"/>","cloud-rain":"<path d=\"M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242\"/><path d=\"M16 14v6\"/><path d=\"M8 14v6\"/><path d=\"M12 16v6\"/>","cloud-lightning":"<path d=\"M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973\"/><path d=\"m13 12-3 5h4l-3 5\"/>","circle-help":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><path d=\"M12 17h.01\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","mailbox":"<path d=\"M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z\"/><polyline points=\"15,9 18,9 18,11\"/><path d=\"M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2\"/><line x1=\"6\" x2=\"7\" y1=\"10\" y2=\"10\"/>","graduation-cap":"<path d=\"M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z\"/><path d=\"M22 10v6\"/><path d=\"M6 12.5V16a6 3 0 0 0 12 0v-3.5\"/>","arrow-left-right":"<path d=\"M8 3 4 7l4 4\"/><path d=\"M4 7h16\"/><path d=\"m16 21 4-4-4-4\"/><path d=\"M20 17H4\"/>","badge-plus":"<path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"16\"/><line x1=\"8\" x2=\"16\" y1=\"12\" y2=\"12\"/>","tv":"<rect width=\"20\" height=\"15\" x=\"2\" y=\"7\" rx=\"2\" ry=\"2\"/><polyline points=\"17 2 12 7 7 2\"/>","projector":"<path d=\"M5 7 3 5\"/><path d=\"M9 6V3\"/><path d=\"m13 7 2-2\"/><circle cx=\"9\" cy=\"13\" r=\"3\"/><path d=\"M11.83 12H20a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h2.17\"/><path d=\"M16 16h2\"/>","volume-2":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/><path d=\"M16 9a5 5 0 0 1 0 6\"/><path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\"/>","bell-ring":"<path d=\"M10.268 21a2 2 0 0 0 3.464 0\"/><path d=\"M22 8c0-2.3-.8-4.3-2-6\"/><path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\"/><path d=\"M4 2C2.8 3.7 2 5.7 2 8\"/>","mic":"<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>","wheat":"<path d=\"M2 22 16 8\"/><path d=\"M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z\"/><path d=\"M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z\"/><path d=\"M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z\"/><path d=\"M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z\"/><path d=\"M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z\"/><path d=\"M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z\"/><path d=\"M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z\"/>","speech":"<path d=\"M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.054 1 4.55a5.77 5.77 0 0 1 .029 2.758L2 20\"/><path d=\"M19.8 17.8a7.5 7.5 0 0 0 .003-10.603\"/><path d=\"M17 15a3.5 3.5 0 0 0-.025-4.975\"/>","mail-plus":"<path d=\"M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8\"/><path d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/><path d=\"M19 16v6\"/><path d=\"M16 19h6\"/>","lock-open":"<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 9.9-1\"/>","sunset":"<path d=\"M12 10V2\"/><path d=\"m4.93 10.93 1.41 1.41\"/><path d=\"M2 18h2\"/><path d=\"M20 18h2\"/><path d=\"m19.07 10.93-1.41 1.41\"/><path d=\"M22 22H2\"/><path d=\"m16 6-4 4-4-4\"/><path d=\"M16 18a4 4 0 0 0-8 0\"/>","cloud-fog":"<path d=\"M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242\"/><path d=\"M16 17H7\"/><path d=\"M17 21H9\"/>","wind":"<path d=\"M12.8 19.6A2 2 0 1 0 14 16H2\"/><path d=\"M17.5 8a2.5 2.5 0 1 1 2 4H2\"/><path d=\"M9.8 4.4A2 2 0 1 1 11 8H2\"/>","skull":"<path d=\"m12.5 17-.5-1-.5 1h1z\"/><path d=\"M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z\"/><circle cx=\"15\" cy=\"12\" r=\"1\"/><circle cx=\"9\" cy=\"12\" r=\"1\"/>","brush":"<path d=\"m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08\"/><path d=\"M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z\"/>","clapperboard":"<path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z\"/><path d=\"m6.2 5.3 3.1 3.9\"/><path d=\"m12.4 3.4 3.1 4\"/><path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z\"/>","keyboard":"<path d=\"M10 8h.01\"/><path d=\"M12 12h.01\"/><path d=\"M14 8h.01\"/><path d=\"M16 12h.01\"/><path d=\"M18 8h.01\"/><path d=\"M6 8h.01\"/><path d=\"M7 16h10\"/><path d=\"M8 12h.01\"/><rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/>","shopping-bag":"<path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\"/><path d=\"M3 6h18\"/><path d=\"M16 10a4 4 0 0 1-8 0\"/>","hand-coins":"<path d=\"M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17\"/><path d=\"m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9\"/><path d=\"m2 16 6 6\"/><circle cx=\"16\" cy=\"9\" r=\"2.9\"/><circle cx=\"6\" cy=\"5\" r=\"3\"/>","credit-card":"<rect width=\"20\" height=\"14\" x=\"2\" y=\"5\" rx=\"2\"/><line x1=\"2\" x2=\"22\" y1=\"10\" y2=\"10\"/>","footprints":"<path d=\"M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z\"/><path d=\"M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z\"/><path d=\"M16 17h4\"/><path d=\"M4 13h4\"/>","circle":"<circle cx=\"12\" cy=\"12\" r=\"10\"/>","arrow-right":"<path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/>","arrow-left":"<path d=\"m12 19-7-7 7-7\"/><path d=\"M19 12H5\"/>","square-x":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><path d=\"m15 9-6 6\"/><path d=\"m9 9 6 6\"/>","file":"<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","clock":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/>","clock-3":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16.5 12\"/>","map-pin":"<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/>","building-2":"<path d=\"M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z\"/><path d=\"M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2\"/><path d=\"M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2\"/><path d=\"M10 6h4\"/><path d=\"M10 10h4\"/><path d=\"M10 14h4\"/><path d=\"M10 18h4\"/>","eye":"<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>","badge-check":"<path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\"/><path d=\"m9 12 2 2 4-4\"/>","fire-extinguisher":"<path d=\"M15 6.5V3a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3.5\"/><path d=\"M9 18h8\"/><path d=\"M18 3h-3\"/><path d=\"M11 3a6 6 0 0 0-6 6v11\"/><path d=\"M5 13h4\"/><path d=\"M17 10a4 4 0 0 0-8 0v10a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2Z\"/>","flame":"<path d=\"M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z\"/>","recycle":"<path d=\"M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5\"/><path d=\"M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12\"/><path d=\"m14 16-3 3 3 3\"/><path d=\"M8.293 13.596 7.196 9.5 3.1 10.598\"/><path d=\"m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843\"/><path d=\"m13.378 9.633 4.096 1.098 1.097-4.096\"/>","wine":"<path d=\"M8 22h8\"/><path d=\"M7 10h10\"/><path d=\"M12 15v7\"/><path d=\"M12 15a5 5 0 0 0 5-5c0-2-.5-4-2-8H9c-1.5 4-2 6-2 8a5 5 0 0 0 5 5Z\"/>","sprout":"<path d=\"M7 20h10\"/><path d=\"M10 20c5.5-2.5.8-6.4 3-10\"/><path d=\"M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z\"/><path d=\"M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z\"/>","gift":"<rect x=\"3\" y=\"8\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M12 8v13\"/><path d=\"M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7\"/><path d=\"M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5\"/>","circle-arrow-up":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m16 12-4-4-4 4\"/><path d=\"M12 16V8\"/>","skip-forward":"<polygon points=\"5 4 15 12 5 20 5 4\"/><line x1=\"19\" x2=\"19\" y1=\"5\" y2=\"19\"/>","skip-back":"<polygon points=\"19 20 9 12 19 4 19 20\"/><line x1=\"5\" x2=\"5\" y1=\"19\" y2=\"5\"/>","radio":"<path d=\"M4.9 19.1C1 15.2 1 8.8 4.9 4.9\"/><path d=\"M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5\"/><path d=\"M19.1 4.9C23 8.8 23 15.1 19.1 19\"/>","pen":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"/>","pen-tool":"<path d=\"M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z\"/><path d=\"m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18\"/><path d=\"m2.3 2.3 7.286 7.286\"/><circle cx=\"11\" cy=\"11\" r=\"2\"/>","monitor":"<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\"/><line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\"/><line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\"/>","badge":"<path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\"/>","magnet":"<path d=\"m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15\"/><path d=\"m5 8 4 4\"/><path d=\"m12 15 4 4\"/>","paint-bucket":"<path d=\"m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z\"/><path d=\"m5 2 5 5\"/><path d=\"M2 13h15\"/><path d=\"M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z\"/>","spray-can":"<path d=\"M3 3h.01\"/><path d=\"M7 5h.01\"/><path d=\"M11 7h.01\"/><path d=\"M3 7h.01\"/><path d=\"M7 9h.01\"/><path d=\"M3 11h.01\"/><rect width=\"4\" height=\"4\" x=\"15\" y=\"5\"/><path d=\"m19 9 2 2v10c0 .6-.4 1-1 1h-6c-.6 0-1-.4-1-1V11l2-2\"/><path d=\"m13 14 8-2\"/><path d=\"m13 19 8-2\"/>","milk":"<path d=\"M8 2h8\"/><path d=\"M9 2v2.789a4 4 0 0 1-.672 2.219l-.656.984A4 4 0 0 0 7 10.212V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-9.789a4 4 0 0 0-.672-2.219l-.656-.984A4 4 0 0 1 15 4.788V2\"/><path d=\"M7 15a6.472 6.472 0 0 1 5 0 6.47 6.47 0 0 0 5 0\"/>","croissant":"<path d=\"m4.6 13.11 5.79-3.21c1.89-1.05 4.79 1.78 3.71 3.71l-3.22 5.81C8.8 23.16.79 15.23 4.6 13.11Z\"/><path d=\"m10.5 9.5-1-2.29C9.2 6.48 8.8 6 8 6H4.5C2.79 6 2 6.5 2 8.5a7.71 7.71 0 0 0 2 4.83\"/><path d=\"M8 6c0-1.55.24-4-2-4-2 0-2.5 2.17-2.5 4\"/><path d=\"m14.5 13.5 2.29 1c.73.3 1.21.7 1.21 1.5v3.5c0 1.71-.5 2.5-2.5 2.5a7.71 7.71 0 0 1-4.83-2\"/><path d=\"M18 16c1.55 0 4-.24 4 2 0 2-2.17 2.5-4 2.5\"/>","drumstick":"<path d=\"M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23\"/><path d=\"m8.29 12.71-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59\"/>","beef":"<circle cx=\"12.5\" cy=\"8.5\" r=\"2.5\"/><path d=\"M12.5 2a6.5 6.5 0 0 0-6.22 4.6c-1.1 3.13-.78 3.9-3.18 6.08A3 3 0 0 0 5 18c4 0 8.4-1.8 11.4-4.3A6.5 6.5 0 0 0 12.5 2Z\"/><path d=\"m18.5 6 2.19 4.5a6.48 6.48 0 0 1 .31 2 6.49 6.49 0 0 1-2.6 5.2C15.4 20.2 11 22 7 22a3 3 0 0 1-2.68-1.66L2.4 16.5\"/>","fish":"<path d=\"M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z\"/><path d=\"M18 12v.5\"/><path d=\"M16 17.93a9.77 9.77 0 0 1 0-11.86\"/><path d=\"M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33\"/><path d=\"M10.46 7.26C10.2 5.88 9.17 4.24 8 3h5.8a2 2 0 0 1 1.98 1.67l.23 1.4\"/><path d=\"m16.01 17.93-.23 1.4A2 2 0 0 1 13.8 21H9.5a5.96 5.96 0 0 0 1.49-3.98\"/>","egg":"<path d=\"M12 22c6.23-.05 7.87-5.57 7.5-10-.36-4.34-3.95-9.96-7.5-10-3.55.04-7.14 5.66-7.5 10-.37 4.43 1.27 9.95 7.5 10z\"/>","pizza":"<path d=\"m12 14-1 1\"/><path d=\"m13.75 18.25-1.25 1.42\"/><path d=\"M17.775 5.654a15.68 15.68 0 0 0-12.121 12.12\"/><path d=\"M18.8 9.3a1 1 0 0 0 2.1 7.7\"/><path d=\"M21.964 20.732a1 1 0 0 1-1.232 1.232l-18-5a1 1 0 0 1-.695-1.232A19.68 19.68 0 0 1 15.732 2.037a1 1 0 0 1 1.232.695z\"/>","cake-slice":"<circle cx=\"9\" cy=\"7\" r=\"2\"/><path d=\"M7.2 7.9 3 11v9c0 .6.4 1 1 1h16c.6 0 1-.4 1-1v-9c0-2-3-6-7-8l-3.6 2.6\"/><path d=\"M16 13H3\"/><path d=\"M16 17H3\"/>","coffee":"<path d=\"M10 2v2\"/><path d=\"M14 2v2\"/><path d=\"M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1\"/><path d=\"M6 2v2\"/>","salad":"<path d=\"M7 21h10\"/><path d=\"M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z\"/><path d=\"M11.38 12a2.4 2.4 0 0 1-.4-4.77 2.4 2.4 0 0 1 3.2-2.77 2.4 2.4 0 0 1 3.47-.63 2.4 2.4 0 0 1 3.37 3.37 2.4 2.4 0 0 1-1.1 3.7 2.51 2.51 0 0 1 .03 1.1\"/><path d=\"m13 12 4-4\"/><path d=\"M10.9 7.25A3.99 3.99 0 0 0 4 10c0 .73.2 1.41.54 2\"/>","apple":"<path d=\"M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z\"/><path d=\"M10 2c1 .5 2 2 2 5\"/>","citrus":"<path d=\"M21.66 17.67a1.08 1.08 0 0 1-.04 1.6A12 12 0 0 1 4.73 2.38a1.1 1.1 0 0 1 1.61-.04z\"/><path d=\"M19.65 15.66A8 8 0 0 1 8.35 4.34\"/><path d=\"m14 10-5.5 5.5\"/><path d=\"M14 17.85V10H6.15\"/>"};
+  var RE = new RegExp("(?:🧑\\uFE0F?‍\\uFE0F?⚕\\uFE0F?|✅\\uFE0F?|❌\\uFE0F?|⚠\\uFE0F?|📅\\uFE0F?|🍺\\uFE0F?|📝\\uFE0F?|🚨\\uFE0F?|📁\\uFE0F?|🎯\\uFE0F?|📋\\uFE0F?|📦\\uFE0F?|✏\\uFE0F?|📐\\uFE0F?|🔗\\uFE0F?|↗\\uFE0F?|🔍\\uFE0F?|🔧\\uFE0F?|📌\\uFE0F?|🔁\\uFE0F?|📊\\uFE0F?|🗑\\uFE0F?|🖨\\uFE0F?|⚙\\uFE0F?|📆\\uFE0F?|🔄\\uFE0F?|🗂\\uFE0F?|📖\\uFE0F?|💧\\uFE0F?|📎\\uFE0F?|🗓\\uFE0F?|👥\\uFE0F?|📢\\uFE0F?|🥫\\uFE0F?|📥\\uFE0F?|📄\\uFE0F?|↩\\uFE0F?|💾\\uFE0F?|⏳\\uFE0F?|🌡\\uFE0F?|📜\\uFE0F?|🏭\\uFE0F?|🌅\\uFE0F?|🌙\\uFE0F?|👤\\uFE0F?|🧾\\uFE0F?|⏰\\uFE0F?|🛒\\uFE0F?|🔬\\uFE0F?|💬\\uFE0F?|▶\\uFE0F?|📚\\uFE0F?|🩺\\uFE0F?|🛠\\uFE0F?|📷\\uFE0F?|🧼\\uFE0F?|🏪\\uFE0F?|🛢\\uFE0F?|📣\\uFE0F?|🪑\\uFE0F?|🧊\\uFE0F?|🔪\\uFE0F?|🗺\\uFE0F?|✍\\uFE0F?|☑\\uFE0F?|🏁\\uFE0F?|💡\\uFE0F?|🕘\\uFE0F?|🙋\\uFE0F?|🔔\\uFE0F?|🪪\\uFE0F?|🧭\\uFE0F?|⬇\\uFE0F?|🍙\\uFE0F?|👍\\uFE0F?|🔒\\uFE0F?|🧩\\uFE0F?|🔴\\uFE0F?|🏷\\uFE0F?|🧪\\uFE0F?|🍳\\uFE0F?|✨\\uFE0F?|📈\\uFE0F?|🚦\\uFE0F?|🏠\\uFE0F?|🐻\\uFE0F?|⬆\\uFE0F?|✔\\uFE0F?|🛡\\uFE0F?|✂\\uFE0F?|🗄\\uFE0F?|🔐\\uFE0F?|🪄\\uFE0F?|☀\\uFE0F?|🪰\\uFE0F?|🎉\\uFE0F?|🤝\\uFE0F?|📧\\uFE0F?|☁\\uFE0F?|🎖\\uFE0F?|📘\\uFE0F?|◀\\uFE0F?|🌐\\uFE0F?|⏱\\uFE0F?|✖\\uFE0F?|📱\\uFE0F?|📔\\uFE0F?|💻\\uFE0F?|⏸\\uFE0F?|🚪\\uFE0F?|📤\\uFE0F?|🖼\\uFE0F?|⛓\\uFE0F?|➕\\uFE0F?|🟡\\uFE0F?|👎\\uFE0F?|📰\\uFE0F?|🧽\\uFE0F?|💰\\uFE0F?|🧤\\uFE0F?|🐛\\uFE0F?|🗜\\uFE0F?|🤖\\uFE0F?|🧳\\uFE0F?|🍽\\uFE0F?|🔎\\uFE0F?|💴\\uFE0F?|🙈\\uFE0F?|🌟\\uFE0F?|🎨\\uFE0F?|🌦\\uFE0F?|⬜\\uFE0F?|👅\\uFE0F?|🚚\\uFE0F?|🔑\\uFE0F?|📒\\uFE0F?|🥘\\uFE0F?|🌊\\uFE0F?|📸\\uFE0F?|📏\\uFE0F?|🥕\\uFE0F?|🧮\\uFE0F?|⚡\\uFE0F?|✉\\uFE0F?|📑\\uFE0F?|📉\\uFE0F?|🏗\\uFE0F?|🏥\\uFE0F?|📓\\uFE0F?|📞\\uFE0F?|↕\\uFE0F?|🔀\\uFE0F?|🗒\\uFE0F?|🎪\\uFE0F?|😣\\uFE0F?|🥤\\uFE0F?|🌧\\uFE0F?|❄\\uFE0F?|⛈\\uFE0F?|❓\\uFE0F?|📂\\uFE0F?|📭\\uFE0F?|🎓\\uFE0F?|↔\\uFE0F?|🚩\\uFE0F?|🆕\\uFE0F?|📺\\uFE0F?|📽\\uFE0F?|🔊\\uFE0F?|🛎\\uFE0F?|🎤\\uFE0F?|🌾\\uFE0F?|🗣\\uFE0F?|📨\\uFE0F?|🔓\\uFE0F?|📲\\uFE0F?|🌇\\uFE0F?|🌫\\uFE0F?|🌬\\uFE0F?|👹\\uFE0F?|🧹\\uFE0F?|🎬\\uFE0F?|⌨\\uFE0F?|🛍\\uFE0F?|💸\\uFE0F?|💳\\uFE0F?|🚶\\uFE0F?|🟢\\uFE0F?|🟠\\uFE0F?|🔵\\uFE0F?|⚪\\uFE0F?|⚫\\uFE0F?|⭐\\uFE0F?|⭕\\uFE0F?|➡\\uFE0F?|⬅\\uFE0F?|🔚\\uFE0F?|📃\\uFE0F?|🆗\\uFE0F?|❗\\uFE0F?|‼\\uFE0F?|❔\\uFE0F?|🕐\\uFE0F?|🕒\\uFE0F?|⌛\\uFE0F?|📍\\uFE0F?|🏢\\uFE0F?|👀\\uFE0F?|🗃\\uFE0F?|💯\\uFE0F?|🧯\\uFE0F?|🔥\\uFE0F?|♻\\uFE0F?|🍶\\uFE0F?|🥂\\uFE0F?|🍻\\uFE0F?|🍷\\uFE0F?|🌱\\uFE0F?|🎁\\uFE0F?|💼\\uFE0F?|🆙\\uFE0F?|⏭\\uFE0F?|⏮\\uFE0F?|⏹\\uFE0F?|🔙\\uFE0F?|🔝\\uFE0F?|📡\\uFE0F?|🖊\\uFE0F?|🖋\\uFE0F?|🖥\\uFE0F?|📛\\uFE0F?|🧷\\uFE0F?|🧲\\uFE0F?|🪣\\uFE0F?|🫧\\uFE0F?|🧴\\uFE0F?|🥛\\uFE0F?|🍞\\uFE0F?|🍗\\uFE0F?|🥩\\uFE0F?|🐟\\uFE0F?|🦐\\uFE0F?|🥚\\uFE0F?|🧀\\uFE0F?|🍜\\uFE0F?|🍕\\uFE0F?|🍰\\uFE0F?|☕\\uFE0F?|🍵\\uFE0F?|🧃\\uFE0F?|🧂\\uFE0F?|🥗\\uFE0F?|🍎\\uFE0F?|🍋\\uFE0F?|🌶\\uFE0F?|🧅\\uFE0F?|🥔\\uFE0F?|🍚\\uFE0F?|🍱\\uFE0F?|📠\\uFE0F?)", 'gu');
+  var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, OPTION: 1, OPTGROUP: 1, SELECT: 1, TITLE: 1, NOSCRIPT: 1, INPUT: 1, svg: 1, SVG: 1, CODE: 1, PRE: 1 };
+  var st = document.createElement('style');
+  st.textContent = 'svg.li{width:1.15em;height:1.15em;vertical-align:-0.2em;display:inline-block;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button svg.li,.btn svg.li,[role=button] svg.li,a.btn svg.li{color:inherit!important}';
+  (document.head || document.documentElement).appendChild(st);
+  function icon(e) {
+    var m = M[e.replace(/\uFE0F/g, '')];
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'li li-' + m[0]); s.setAttribute('aria-hidden', 'true');
+    if (m[1]) s.style.color = m[1];
+    s.innerHTML = P[m[0]];
+    return s;
+  }
+  function skip(n) {
+    for (var p = n.parentNode; p && p.nodeType === 1; p = p.parentNode) {
+      if (SKIP[p.nodeName] || p.isContentEditable || (p.classList && p.classList.contains('no-li'))) return true;
+    }
+    return false;
+  }
+  function conv(n) {
+    var v = n.nodeValue; RE.lastIndex = 0;
+    if (!v || !RE.test(v) || !n.parentNode || skip(n)) return;
+    RE.lastIndex = 0;
+    // 画面の言語切替（HACCP BASE）が持つ元の文 __orig も同じ切れ目で分けて渡す
+    var orig = typeof n.__orig === 'string' ? n.__orig.split(RE) : null;
+    var parts = v.split(RE), ems = v.match(RE), f = document.createDocumentFragment();
+    if (orig && orig.length !== parts.length) orig = null;
+    parts.forEach(function (t, i) {
+      if (t) { var tn = document.createTextNode(t); if (orig) tn.__orig = orig[i]; f.appendChild(tn); }
+      if (i < ems.length) f.appendChild(icon(ems[i]));
+    });
+    n.parentNode.replaceChild(f, n);
+  }
+  function walk(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { conv(root); return; }
+    if (root.nodeType !== 1 || SKIP[root.nodeName]) return;
+    var w = document.createTreeWalker(root, 4, null), a = [];
+    while (w.nextNode()) a.push(w.currentNode);
+    a.forEach(conv);
+  }
+  var busy = false;
+  var mo = new MutationObserver(function (list) {
+    if (busy) return; busy = true;
+    try {
+      list.forEach(function (r) {
+        if (r.type === 'characterData') conv(r.target);
+        else for (var i = 0; i < r.addedNodes.length; i++) walk(r.addedNodes[i]);
+      });
+    } finally { mo.takeRecords(); busy = false; }
+  });
+  function start() { walk(document.body); mo.observe(document.body, { childList: true, subtree: true, characterData: true }); }
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  window.lineIcons = { walk: walk, map: M };
+})();
+</script>
+<!-- /lineicons -->
+</head>
+<body>
+<div class="wrap">
+<header>
+  <b>千石蔵 在庫入力</b>
+</header>
+<div class="bar">
+  <label>棚卸 <select id="round" aria-label="棚卸の月"></select></label>
+  <label>数える人 <select id="staff" aria-label="数える人"><option value="">選んでください</option></select></label>
+  <button type="button" class="btn small" id="staffOpen">＋ 担当者を追加</button>
+  <span class="status" id="status">読み込み中…</span>
+</div>
+<div class="bar" id="staffAddRow" hidden>
+  <input id="staffNew" type="text" maxlength="50" placeholder="追加する名前" autocomplete="off" aria-label="追加する名前" style="height:40px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0 10px">
+  <button type="button" class="btn small pri" id="staffAdd">追加</button>
+  <button type="button" class="btn small" id="staffClose">閉じる</button>
+  <span class="hint">在庫入力アプリと同じ担当者名簿に入ります。</span>
+</div>
+<div class="tabs" role="tablist">
+  <button role="tab" id="tabCount" aria-selected="true">棚卸</button>
+  <button role="tab" id="tabUse" aria-selected="false">使った・捨てた</button>
+  <button role="tab" id="tabArrive" aria-selected="false">届いた</button>
+  <button role="tab" id="tabMove" aria-selected="false">移した</button>
+  <button role="tab" id="tabNeed" aria-selected="false">足りない</button>
+  <button role="tab" id="tabMaster" aria-selected="false">品目</button>
+  <button role="tab" id="tabSum" aria-selected="false">集計</button>
+  <button role="tab" id="tabTheory" aria-selected="false">理論在庫</button>
+</div>
+<main id="app"><div class="loading">商品管理システムから品目を読み込んでいます…</div></main>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgT">
+  <div class="dh"><b id="dlgT">マスタから品目を選ぶ</b>
+    <input id="dlgQ" type="search" placeholder="品名・メーカーの一部で探す" autocomplete="off">
+    <span class="hint">商品管理システムのマスタにある品目だけ選べます。見つからないときは責任者へ。責任者が不在のときは企画推進室へ。</span></div>
+  <div class="db" id="dlgL"></div>
+  <div class="df"><button class="btn" id="dlgX">閉じる</button></div>
+</dialog>
+
+<script>
+var IS_GAS = (typeof google !== 'undefined') && google.script && google.script.run;
+/* 2026-11-15 商品管理システム（GitHub Pages）に組み込んだ版。在庫入力アプリのGASを API として呼ぶ。
+   ?mock=1 のときだけ tana_mock.json で手元の試験をする */
+var ZAIKO_API = 'https://script.google.com/macros/s/AKfycbx8GXJDXfLEkH46eWEjvzKwM9OQf8zICrD1ueovjV8lwaPdu5ul4i5YbVrx27W3Fj1CkA/exec';
+var MOCK = !IS_GAS && /[?&]mock=1/.test(location.search);
+function call(payload){
+  if (MOCK) return mockCall(payload);
+  if (IS_GAS) return new Promise(function(res, rej){
+    google.script.run
+      .withSuccessHandler(function(s){ try { res(JSON.parse(s)); } catch(e){ rej(new Error('応答を解釈できません')); } })
+      .withFailureHandler(function(e){ rej(new Error((e && e.message) || String(e))); })
+      .api(JSON.stringify(payload));
+  });
+  // text/plain にして事前確認（プリフライト）を出さない。GAS は doPost で同じ route() に渡す
+  return fetch(ZAIKO_API, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload), redirect:'follow' })
+    .then(function(r){ if (!r.ok) throw new Error('通信できませんでした（' + r.status + '）'); return r.text(); })
+    .then(function(t){ try { return JSON.parse(t); } catch(e){ throw new Error('応答を解釈できません（もう一度押してください）'); } });
+}
+/* 手元で試すとき（GASの外）：tana_mock.json を読み、書き込みはこの端末の中だけ */
+var mockDb = null;
+function mockCall(p){
+  var ready = mockDb ? Promise.resolve() : fetch('tana_mock.json').then(function(r){ return r.json(); }).then(function(j){ mockDb = j; mockDb.rows = []; mockDb.locRows = []; mockDb.doneRows = []; });
+  return ready.then(function(){
+    var at = new Date().toISOString();
+    if (p.action === 'staff') return { ok:true, staff: mockDb.staff };
+    if (p.action === 'staffAdd'){ if (mockDb.staff.indexOf(p.by) < 0) return { ok:false, error:'この操作をするには、先に画面上部で自分の担当者名を選んでください' }; if (mockDb.staff.indexOf(p.name) >= 0) return { ok:false, error:'「' + p.name + '」はすでに登録されています' }; mockDb.staff.push(p.name); return { ok:true, message:'「' + p.name + '」を追加しました', staff:mockDb.staff }; }
+    if (p.action === 'tanaMaster') return { ok:true, items: mockDb.items, locOptions: mockDb.locOptions };
+    if (p.action === 'tanaFieldPut'){ var ph = (p.row.photos || []).length; var mr = Object.assign({rowId:String(Date.now()), at:at, kind:p.kind, by:p.staff, canceled:'', photo: ph ? p.row.photos.map(function(){ return '#mock-photo'; }).join(' ') : ''}, p.row); delete mr.photos; (mockDb.field = mockDb.field || []).unshift(mr); return { ok:true, lot:'none', photos: ph }; }
+    if (p.action === 'tanaFieldList') return { ok:true, rows:(mockDb.field || []).filter(function(r){ return r.kind === p.kind; }) };
+    if (p.action === 'tanaFieldCancel'){ (mockDb.field || []).forEach(function(r){ if (r.rowId === p.id) r.canceled = at; }); return { ok:true }; }
+    if (p.action === 'tanaUkeConfig') return { ok:true, sets:{}, docs:mockDb.docs || [], today:at.slice(0,10) };
+    if (p.action === 'tanaUkePut'){ (mockDb.uke = mockDb.uke || []).unshift(Object.assign({}, p.row, {rowId:String(Date.now()), at:at, by:p.staff, canceled:''})); return { ok:true, res:p.row.res }; }
+    if (p.action === 'tanaUkeList') return { ok:true, rows:(mockDb.uke || []).filter(function(r){ return p.kind !== '保留' || (r.res === '保留' && !r.canceled); }) };
+    if (p.action === 'tanaUkeDecide'){ (mockDb.uke || []).forEach(function(r){ if (r.rowId === p.id) r.res = p.op; }); return { ok:true }; }
+    if (p.action === 'tanaUkeCancel'){ (mockDb.uke || []).forEach(function(r){ if (r.rowId === p.id) r.canceled = at; }); return { ok:true }; }
+    if (p.action === 'tanaUkeDocPut'){ (mockDb.docs = mockDb.docs || []).push({rowId:String(Date.now()), name:p.row.name, target:p.row.target, until:p.row.until, by:p.staff}); return { ok:true }; }
+    if (p.action === 'tanaUkeDocCancel'){ mockDb.docs = (mockDb.docs || []).filter(function(d){ return d.rowId !== p.id; }); return { ok:true }; }
+    if (p.action === 'tanaMovePut'){ (mockDb.move = mockDb.move || []).unshift(Object.assign({}, p.row, {rowId:String(Date.now()), at:at, by:p.staff, canceled:''})); return { ok:true }; }
+    if (p.action === 'tanaMoveList') return { ok:true, rows:mockDb.move || [] };
+    if (p.action === 'tanaMoveCancel') return { ok:true };
+    if (p.action === 'tanaDiffList'){
+      mockDb.diff = mockDb.diff || [
+        {id:'m:a',name:'見本のチーズ',unit:'個',counted:8,valAt:10,diff:-2,day:'2026-11-30',need:'対応まで',yen:1400,rate:0.2,why:['差額1000円以上','ずれ20%以上','要冷蔵'],cause:'',action:'',who:'',when:'',state:'未対応',by:'',at:'',recDiff:null},
+        {id:'m:b',name:'見本の塩',unit:'袋',counted:21,valAt:20,diff:1,day:'2026-11-30',need:'原因のみ',yen:80,rate:0.05,why:[],cause:'',action:'',who:'',when:'',state:'未対応',by:'',at:'',recDiff:null}];
+      return { ok:true, round:p.round, rows:mockDb.diff, open:mockDb.diff.filter(function(o){ return o.state !== '対応済'; }).length, causes:['計数漏れ','入力ミス','出庫記録漏れ','廃棄未記録','納品差異','理論値設定ミス','原因不明'], states:['未対応','確認中','対応済'], salesUntil:'2026-11-29', hasStart:true, at:at };
+    }
+    if (p.action === 'tanaDiffSave'){
+      var dr = (mockDb.diff || []).filter(function(o){ return o.id === p.row.id; })[0], st = dr.need === '原因のみ' ? '対応済' : p.row.state;
+      if (!p.row.cause) return { ok:false, error:'bad_request' };
+      if (dr.need === '対応まで' && st === '対応済' && (!p.row.action || !p.row.who || !p.row.when)) return { ok:false, error:'need_action' };
+      Object.assign(dr, {cause:p.row.cause, action:p.row.action, who:p.row.who, when:p.row.when, state:st, by:p.staff, at:at, recDiff:dr.diff});
+      return { ok:true, at:at, row:dr, open:mockDb.diff.filter(function(o){ return o.state !== '対応済'; }).length };
+    }
+    if (p.action === 'tanaTheory') return { ok:true, diffOpen:(mockDb.diff ? mockDb.diff.filter(function(o){ return o.state !== '対応済'; }).length : 2), rows:[{table:'原料',id:'m:x',name:'見本の原料',start:'2026-11-04',startQty:10,inn:6,prepUse:0,sold:0,used:1,out:0,val:15,unit:'袋',counted:null,diff:null,warn:''}], warnings:['見本の警告'], salesUntil:'2026-10-30', at:at, hasStart:true };
+    if (p.action === 'tanaTheoryStart') return { ok:true, saved:1 };
+    if (p.action === 'tanaPut'){ p.rows.forEach(function(r){ mockDb.rows.push({round:p.round, r:r, by:p.staff, at:at}); }); return { ok:true }; }
+    if (p.action === 'tanaPlace'){ mockDb.locRows.push({id:p.id, loc:p.loc, op:p.op}); return { ok:true }; }
+    if (p.action === 'tanaDone'){ mockDb.doneRows.push({round:p.round, k:p.dept+'|'+p.loc, by:p.staff, at:at, undo:p.undo}); return { ok:true }; }
+    if (p.action === 'tanaState'){
+      var counts = {}, locs = JSON.parse(JSON.stringify(mockDb.seedLocs || {})), done = {};
+      mockDb.rows.forEach(function(x){ if (x.round !== p.round) return; var k = x.r.id + '|' + x.r.loc; if (x.r.v === null) delete counts[k]; else counts[k] = {v:x.r.v, small:x.r.small, detail:x.r.detail, by:x.by, at:x.at}; });
+      mockDb.locRows.forEach(function(x){ var l = locs[x.id] || (locs[x.id] = []); var i = l.indexOf(x.loc); if (x.op === 'del'){ if (i >= 0) l.splice(i, 1); } else if (i < 0) l.push(x.loc); });
+      mockDb.doneRows.forEach(function(x){ if (x.round !== p.round) return; if (x.undo) delete done[x.k]; else done[x.k] = {by:x.by, at:x.at}; });
+      return { ok:true, counts:counts, locs:locs, done:done };
+    }
+    return { ok:false, error:'mock' };
+  });
+}
+
+var $ = function(s){ return document.querySelector(s); };
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function num(n){ return (Math.round(n * 1000) / 1000).toLocaleString('ja-JP', {maximumFractionDigits:3}); }
+function yen(n){ return '¥' + Math.round(n).toLocaleString('ja-JP'); }
+function toast(m){ var t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 2400); }
+function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ return null; } }
+function hhmm(iso){ var d = new Date(iso); return isNaN(d) ? '' : (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+
+var UNSET = '場所未設定';
+var items = [], byId = {}, S = {counts:{}, locs:{}, done:{}}, LOCS = [];
+var view = {tab:'count', dept:store('tana.dept') || '', loc:null};
+var round = '', staff = store('tana.staff') || '';
+var pending = {};   // まだ届いていない入力（キー→行）
+
+/* ---- 担当者の追加（在庫入力アプリと同じ名簿・同じ staffAdd。追加はログDBに残る） ---- */
+function fillStaff(list){
+  var sel = $('#staff');
+  while (sel.options.length > 1) sel.remove(1);
+  (list || []).forEach(function(n){ sel.add(new Option(n, n)); });
+  if (staff && (list || []).indexOf(staff) >= 0) sel.value = staff; else { sel.value = ''; staff = ''; }
+}
+function staffRow(open){ $('#staffAddRow').hidden = !open; if (open) $('#staffNew').focus(); }
+$('#staffOpen').onclick = function(){ staffRow($('#staffAddRow').hidden); };
+$('#staffClose').onclick = function(){ staffRow(false); };
+$('#staffNew').addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); $('#staffAdd').click(); } });
+$('#staffAdd').onclick = function(){
+  var el = $('#staffNew'), btn = $('#staffAdd'), n = el.value.trim();
+  if (!n){ toast('名前を入れてください'); el.focus(); return; }
+  if (n.indexOf(',') >= 0){ toast('名前に「,」は使えません'); return; }
+  if (!staff){ toast('先に「数える人」で自分の名前を選んでください'); $('#staff').focus(); return; }
+  btn.disabled = true;
+  call({action:'staffAdd', name:n, by:staff, route:'在庫入力アプリ/棚卸'}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '追加できませんでした');
+    fillStaff(j.staff);
+    el.value = ''; staffRow(false);
+    toast(j.message || '追加しました');
+  }).catch(function(e){ toast(e.message); }).then(function(){ btn.disabled = false; });
+};
+
+/* ---- 棚卸の月：20日以降は今月、それより前は先月を初期値にする ---- */
+(function(){
+  var d = new Date(), sel = $('#round');
+  var def = new Date(d.getFullYear(), d.getMonth() - (d.getDate() >= 20 ? 0 : 1), 1);
+  for (var i = -1; i <= 2; i++){
+    var x = new Date(def.getFullYear(), def.getMonth() - i, 1);
+    var v = x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0');
+    sel.add(new Option((x.getMonth()+1) + '月末の棚卸（' + x.getFullYear() + '）', v));
+  }
+  sel.value = round = def.getFullYear() + '-' + String(def.getMonth()+1).padStart(2,'0');
+  sel.onchange = function(){ round = sel.value; loadState().then(render); };
+})();
+
+/* ---- 単位 ----
+   units は大きい順（例：箱→本→ml）。per＝その単位1つが最小単位いくつか。在庫の単位（stockLv）で数を保存する */
+function stockUnit(it){ return it.units.filter(function(u){ return u.lv === it.stockLv; })[0] || it.units[0]; }
+function smallest(it){ return it.units[it.units.length - 1]; }
+/* ---- 重さは kg で入れる（2026-11-21 小沢さん：在庫入力の単位を kg に統一。1kg 未満は g に直して確かめる）----
+   保存する数（在庫の単位の数・最小単位の数）は商品管理のマスタの単位のまま（g の品目は g）。原価・レシピ・理論在庫の計算は変えない。
+   画面に出す単位と入れる単位だけ、g を kg に読み替える */
+function isG(name){ return /^(g|ｇ|グラム)$/.test(String(name || '').trim()); }
+function un(u){ return isG(u.u) ? 'kg' : u.u; }      // 画面の単位名
+function uf(u){ return isG(u.u) ? 1000 : 1; }         // 画面の1単位が、マスタの単位いくつか
+function kv(v, unit){ return (v === null || v === undefined || v === '') ? v : isG(unit) ? v / 1000 : v; }  // 記録の数（マスタの単位）を画面の単位に
+function ku(unit){ return isG(unit) ? 'kg' : unit; }
+function numU(n, name){ return name === 'kg' ? (Math.round(n * 10000) / 10000).toLocaleString('ja-JP', {maximumFractionDigits:4}) : num(n); }  // kg は 0.1g まで
+function qtyU(v, u){ return numU(v / uf(u), un(u)) + ' ' + un(u); }  // u の単位でいくつ、を画面の単位で
+function gOf(kg){ return (Math.round(kg * 10000) / 10).toLocaleString('ja-JP') + ' g'; }
+function gText(kg){ return numU(kg, 'kg') + ' kg ＝ ' + gOf(kg); }
+function wUnit(it){   // 重さの欄（品目に重さの単位が無く、1つの重さが登録されているとき）
+  if (!(it.gPer > 0) || it.units.some(function(u){ return un(u) === 'kg'; })) return null;
+  return {lv:'重', u:'kg', per:1000 / it.gPer, w:true};
+}
+function inUnits(it){ if (!it._iu){ var w = wUnit(it); it._iu = w ? it.units.concat([w]) : it.units; } return it._iu; }
+function singleNote(u){
+  return un(u) === 'kg' ? '<div class="note info">この品目は kg で数えます。1kg に足りない分は 0.35 のように小数で入れてください（g に直して下に出します）。</div>'
+    : '<div class="note info">この品目の一番小さい単位は「' + esc(u.u) + '」です。開いている分は 0.5' + esc(u.u) + ' のように小数で入れてください。</div>';
+}
+function convText(it){
+  if (inUnits(it).length < 2) return '';
+  var parts = [];
+  for (var i = 0; i < it.units.length - 1; i++){
+    var a = it.units[i], b = it.units[i+1], n = a.per * uf(a) / (b.per * uf(b));
+    parts.push('1' + esc(un(a)) + ' ＝ <b>' + numU(n, un(b)) + esc(un(b)) + '</b>' + (un(b) === 'kg' && n < 1 ? '（' + gOf(n) + '）' : ''));
+  }
+  if (wUnit(it)){ var sm0 = it.units[it.units.length - 1], kg0 = it.gPer / 1000; parts.push('1' + esc(sm0.u) + ' ＝ <b>' + numU(kg0, 'kg') + 'kg</b>' + (kg0 < 1 ? '（' + gOf(kg0) + '）' : '')); }
+  return parts.join('　／　');
+}
+function locsOf(it){
+  var l = (it.locs || []).slice();
+  (S.locs[it.id] || []).forEach(function(x){ if (l.indexOf(x) < 0) l.push(x); });
+  return l;
+}
+// 一覧に出す品目：原料・資材・半製品マスタの全品目と、棚卸対象の商品
+function listed(it){ return !it.hidden; }
+function counted(it){ var c = false; Object.keys(S.counts).forEach(function(k){ if (k.indexOf(it.id + '|') === 0) c = true; }); return c; }
+function deptList(){ var m = {}; items.forEach(function(it){ if (listed(it)) m[it.dept || 'その他'] = (m[it.dept || 'その他'] || 0) + 1; }); return m; }
+function locMap(dept){
+  var m = {};
+  items.forEach(function(it){
+    if (!listed(it) || (it.dept || 'その他') !== dept) return;
+    var ls = locsOf(it); if (!ls.length) ls = [UNSET];
+    ls.forEach(function(l){ (m[l] = m[l] || []).push(it); });
+  });
+  var order = LOCS.concat([UNSET]);
+  return Object.keys(m).sort(function(a, b){
+    var ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 900 : ia) - (ib < 0 ? 900 : ib) || a.localeCompare(b, 'ja');
+  }).map(function(k){ return [k, m[k]]; });
+}
+
+/* ---- 読み込み ---- */
+function setStatus(t, err){ var s = $('#status'); s.textContent = t; s.className = 'status' + (err ? ' err' : ''); }
+function loadState(){
+  return call({action:'tanaState', round:round}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '読めませんでした');
+    S = {counts:j.counts || {}, locs:j.locs || {}, done:j.done || {}};
+    Object.keys(pending).forEach(function(k){ var r = pending[k]; if (r.round !== round) return; if (r.v === null) delete S.counts[k]; else S.counts[k] = {v:r.v, small:r.small, detail:r.detail, by:staff, at:new Date().toISOString()}; });
+    setStatus('最新 ' + hhmm(new Date().toISOString()));
+  }).catch(function(e){ setStatus('数を読めませんでした：' + e.message, true); });
+}
+Promise.all([
+  call({action:'staff'}).then(function(j){
+    var sel = $('#staff');
+    fillStaff(j && j.staff);
+    sel.onchange = function(){ staff = sel.value; store('tana.staff', staff); render(); };
+  }),
+  call({action:'tanaMaster'}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '品目を読めませんでした');
+    items = j.items || [];
+    items.forEach(function(it){ byId[it.id] = it; });
+    LOCS = (j.locOptions || []).map(function(s){ return String(s).replace('２階', '2階'); });
+  }),
+  loadState()
+]).then(function(){
+  items.forEach(function(it){ it.locs = (it.locs || []).map(function(s){ return s.replace('２階', '2階'); }); });
+  Object.keys(S.locs).forEach(function(id){ S.locs[id].forEach(function(l){ if (LOCS.indexOf(l) < 0) LOCS.push(l); }); });
+  var ds = Object.keys(deptList());
+  if (ds.indexOf(view.dept) < 0) view.dept = ds.indexOf('レストラン') >= 0 ? 'レストラン' : ds[0];
+  render();
+}).catch(function(e){
+  $('#app').innerHTML = '<div class="loading">読み込めませんでした：' + esc(e.message) + '<br><button class="btn" onclick="location.reload()">もう一度</button></div>';
+  setStatus('読み込めませんでした', true);
+});
+setInterval(function(){ if (view.tab === 'count' && !view.loc && !Object.keys(pending).length) loadState().then(function(){ if (!view.loc) render(); }); }, 60000);
+
+/* ---- 送る（失敗しても入力は消さず、次の入力のときと30秒ごとに送り直す） ---- */
+var flushing = false;
+function flush(){
+  if (flushing) return;
+  var keys = Object.keys(pending); if (!keys.length) return;
+  flushing = true;
+  var byRound = {};
+  keys.forEach(function(k){ var r = pending[k]; (byRound[r.round] = byRound[r.round] || []).push(r); });
+  var jobs = Object.keys(byRound).map(function(rd){
+    var rows = byRound[rd], who = rows[0].staff;
+    return call({action:'tanaPut', round:rd, staff:who, route:'在庫入力アプリ/棚卸', rows:rows}).then(function(j){
+      if (!j || !j.ok) throw new Error((j && j.error) || '保存できませんでした');
+      rows.forEach(function(r){ if (pending[r.id + '|' + r.loc] === r) delete pending[r.id + '|' + r.loc]; });
+    });
+  });
+  Promise.all(jobs).then(function(){ setStatus('保存しました ' + hhmm(new Date().toISOString())); })
+    .catch(function(e){ setStatus('未送信 ' + Object.keys(pending).length + '件（電波の良い所で自動で送り直します）：' + e.message, true); })
+    .then(function(){ flushing = false; markRows(); });
+}
+setInterval(flush, 30000);
+window.addEventListener('beforeunload', function(e){ if (Object.keys(pending).length){ e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------- 数える ---------------- */
+function render(){
+  ['Count:count','Use:use','Arrive:arrive','Move:move','Need:need','Master:master','Sum:sum','Theory:theory'].forEach(function(x){ var p = x.split(':'); $('#tab' + p[0]).setAttribute('aria-selected', view.tab === p[1]); });
+  if (view.tab === 'sum') return renderSum();
+  if (view.tab === 'master') return renderMaster();
+  if (view.tab === 'arrive') return renderArrive();
+  if (view.tab === 'move') return renderMove();
+  if (view.tab === 'theory') return renderTheory();
+  if (FORMS[view.tab]) return renderForm();
+  if (view.loc) return renderLoc();
+  var depts = deptList();
+  var lm = locMap(view.dept);
+  var all = {}; lm.forEach(function(x){ x[1].forEach(function(it){ all[it.id] = it; }); });
+  var ids = Object.keys(all), doneN = ids.filter(function(id){ return counted(all[id]); }).length;
+  $('#app').innerHTML =
+    (staff ? '' : '<div class="note" style="margin-top:12px">最初に「数える人」を選んでください。誰が数えたかが記録に残ります。</div>') +
+    '<div class="chips">' + Object.keys(depts).map(function(d){ return '<button data-dept="' + esc(d) + '" aria-pressed="' + (d === view.dept) + '">' + esc(d) + ' <span class="hint">' + depts[d] + '</span></button>'; }).join('') + '</div>' +
+    '<h2>どこから数えますか <span class="hint">' + doneN + ' / ' + ids.length + '品目 数えた</span></h2>' +
+    '<div class="locs">' + lm.map(function(x){
+      var loc = x[0], list = x[1];
+      var c = list.filter(function(it){ return S.counts[it.id + '|' + loc]; }).length;
+      var d = S.done[view.dept + '|' + loc];
+      var cls = loc === UNSET ? 'unset' : d ? 'done' : c ? 'part' : '';
+      var chip = d ? '<span class="chip ok">完了</span>' : c ? '<span class="chip warn">途中</span>' : loc === UNSET ? '<span class="chip">置き場所を決める</span>' : '<span class="chip">未着手</span>';
+      return '<button class="loc ' + cls + '" data-loc="' + esc(loc) + '"><span class="n">' + esc(loc) + '</span>' + chip +
+        '<span class="m"><span>' + c + ' / ' + list.length + '品目</span><span>' + (d ? esc(d.by) + ' ' + hhmm(d.at) : '') + '</span></span></button>';
+    }).join('') + '</div>' +
+    '<p class="hint" style="margin-top:12px">「場所未設定」は、商品管理システムで保管場所が入っていない品目です。数えた場所を選ぶと、次からその場所に出ます。</p>';
+  [].forEach.call(document.querySelectorAll('[data-dept]'), function(b){ b.onclick = function(){ view.dept = b.dataset.dept; store('tana.dept', view.dept); render(); }; });
+  [].forEach.call(document.querySelectorAll('[data-loc]'), function(b){ b.onclick = function(){
+    if (!staff){ toast('先に「数える人」を選んでください'); $('#staff').focus(); return; }
+    view.loc = b.dataset.loc; render(); window.scrollTo(0, 0);
+    loadState().then(function(){ if (view.loc) markRows(true); });
+  }; });
+}
+
+function itemRow(it, loc){
+  var key = it.id + '|' + loc, c = S.counts[key];
+  var su = stockUnit(it), sm = smallest(it);
+  var vals = (c && c.detail) ? parseDetail(it, c.detail) : {};
+  var ins = inUnits(it).map(function(u, i){
+    var id = 'q_' + i + '_' + it.id.replace(/[^\w]/g, '_') + '_' + loc.length;
+    return '<div class="in"><button type="button" aria-label="' + esc(un(u)) + 'を1減らす" data-step="-1" data-i="' + i + '">−</button>' +
+      '<input id="' + id + '" inputmode="decimal" data-i="' + i + '" aria-label="' + esc(it.name) + 'の' + esc(un(u)) + 'の数" value="' + (vals[i] != null ? vals[i] : '') + '" placeholder="0">' +
+      '<button type="button" aria-label="' + esc(un(u)) + 'を1増やす" data-step="1" data-i="' + i + '">＋</button><span class="u">' + esc(un(u)) + '</span></div>';
+  }).join('');
+  var single = inUnits(it).length === 1;
+  return '<div class="item' + (c ? ' counted' : '') + '" data-id="' + esc(it.id) + '">' +
+    '<div class="nm">' + esc(it.name) + '</div>' +
+    '<div class="sub">' + esc([it.bunrui, it.sub, it.maker].filter(Boolean).join('・')) + (c ? '　✓ ' + esc(c.by) + ' ' + hhmm(c.at) : '') + '</div>' +
+    (single ? '' : '<div class="conv">' + convText(it) + '</div>') +
+    '<div class="ins">' + ins + '</div>' +
+    '<div class="total" data-total></div>' +
+    (single ? singleNote(sm) : '<div class="note" data-frac hidden></div>') +
+    (loc === UNSET ? '<div class="bar"><select data-place aria-label="置き場所">' + LOCS.map(function(l){ return '<option>' + esc(l) + '</option>'; }).join('') + '</select><button class="btn small" data-placebtn>この場所に置く</button></div>'
+      : '<div style="margin-top:6px"><button class="btn small" data-notHere>この場所には置いていない</button></div>') +
+  '</div>';
+}
+// 保存した内訳（例「2箱 3本」）を入力欄に戻す
+function parseDetail(it, detail){
+  var out = {};
+  String(detail).split(/\s+/).forEach(function(p){
+    inUnits(it).forEach(function(u, i){
+      var nm = un(u), k = 1;
+      if (p.slice(-nm.length) !== nm){
+        if (isG(u.u) && p.slice(-u.u.length) === u.u && p.slice(-2) !== 'kg'){ nm = u.u; k = 1 / 1000; } else return;  // 前の「350g」
+      }
+      var n = parseFloat(p.slice(0, -nm.length)); if (!isNaN(n)) out[i] = Math.round(n * k * 1e6) / 1e6;
+    });
+  });
+  return out;
+}
+function readRow(it, row){
+  var small = 0, any = false, parts = [], frac = null, light = [], heavy = [];
+  [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){
+    var t = inp.value.trim().replace(/[０-９．]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    inp.classList.remove('gk'); inp.classList.remove('gh');
+    if (t === '') return;
+    var n = Number(t); if (isNaN(n) || n < 0) return;
+    var iu = inUnits(it), u = iu[+inp.dataset.i];
+    any = true; small += n * uf(u) * u.per; parts.push(numU(n, un(u)) + un(u));
+    if (n % 1 && +inp.dataset.i < it.units.length - 1) frac = u;
+    if (un(u) === 'kg' && n > 0 && n < 1){ light.push(n); inp.classList.add('gk'); }
+    if (un(u) === 'kg' && n >= 1){
+      var i = +inp.dataset.i, par = i > 0 ? iu[0] : null, ps = par ? par.per / (u.per * uf(u)) : 0;  // いちばん外側の単位1つが何 kg か
+      if (par ? n >= 10 * ps : n >= 20){ heavy.push({n:n, par:par, ps:ps}); inp.classList.add('gh'); }
+    }
+  });
+  return {any:any, small:Math.round(small * 1e6) / 1e6, detail:parts.join(' '), frac:frac, light:light, heavy:heavy};
+}
+function heavyOk(r, btn){
+  if (!r.heavy || !r.heavy.length || btn.dataset.heavyOk === r.detail) return true;
+  btn.dataset.heavyOk = r.detail;
+  toast('kg の数を確かめて、もう一度押してください');
+  return false;
+}
+function showTotal(it, row){
+  var r = readRow(it, row), su = stockUnit(it), sm = smallest(it), el = row.querySelector('[data-total]');
+  if (!r.any){ el.innerHTML = '<span class="hint">まだ数えていません（0個なら 0 と入れてください）</span>'; }
+  else {
+    var t = '合計 <b>' + esc(qtyU(r.small / su.per, su)) + '</b>';
+    if (sm !== su) t += '　＝ ' + esc(qtyU(r.small, sm));
+    if (inUnits(it).length > 1 && r.detail.indexOf(' ') > 0) t += '　<span class="hint">（' + esc(r.detail) + '）</span>';
+    el.innerHTML = t;
+  }
+  var f = row.querySelector('[data-frac]');
+  if (f){
+    if (r.frac){
+      var next = it.units[it.units.indexOf(r.frac) + 1];
+      f.hidden = false;
+      f.textContent = '「' + un(r.frac) + '」に小数が入っています。開いている' + un(r.frac) + 'は「' + un(next) + '」の欄で数えると正確です（0.5' + un(r.frac) + '＝' + num(r.frac.per / (next.per * uf(next)) / 2) + un(next) + '）。';
+    } else f.hidden = true;
+  }
+  // 1kg 未満を入れたら g に直して出す（0.35 を 350g のつもりで入れていないか、350 を入れるつもりが 0.35 になっていないか）
+  var g = row.querySelector('[data-gchk]');
+  if (!g && r.light.length){ g = document.createElement('div'); g.className = 'note gchk'; g.setAttribute('data-gchk', ''); el.parentNode.insertBefore(g, el.nextSibling); }
+  if (g){ g.hidden = !r.light.length; g.innerHTML = r.light.length ? '確認：<b>' + r.light.map(gText).join('、') + '</b>（1kg 未満なので g に直して出しています）' : ''; }
+  // kg の欄に大きすぎる数（g のつもりの 350 など）
+  var b = row.querySelector('[data-gbig]');
+  if (!b && r.heavy.length){ b = document.createElement('div'); b.className = 'note gbig'; b.setAttribute('data-gbig', ''); el.parentNode.insertBefore(b, (g || el).nextSibling); }
+  if (b){ b.hidden = !r.heavy.length; b.innerHTML = r.heavy.map(function(h){
+    return '注意：<b>' + numU(h.n, 'kg') + ' kg</b>（＝' + gOf(h.n) + '）' + (h.par ? 'は 1' + esc(un(h.par)) + '（' + numU(h.ps, 'kg') + ' kg）の約 ' + num(Math.round(h.n / h.ps)) + esc(un(h.par)) + '分です。' : 'です。') +
+      'g で数えた数なら、kg に直して <b>' + numU(h.n / 1000, 'kg') + '</b> と入れてください。';
+  }).join('<br>'); }
+  return r;
+}
+function renderLoc(){
+  var loc = view.loc;
+  var list = ((locMap(view.dept).filter(function(x){ return x[0] === loc; })[0]) || [loc, []])[1]
+    .slice().sort(function(a, b){ return (a.bunrui + a.sub + a.name).localeCompare(b.bunrui + b.sub + b.name, 'ja'); });
+  var d = S.done[view.dept + '|' + loc];
+  $('#app').innerHTML =
+    '<div class="bar"><button class="btn" id="back">← 場所の一覧</button><h2 style="margin:0">' + esc(loc) + '</h2><span class="chip">' + esc(view.dept) + '</span>' + (d ? '<span class="chip ok">完了 ' + esc(d.by) + '</span>' : '') + '</div>' +
+    '<div class="note info" style="margin-top:10px">単位を確かめてから入れてください。箱と本など、単位ごとに欄が分かれています。箱の数を入れると、本などの数は自動で計算します。重さは kg で入れます（1kg 未満は g に直して出ます。g の数を kg の欄に入れたようなときは注意が出ます）。</div>' +
+    (list.length > 15 ? '<div class="bar"><input id="locFilter" type="search" placeholder="この場所の品目を名前で絞り込む" style="flex:1"></div>' : '') +
+    (loc === UNSET ? '<div class="note" style="margin-top:6px">ここにある品目は、商品管理システムに保管場所が入っていません。数えた場所を選んで「この場所に置く」を押すと、次から場所の一覧に出ます。</div>' : '') +
+    '<div class="list">' + (list.map(function(it){ return itemRow(it, loc); }).join('') || '<div class="item hint">この場所の品目はまだありません。下の「品目を追加」から選んでください。</div>') + '</div>' +
+    '<div class="foot"><button class="btn" id="add">＋ この場所に品目を追加</button>' +
+    (loc === UNSET ? '' : '<button class="btn ' + (d ? '' : 'pri') + '" id="done">' + (d ? '完了を取り消す' : esc(loc) + 'を数え終えた') + '</button>') + '</div>';
+  var lf = $('#locFilter');
+  if (lf) lf.oninput = function(){ var q = lf.value.trim().toLowerCase(); [].forEach.call(document.querySelectorAll('.item[data-id]'), function(r){ r.hidden = !!q && r.querySelector('.nm').textContent.toLowerCase().indexOf(q) < 0; }); };
+  $('#back').onclick = function(){ flush(); view.loc = null; render(); window.scrollTo(0, 0); };
+  $('#add').onclick = function(){ openPicker(loc); };
+  var db = $('#done');
+  if (db) db.onclick = function(){
+    db.disabled = true; flush();
+    call({action:'tanaDone', round:round, dept:view.dept, loc:loc, staff:staff, undo:!!d}).then(function(j){
+      if (!j || !j.ok) throw new Error((j && j.error) || '');
+      if (d) delete S.done[view.dept + '|' + loc]; else S.done[view.dept + '|' + loc] = {by:staff, at:new Date().toISOString()};
+      toast(d ? '完了を取り消しました' : loc + 'を完了にしました'); if (!d) view.loc = null; render();
+    }).catch(function(e){ db.disabled = false; toast('記録できませんでした：' + e.message); });
+  };
+  [].forEach.call(document.querySelectorAll('.item[data-id]'), function(row){
+    var it = byId[row.dataset.id]; if (!it) return;
+    var key = it.id + '|' + loc, timer = null;
+    showTotal(it, row);
+    function changed(){
+      var r = showTotal(it, row);
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        var su = stockUnit(it), sm = smallest(it);
+        var rec = {round:round, staff:staff, id:it.id, name:it.name, loc:loc, v: r.any ? Math.round(r.small / su.per * 1000) / 1000 : null,
+          unit:su.u, small: r.any ? r.small : null, smallUnit:sm.u, detail:r.detail};
+        pending[key] = rec;
+        if (r.any) S.counts[key] = {v:rec.v, small:rec.small, detail:rec.detail, by:staff, at:new Date().toISOString()}; else delete S.counts[key];
+        row.classList.toggle('counted', r.any);
+        flush();
+      }, 700);
+    }
+    [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){ inp.oninput = changed; });
+    [].forEach.call(row.querySelectorAll('[data-step]'), function(b){ b.onclick = function(){
+      var inp = row.querySelector('input[data-i="' + b.dataset.i + '"]');
+      inp.value = Math.max(0, (Number(inp.value) || 0) + Number(b.dataset.step)); changed();
+    }; });
+    var pb = row.querySelector('[data-placebtn]');
+    if (pb) pb.onclick = function(){
+      var l = row.querySelector('[data-place]').value; pb.disabled = true;
+      place(it, l, 'add').then(function(){
+        var c = S.counts[key];
+        if (c){ var su = stockUnit(it), sm = smallest(it); pending[it.id + '|' + l] = {round:round, staff:staff, id:it.id, name:it.name, loc:l, v:c.v, unit:su.u, small:c.small, smallUnit:sm.u, detail:c.detail};
+          pending[key] = {round:round, staff:staff, id:it.id, name:it.name, loc:UNSET, v:null, unit:su.u, small:null, smallUnit:sm.u, detail:''};
+          S.counts[it.id + '|' + l] = c; delete S.counts[key]; flush(); }
+        toast(it.name + ' → ' + l); render();
+      }).catch(function(e){ pb.disabled = false; toast('記録できませんでした：' + e.message); });
+    };
+    var nh = row.querySelector('[data-notHere]');
+    if (nh) nh.onclick = function(){
+      if ((it.locs || []).indexOf(loc) >= 0){ toast('この場所は商品管理システムのマスタに入っています。マスタの保管場所を直してください'); return; }
+      nh.disabled = true;
+      place(it, loc, 'del').then(function(){ toast(it.name + ' をこの場所から外しました'); render(); })
+        .catch(function(e){ nh.disabled = false; toast('記録できませんでした：' + e.message); });
+    };
+  });
+  markRows();
+}
+function place(it, loc, op){
+  return call({action:'tanaPlace', id:it.id, name:it.name, loc:loc, op:op, staff:staff}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '');
+    var l = S.locs[it.id] || (S.locs[it.id] = []), i = l.indexOf(loc);
+    if (op === 'del'){ if (i >= 0) l.splice(i, 1); } else if (i < 0) l.push(loc);
+    if (LOCS.indexOf(loc) < 0) LOCS.push(loc);
+  });
+}
+// 入力中の行の「✓」と、ほかの人が入れた数を画面に反映
+function markRows(refill){
+  if (!view.loc) return;
+  [].forEach.call(document.querySelectorAll('.item[data-id]'), function(row){
+    var it = byId[row.dataset.id]; if (!it) return;
+    var key = it.id + '|' + view.loc, c = S.counts[key];
+    row.classList.toggle('counted', !!c);
+    if (refill && c && !pending[key] && document.activeElement.closest('.item') !== row){
+      var v = parseDetail(it, c.detail);
+      [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){ inp.value = v[+inp.dataset.i] != null ? v[+inp.dataset.i] : ''; });
+      showTotal(it, row);
+    }
+  });
+}
+
+/* ---- マスタから選ぶ ---- */
+var pickLoc = null;
+function openPicker(loc){ pickLoc = loc; $('#dlgQ').value = ''; drawPick(); $('#dlg').showModal(); $('#dlgQ').focus(); }
+function drawPick(){
+  var q = $('#dlgQ').value.trim().toLowerCase();
+  var here = {}; ((locMap(view.dept).filter(function(x){ return x[0] === pickLoc; })[0]) || [0, []])[1].forEach(function(it){ here[it.id] = true; });
+  var hits = items.filter(function(it){
+    if (!q) return (it.dept || 'その他') === view.dept && listed(it);
+    return (it.name + ' ' + it.maker + ' ' + it.sub).toLowerCase().indexOf(q) >= 0;
+  }).slice(0, 80);
+  $('#dlgL').innerHTML = hits.map(function(it){
+    return '<button class="pick" data-pick="' + esc(it.id) + '"' + (here[it.id] ? ' disabled' : '') + '><b>' + esc(it.name) + '</b>' + (here[it.id] ? ' <span class="chip ok">この場所にある</span>' : '') +
+      '<br><span class="hint">' + esc([it.dept, it.bunrui, it.sub].filter(Boolean).join('・')) + '　単位：' + esc(inUnits(it).map(function(u){ return un(u); }).join('・')) + '　' + esc(locsOf(it).join('、') || '場所未設定') + '</span></button>';
+  }).join('') || '<p class="hint" style="padding:12px 14px">見つかりません。名前の一部（例：「ケチャップ」）で探してください。</p>';
+  [].forEach.call(document.querySelectorAll('[data-pick]'), function(b){ b.onclick = function(){
+    var it = byId[b.dataset.pick]; b.disabled = true;
+    place(it, pickLoc === UNSET ? (LOCS[0] || 'その他') : pickLoc, 'add').then(function(){
+      if (it.hidden) it.hidden = false;
+      $('#dlg').close(); toast(it.name + ' を' + pickLoc + 'に追加'); render();
+    }).catch(function(e){ b.disabled = false; toast('記録できませんでした：' + e.message); });
+  }; });
+}
+$('#dlgQ').oninput = drawPick;
+$('#dlgX').onclick = function(){ $('#dlg').close(); };
+
+/* ---------------- 集計 ---------------- */
+function renderSum(){
+  var rows = [];
+  items.forEach(function(it){
+    var locs = [], small = 0, any = false, who = {};
+    Object.keys(S.counts).forEach(function(k){
+      if (k.indexOf(it.id + '|') !== 0) return;
+      var c = S.counts[k]; any = true; small += Number(c.small) || 0; locs.push(k.slice(it.id.length + 1)); who[c.by] = 1;
+    });
+    if (any) rows.push({it:it, small:small, locs:locs, who:Object.keys(who)});
+  });
+  rows.sort(function(a, b){ return ((a.it.dept + a.it.bunrui + a.it.name).localeCompare(b.it.dept + b.it.bunrui + b.it.name, 'ja')); });
+  var total = rows.reduce(function(s, r){ return s + r.small * (r.it.priceSmall || 0); }, 0);
+  var noPrice = rows.filter(function(r){ return !r.it.priceSmall; }).length;
+  $('#app').innerHTML =
+    '<h2>' + esc($('#round').selectedOptions[0].textContent) + '　数えた品目 ' + rows.length + '</h2>' +
+    '<p class="hint">金額は 数 × 商品管理システムの価格(中)税込 から出した参考値です' + (noPrice ? '（価格の入っていない ' + noPrice + '品目は0円）' : '') + '。合計 <b>' + yen(total) + '</b></p>' +
+    '<div class="bar"><button class="btn small" id="csv">CSVで書き出す</button></div>' +
+    '<div class="tbl"><table><thead><tr><th>品目</th><th>部門・分類</th><th class="r">数</th><th>場所</th><th class="r">金額</th><th>数えた人</th></tr></thead><tbody>' +
+    rows.map(function(r){ var su = stockUnit(r.it);
+      return '<tr><td>' + esc(r.it.name) + '</td><td>' + esc(r.it.dept + '・' + r.it.bunrui) + '</td><td class="r">' + esc(qtyU(r.small / su.per, su)) + '</td><td>' + esc(r.locs.join('、')) + '</td><td class="r">' + (r.it.priceSmall ? yen(r.small * r.it.priceSmall) : '—') + '</td><td>' + esc(r.who.join('、')) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  $('#csv').onclick = function(){
+    var lines = [['品目ID','品目','部門','中分類','数','単位','最小単位の数','最小単位','場所','金額(参考)','数えた人']].concat(rows.map(function(r){
+      var su = stockUnit(r.it), sm = smallest(r.it);
+      return [r.it.id, r.it.name, r.it.dept, r.it.bunrui, Math.round(r.small / su.per * 1000) / 1000, su.u, r.small, sm.u, r.locs.join('、'), Math.round(r.small * (r.it.priceSmall || 0)), r.who.join('、')];
+    }));
+    var csv = '﻿' + lines.map(function(l){ return l.map(function(v){ v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
+    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = '棚卸_' + round + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  };
+}
+$('#tabCount').onclick = function(){ view.tab = 'count'; render(); };
+$('#tabUse').onclick = function(){ view.tab = 'use'; view.pick = null; render(); };
+$('#tabArrive').onclick = function(){ view.tab = 'arrive'; view.pick = null; render(); };
+$('#tabNeed').onclick = function(){ view.tab = 'need'; view.pick = null; render(); };
+$('#tabMaster').onclick = function(){ view.tab = 'master'; render(); };
+
+/* ---------------- 使った・捨てた／届いた／足りない ---------------- */
+var FORMS = {
+  use: { kind:'使った・捨てた', hint:'売上で分からない減りを入れます。売れた分は入れなくて構いません。', reasons:['ロス（傷み・期限切れ）','破損・廃棄','賄い・接待','試作・研修','その他'], qty:true, photo:true },
+  need: { kind:'足りない', hint:'発注してほしい品目を伝えます。発注は責任者が行います。責任者が不在のときは企画推進室へ。', qty:false }
+};
+/* v12.5 使った・捨てた の写真（最大3枚）。長い辺を1280pxに縮めてJPEGで送る。保存はドライブのフォルダ、リンクは記録の行に残る */
+var PHOTO_MAX = 3, photoDraft = [];
+function shrinkPhoto(file){
+  return new Promise(function(res, rej){
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function(){
+      var k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', 0.78));
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error('写真を読めませんでした')); };
+    img.src = url;
+  });
+}
+function drawPhotos(){
+  var box = $('#formThumbs'); if (!box) return;
+  box.innerHTML = photoDraft.map(function(p, i){ return '<div class="th"><img src="' + p + '" alt="写真' + (i + 1) + '"><button type="button" aria-label="写真' + (i + 1) + 'を外す" data-phx="' + i + '">×</button></div>'; }).join('');
+  [].forEach.call(box.querySelectorAll('[data-phx]'), function(b){ b.onclick = function(){ photoDraft.splice(Number(b.dataset.phx), 1); drawPhotos(); }; });
+  var lab = $('#formPhotoLab'); if (lab) lab.hidden = photoDraft.length >= PHOTO_MAX;
+  var n = $('#formPhotoN'); if (n) n.textContent = photoDraft.length ? photoDraft.length + '枚（' + PHOTO_MAX + '枚まで）' : '傷み・破損のようすを撮っておくと、あとで確かめやすくなります（なくても可）';
+}
+function photoLinks(r){
+  var u = String(r.photo || '').split(/\s+/).filter(Boolean);
+  return u.length ? '<div class="phlinks">' + u.map(function(x, i){ return '<a href="' + esc(x) + '" target="_blank" rel="noopener">写真' + (u.length > 1 ? i + 1 : '') + '</a>'; }).join('') + '</div>' : '';
+}
+function renderForm(){
+  var f = FORMS[view.tab], it = view.pick && byId[view.pick];
+  if (!it) photoDraft = [];
+  var html = '<h2>' + esc(f.kind) + '</h2><p class="hint" style="margin:0">' + esc(f.hint) + '</p>';
+  if (!staff) html += '<div class="note" style="margin-top:8px">最初に「数える人」を選んでください。</div>';
+  if (!it){
+    html += '<div class="bar"><input id="formQ" type="search" placeholder="品名・メーカーで探す" style="flex:1" autocomplete="off"></div><div class="list" id="formHits"></div>';
+  } else {
+    html += '<div class="list"><div class="item" data-id="' + esc(it.id) + '"><div class="nm">' + esc(it.name) + '</div><div class="sub">' + esc([it.bunrui, it.sub, it.maker].filter(Boolean).join('・')) + '</div>' +
+      (inUnits(it).length > 1 ? '<div class="conv">' + convText(it) + '</div>' : '') +
+      '<div class="ins">' + inUnits(it).map(function(u, i){
+        return '<div class="in"><button type="button" aria-label="' + esc(un(u)) + 'を1減らす" data-step="-1" data-i="' + i + '">−</button><input inputmode="decimal" data-i="' + i + '" aria-label="' + esc(un(u)) + 'の数" placeholder="0"><button type="button" aria-label="' + esc(un(u)) + 'を1増やす" data-step="1" data-i="' + i + '">＋</button><span class="u">' + esc(un(u)) + '</span></div>';
+      }).join('') + '</div><div class="total" data-total></div>' +
+      (inUnits(it).length === 1 ? singleNote(it.units[0]) : '<div class="note" data-frac hidden></div>') +
+      '<div class="bar">' +
+      (f.reasons ? '<label>理由 <select id="formReason">' + f.reasons.map(function(r){ return '<option>' + esc(r) + '</option>'; }).join('') + '</select></label>' : '') +
+      (f.exp ? '<label>賞味期限 <input id="formExp" type="date" style="height:40px"></label>' : '') +
+      '<input id="formMemo" type="text" maxlength="200" placeholder="メモ（なくても可）" style="flex:1;height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px"></div>' +
+      (f.photo ? '<div class="ph"><span id="formThumbs" class="ph" style="margin:0"></span><label class="btn" id="formPhotoLab">📷 写真を付ける<input id="formPhoto" type="file" accept="image/*" capture="environment" hidden></label><span class="hint" id="formPhotoN"></span></div>' : '') +
+      '<div class="bar"><button class="btn" id="formBack">品目を選び直す</button><button class="btn pri" id="formSend">登録する</button></div></div></div>';
+  }
+  html += '<h2>最近の入力</h2><div id="formRecent" class="hint">読み込み中…</div>';
+  $('#app').innerHTML = html;
+  if (!it){
+    var drawHits = function(){
+      var q = $('#formQ').value.trim().toLowerCase(), box = $('#formHits');
+      var hits = q ? items.filter(function(i){ return (i.name + ' ' + i.maker + ' ' + i.sub).toLowerCase().indexOf(q) >= 0; }).slice(0, 40) : [];
+      box.innerHTML = hits.map(function(i){ return '<button class="pick" data-formpick="' + esc(i.id) + '"><b>' + esc(i.name) + '</b><br><span class="hint">' + esc([i.dept, i.bunrui, i.sub].filter(Boolean).join('・')) + '　単位：' + esc(inUnits(i).map(function(u){ return un(u); }).join('・')) + '</span></button>'; }).join('') ||
+        '<p class="hint" style="padding:10px 14px;margin:0">' + (q ? '見つかりません。無い品目は責任者へ。責任者が不在のときは企画推進室へ。' : '品名を入れると候補が出ます。') + '</p>';
+      [].forEach.call(box.querySelectorAll('[data-formpick]'), function(b){ b.onclick = function(){ view.pick = b.dataset.formpick; render(); }; });
+    };
+    $('#formQ').oninput = drawHits; drawHits();
+  } else {
+    var row = document.querySelector('.item[data-id]');
+    showTotal(it, row);
+    [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){ inp.oninput = function(){ showTotal(it, row); }; });
+    [].forEach.call(row.querySelectorAll('[data-step]'), function(b){ b.onclick = function(){
+      var inp = row.querySelector('input[data-i="' + b.dataset.i + '"]');
+      inp.value = Math.max(0, (Number(inp.value) || 0) + Number(b.dataset.step)); showTotal(it, row);
+    }; });
+    $('#formBack').onclick = function(){ view.pick = null; render(); };
+    if ($('#formPhoto')){ drawPhotos(); $('#formPhoto').onchange = function(){
+      var fl = [].slice.call(this.files || [], 0, PHOTO_MAX - photoDraft.length); this.value = '';
+      Promise.all(fl.map(shrinkPhoto)).then(function(a){ photoDraft = photoDraft.concat(a).slice(0, PHOTO_MAX); drawPhotos(); }).catch(function(e){ toast(e.message); });
+    }; }
+    $('#formSend').onclick = function(){
+      if (!staff){ toast('先に「数える人」を選んでください'); $('#staff').focus(); return; }
+      var r = readRow(it, row), su = stockUnit(it), sm = smallest(it);
+      if (f.qty && !r.any){ toast('数を入れてください'); return; }
+      if (!heavyOk(r, this)) return;
+      var exp = $('#formExp') ? $('#formExp').value : '';
+      var btn = $('#formSend'); btn.disabled = true;
+      call({action:'tanaFieldPut', kind:f.kind, staff:staff, route:'在庫入力アプリ', row:{ id:it.id, name:it.name, v: r.any ? Math.round(r.small / su.per * 1000) / 1000 : null, unit:su.u, small: r.any ? r.small : null, smallUnit:sm.u, detail:r.detail, reason: $('#formReason') ? $('#formReason').value : '', exp:exp, memo:$('#formMemo').value.trim(), photos: f.photo ? photoDraft.slice() : [] }}).then(function(j){
+        if (!j || !j.ok) throw new Error((j && j.error) || '登録できませんでした');
+        toast(it.name + ' を登録しました' + (j.photos ? '（写真' + j.photos + '枚）' : '') + (exp && j.lot === 'none' ? '（期限の通知は対象外の品目です）' : ''));
+        photoDraft = []; view.pick = null; render();
+      }).catch(function(e){ btn.disabled = false; toast('登録できませんでした：' + e.message); });
+    };
+  }
+  drawRecent(f.kind);
+}
+function drawRecent(kind){
+  call({action:'tanaFieldList', kind:kind, limit:20}).then(function(j){
+    var el = $('#formRecent'); if (!el) return;
+    var rows = (j && j.rows) || [];
+    el.innerHTML = rows.length ? '<div class="tbl"><table style="min-width:0"><tbody>' + rows.map(function(r){
+      return '<tr' + (r.canceled ? ' style="opacity:.5;text-decoration:line-through"' : '') + '><td>' + esc(hhmm(r.at)) + '</td><td>' + esc(r.name) + '<div class="hint">' + esc([r.detail, r.reason, r.exp && '期限 ' + r.exp, r.memo].filter(Boolean).join('／')) + '</div>' + photoLinks(r) + '</td><td>' + esc(r.by) + '</td><td>' + (r.canceled ? '' : '<button class="btn small" data-cancel="' + esc(r.rowId) + '">取り消す</button>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : 'まだありません。';
+    [].forEach.call(el.querySelectorAll('[data-cancel]'), function(b){ b.onclick = function(){
+      b.disabled = true;
+      call({action:'tanaFieldCancel', id:b.dataset.cancel, staff:staff}).then(function(){ drawRecent(kind); }).catch(function(e){ b.disabled = false; toast(e.message); });
+    }; });
+  }).catch(function(){ var el = $('#formRecent'); if (el) el.textContent = '読み込めませんでした。'; });
+}
+
+/* ---------------- 届いた（受入検査）v12 ----------------
+   項目は「品目の分類＋使い道＋保管区分」で決まる。判定は不合格＞保留＞合格。担当者は判定を上げられない。
+   根拠：原料受入検査の理論（責任者の確認前）。冷蔵の品温は 7℃以下 合格、7℃超10℃以下 保留、10℃超 不合格 の案 */
+var UKE_COMMON = ['包装に破損・汚れがない', '臭いなど「いつもと違う」ことがない'];
+var UKE_STORAGE = ['常温', '要冷蔵', '冷凍'];
+var UKE_DOC_NAMES = ['成績書（水分・抽出率）', 'カビ毒・農薬の証明', 'α酸の成績書', '農薬の証明', '微生物の規格', '菌数・雑菌の成績書', '規格書', '食品グレードの規格書', '仕入先の証明'];   // ブルワリーアプリと共用
+var uke = {sub:'new', pick:null, f:null, cfg:null, done:null};
+function ukeType(it){
+  var b = it.bunrui, s = it.sub, d = it.dept;
+  if (d === '製造' && b === '原料'){
+    if (s === 'モルト') return {label:'麦芽', lot:true, exp:true, checks:['湿り・水濡れがない','カビ臭がない','虫がいない','破袋がない'], docs:['成績書（水分・抽出率）','カビ毒・農薬の証明']};
+    if (s === 'ホップ') return {label:'ホップ', lot:true, exp:true, temp:'hop', checks:['包装が密封されている','凍結している'], docs:['α酸の成績書','農薬の証明'],
+      uses:[{k:'煮沸用',add:[]},{k:'ドライホップ（煮沸後）',add:['微生物の規格'],note:'煮沸後に入れるので菌が消えません。微生物の規格の確認を足します。'}]};
+    if (s === '酵母') return {label:'酵母', lot:true, exp:true, temp:'record', checks:['膨張がない','製造日を確認した'], docs:['菌数・雑菌の成績書']};
+    if (s === '添加物') return {label:'水処理剤・添加物', lot:true, exp:true, checks:['表示が合っている','密封されている'], docs:['食品グレードの規格書']};
+    return {label:'副原料', lot:true, exp:true, checks:['外観に異常がない','表示が合っている'], docs:['規格書'], uses:[{k:'煮沸で使う',add:[]},{k:'煮沸後に入れる',add:['微生物の規格'],note:'煮沸後に入れるので菌が消えません。微生物の規格の確認を足します。'}]};
+  }
+  if (d === '製造' && b === '資材') return {label:'資材', lot:true, checks:['破損・汚れがない'], docs:[]};
+  if (d === 'レストラン' && b === '原料'){
+    if (s === '野菜') return {label:'野菜・果物', checks:['鮮度がよい','虫・土が付いていない'], docs:[]};
+    if (s === '肉類') return {label:'肉類', exp:true, storage:true, more:['色・臭いに異常がない','ドリップが多すぎない'], docs:[]};
+    if (s === '魚介類') return {label:'魚介類', exp:true, storage:true, more:[], docs:[], uses:[{k:'加熱',add:[]},{k:'生食',add:[],checks:['生食用の表示がある','冷凍処理の有無を確認した']}]};
+    return {label:'食品', exp:true, storage:true, more:[], docs:[], def:({'揚げ物':'冷凍','調味料':'常温','油':'常温','乾物':'常温','日本酒':'常温','飲料':'常温','添加物':'常温'})[s] || ''};
+  }
+  return {label:'検査なし', skip:true, checks:[], docs:[]};
+}
+function ukeChecks(t, f){
+  var c = (t.checks || UKE_COMMON.concat(t.more || [])).slice();
+  if (t.storage && f.storage === '冷凍') c.push('霜・解凍の跡がない');
+  if (t.storage && f.storage === '常温') c.push('缶・瓶の膨張、破損がない');
+  (t.uses || []).forEach(function(u){ if (u.k === f.use) c = c.concat(u.checks || []); });
+  return c;
+}
+function ukeTempKind(t, f){
+  if (t.temp) return t.temp;
+  if (t.storage) return f.storage === '要冷蔵' ? 'chill' : f.storage === '冷凍' ? 'record' : '';
+  return '';
+}
+function ukeDocs(t, f){
+  var d = (t.docs || []).slice();
+  (t.uses || []).forEach(function(u){ if (u.k === f.use) d = d.concat(u.add || []); });
+  return d;
+}
+function ukeDocState(name, it){
+  var today = uke.cfg ? uke.cfg.today : '', st = 'none';
+  ((uke.cfg && uke.cfg.docs) || []).forEach(function(x){
+    if (x.name !== name) return;
+    var tg = x.target;
+    if (tg && it.name.indexOf(tg) < 0 && it.sub !== tg && it.maker !== tg) return;
+    if (!x.until || x.until >= today) st = 'ok'; else if (st !== 'ok') st = 'old';
+  });
+  return st;
+}
+function ukeJudge(it, t, f, small){
+  var bad = [], hold = [], todo = [];
+  if (!(small > 0)) todo.push('数');
+  if (t.skip) return {res: todo.length ? '' : '合格', bad:bad, hold:hold, todo:todo};
+  if (t.storage && !f.storage) todo.push('保管区分');
+  if (f.slip === null) todo.push('納品書と現品の一致'); else if (!f.slip) hold.push('納品書と現品が合わない');
+  if (t.lot && !f.lot.trim()) todo.push('ロット番号');
+  if (t.exp){ if (!f.exp) todo.push('期限'); else if (f.exp < uke.cfg.today) bad.push('期限切れ'); }
+  var tk = ukeTempKind(t, f), v = parseFloat(f.temp);
+  if (tk && (f.temp === '' || isNaN(v))) todo.push('品温');
+  else if (tk === 'chill'){ if (v > 10) bad.push('品温 ' + v + '℃（10℃超）'); else if (v > 7) hold.push('品温 ' + v + '℃（7℃超10℃以下）'); }
+  else if (tk === 'hop' && v > -15) hold.push('品温 ' + v + '℃（−15℃より高い）');
+  ukeChecks(t, f).forEach(function(c){ if (f.checks[c] === undefined) todo.push(c); else if (f.checks[c] === false) bad.push(c.replace(/(がない|がよい|が付いていない|ている|た|がある|すぎない)$/, '') + '：異常あり'); });
+  // 未登録の書類は現場が「ある／ない」を答える（ブルワリーアプリと同じ）。登録が済んだら自動保留へ切り替える
+  ukeDocs(t, f).forEach(function(d){
+    var s = ukeDocState(d, it);
+    if (s === 'old') hold.push(d + 'の期限切れ');
+    else if (s === 'none'){ if (f.docs[d] === undefined) todo.push(d + 'の有無'); else if (!f.docs[d]) hold.push(d + 'が無い'); }
+  });
+  return {res: todo.length ? '' : bad.length ? '不合格' : hold.length ? '保留' : '合格', bad:bad, hold:hold, todo:todo};
+}
+function ukeSeg(key, val, yes, no){
+  return '<span class="seg"><button type="button" class="g" data-seg="' + esc(key) + '" data-v="1" aria-pressed="' + (val === true) + '">' + (yes || 'OK') + '</button><button type="button" class="b" data-seg="' + esc(key) + '" data-v="0" aria-pressed="' + (val === false) + '">' + (no || '異常') + '</button></span>';
+}
+function ukePill(r){ return '<span class="chip ' + (r === '合格' ? 'ok' : r === '保留' ? 'warn' : r === '不合格' ? 'bad' : '') + '">' + esc(r) + '</span>'; }
+function renderArrive(){
+  var subs = [['new','受入する'],['hold','保留中'],['rec','受入記録'],['doc','書類']];
+  $('#app').innerHTML = '<div class="chips">' + subs.map(function(s){ return '<button data-ukesub="' + s[0] + '" aria-pressed="' + (uke.sub === s[0]) + '">' + s[1] + '</button>'; }).join('') + '</div><div id="ukeBody"><div class="loading">読み込み中…</div></div>';
+  [].forEach.call(document.querySelectorAll('[data-ukesub]'), function(b){ b.onclick = function(){ uke.sub = b.dataset.ukesub; uke.pick = null; uke.f = null; uke.done = null; render(); }; });
+  call({action:'tanaUkeConfig'}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '読めませんでした');
+    uke.cfg = j;
+    if (view.tab !== 'arrive') return;
+    ({new:ukeNew, hold:ukeHold, rec:ukeRec, doc:ukeDoc})[uke.sub]();
+  }).catch(function(e){ var el = $('#ukeBody'); if (el) el.innerHTML = '<div class="note">読み込めませんでした：' + esc(e.message) + '</div>'; });
+}
+function ukeNew(){
+  var box = $('#ukeBody');
+  if (uke.done){
+    var d = uke.done;
+    box.innerHTML = '<div class="note ' + (d.res === '合格' ? 'info' : '') + '" style="font-size:15px"><b>' + esc(d.name) + '</b> を' + esc(d.res) + 'で登録しました。' + esc(d.msg) + '</div><div class="bar"><button class="btn pri" id="ukeAgain">次の品目を受け入れる</button></div>';
+    $('#ukeAgain').onclick = function(){ uke.done = null; render(); };
+    return;
+  }
+  var it = uke.pick && byId[uke.pick];
+  if (!it){
+    box.innerHTML = '<h2>届いた品目を選ぶ</h2><p class="hint" style="margin:0">選ぶと、その品目に必要な検査だけが出ます。合格した分だけ理論在庫に入ります。請求や金額は商品管理システムの仕入れで管理します。</p>' + (staff ? '' : '<div class="note">最初に「数える人」を選んでください。</div>') +
+      '<div class="bar"><input id="ukeQ" type="search" placeholder="品名・メーカーで探す" style="flex:1" autocomplete="off"></div><div class="list" id="ukeHits"></div>';
+    var draw = function(){
+      var q = $('#ukeQ').value.trim().toLowerCase(), hits = q ? items.filter(function(i){ return i.id.indexOf('m:') === 0 && (i.name + ' ' + i.maker + ' ' + i.sub).toLowerCase().indexOf(q) >= 0; }).slice(0, 40) : [];
+      $('#ukeHits').innerHTML = hits.map(function(i){ return '<button class="pick" data-ukepick="' + esc(i.id) + '"><b>' + esc(i.name) + '</b> <span class="chip">' + esc(ukeType(i).label) + '</span><br><span class="hint">' + esc([i.dept, i.sub, i.maker].filter(Boolean).join('・')) + '</span></button>'; }).join('') || '<p class="hint" style="padding:10px 14px;margin:0">' + (q ? '見つかりません。無い品目は責任者へ。責任者が不在のときは企画推進室へ。' : '品名を入れると候補が出ます。') + '</p>';
+      [].forEach.call(document.querySelectorAll('[data-ukepick]'), function(b){ b.onclick = function(){
+        var i = byId[b.dataset.ukepick], t = ukeType(i);
+        uke.pick = i.id;
+        uke.f = {use:t.uses ? t.uses[0].k : '', storage:(uke.cfg.sets[i.id] || t.def || ''), storageFixed:!!uke.cfg.sets[i.id], slip:null, lot:'', exp:'', temp:'', checks:{}, docs:{}, place:'', action:'', supplier:i.supplier || ''};
+        ukeNew();
+      }; });
+    };
+    $('#ukeQ').oninput = draw; draw(); return;
+  }
+  var t = ukeType(it), f = uke.f;
+  box.innerHTML = '<h2>' + esc(it.name) + '</h2><p class="hint" style="margin:0">' + esc([it.dept, it.sub, it.maker, t.label].filter(Boolean).join('・')) + '</p><div class="list"><div class="item" data-id="' + esc(it.id) + '">' +
+    '<h3 class="ukeh">届いた数</h3>' + (inUnits(it).length > 1 ? '<div class="conv">' + convText(it) + '</div>' : '') + '<div class="ins">' + inUnits(it).map(function(u, i){
+      return '<div class="in"><button type="button" aria-label="' + esc(un(u)) + 'を1減らす" data-step="-1" data-i="' + i + '">−</button><input inputmode="decimal" data-i="' + i + '" aria-label="' + esc(un(u)) + 'の数" placeholder="0"><button type="button" aria-label="' + esc(un(u)) + 'を1増やす" data-step="1" data-i="' + i + '">＋</button><span class="u">' + esc(un(u)) + '</span></div>';
+    }).join('') + '</div><div class="total" data-total></div>' +
+    '<div class="bar"><label>仕入先 <input id="ukeSup" type="text" class="uin" maxlength="100" value="' + esc(f.supplier) + '"></label>' +
+    (t.uses ? '<label>使い道 <select id="ukeUse">' + t.uses.map(function(u){ return '<option' + (u.k === f.use ? ' selected' : '') + '>' + esc(u.k) + '</option>'; }).join('') + '</select></label>' : '') +
+    (t.storage ? '<label>保管区分 <select id="ukeSto"><option value="">選ぶ</option>' + UKE_STORAGE.map(function(s){ return '<option' + (s === f.storage ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label>' : '') + '</div><div id="ukeUseNote"></div></div>' +
+    '<div id="ukeExam"></div></div>';
+  var row = box.querySelector('.item[data-id]');
+  var verdict = function(){
+    var r = readRow(it, row), j = ukeJudge(it, t, f, r.small), el = $('#ukeV');
+    var dupEl = $('#ukeDup');
+    if (dupEl){
+      // 同じ納品をブルワリーアプリと両方から入れると二重になるので、同じ品目・ロットがあれば知らせる（登録は止めない）
+      var lotNow = f.lot.trim(), dup = lotNow ? (uke.cfg.lots || []).filter(function(x){ return x.id === it.id && x.lot === lotNow; })[0] : null;
+      dupEl.innerHTML = dup ? '<div class="note">同じ品目・ロットの受入がすでにあります（' + esc(hhmm(dup.at) + '・' + dup.by + '・' + dup.route + '・' + dup.res) + '）。同じ納品なら登録しないでください。</div>' : '';
+    }
+    var reasons = j.bad.concat(j.hold), su = stockUnit(it);
+    var msg = j.res === '合格' ? '理論在庫に ' + qtyU(r.small / su.per, su) + ' 足します' : j.res === '保留' ? '隔離して、理論在庫には入れません。責任者が判断するまで使えません' : j.res === '不合格' ? '理論在庫には入れません。返品か廃棄をして、仕入先へ連絡します' : '';
+    el.className = 'verdict ' + (j.res === '合格' ? 'v-ok' : j.res === '保留' ? 'v-warn' : j.res === '不合格' ? 'v-bad' : 'v-none');
+    el.innerHTML = j.res ? '<b>' + j.res + '</b>' + (reasons.length ? '<div>' + esc(reasons.join('／')) + '</div>' : '') + '<div class="hint">' + msg + '</div>' : '<b>未判定</b><div class="hint">残り：' + esc(j.todo.join('、')) + '</div>';
+    $('#ukeHold').hidden = j.res !== '保留'; $('#ukeNg').hidden = j.res !== '不合格';
+    var ready = j.res && (j.res !== '保留' || f.place) && (j.res !== '不合格' || f.action);
+    $('#ukeSend').disabled = !ready; $('#ukeSend').textContent = j.res ? j.res + 'で登録する' : '登録する';
+    return {j:j, r:r, msg:msg};
+  };
+  var exam = function(){
+    var checks = ukeChecks(t, f), tk = ukeTempKind(t, f), docs = ukeDocs(t, f), h = '';
+    var un = (t.uses || []).filter(function(u){ return u.k === f.use; })[0];
+    $('#ukeUseNote').innerHTML = un && un.note ? '<div class="note">' + esc(un.note) + '</div>' : '';
+    if (t.skip) h += '<div class="item"><div class="note info" style="margin:0">食品に触れない品目なので検査はありません。数だけ記録します。</div></div>';
+    else {
+      h += '<div class="item"><h3 class="ukeh">書類</h3><div class="chk"><span>納品書と現品が合っている</span>' + ukeSeg('slip', f.slip) + '</div>' +
+        (t.lot ? '<div class="bar"><label>ロット番号 <input id="ukeLot" type="text" class="uin" maxlength="80" value="' + esc(f.lot) + '" placeholder="袋の表示を写す"></label></div><div id="ukeDup"></div>' : '') +
+        docs.map(function(d, i){ var s = ukeDocState(d, it); return s === 'none' ? '<div class="chk"><span>' + esc(d) + 'がある（未登録）</span>' + ukeSeg('d' + i, f.docs[d], 'ある', 'ない') + '</div>' : '<div class="bar" style="margin-top:4px"><span class="chip ' + (s === 'ok' ? 'ok' : 'warn') + '">' + esc(d) + '：' + (s === 'ok' ? '登録済み' : '期限切れ') + '</span></div>'; }).join('') + '</div>';
+      h += '<div class="item"><h3 class="ukeh">現物</h3>' + checks.map(function(c, i){ return '<div class="chk"><span>' + esc(c) + '</span>' + ukeSeg('c' + i, f.checks[c]) + '</div>'; }).join('') + '</div>';
+      if (tk || t.exp){
+        h += '<div class="item"><h3 class="ukeh">状態</h3><div class="bar" style="margin-top:0">' + (tk ? '<label>品温 <input id="ukeTemp" class="uin num" type="number" step="0.1" inputmode="decimal" value="' + esc(f.temp) + '"> ℃</label>' : '') + (t.exp ? '<label>期限 <input id="ukeExp" class="uin" type="date" value="' + esc(f.exp) + '"></label>' : '') + '</div>' +
+          (tk === 'chill' ? '<div class="hint" style="margin-top:6px">7℃以下は合格、7℃超10℃以下は保留、10℃超は不合格</div>' : tk === 'hop' ? '<div class="hint" style="margin-top:6px">−15℃以下で合格、それより高いと保留</div>' : tk === 'record' ? '<div class="hint" style="margin-top:6px">基準が決まるまで記録だけです</div>' : '') + '</div>';
+      }
+    }
+    h += '<div class="item"><h3 class="ukeh">判定</h3><div id="ukeV"></div><div class="bar" id="ukeHold" hidden><label>隔離した場所 <input id="ukePlace" type="text" class="uin" maxlength="80" value="' + esc(f.place) + '"></label></div>' +
+      '<div class="bar" id="ukeNg" hidden><label>対応 <select id="ukeAct"><option value="">選ぶ</option><option' + (f.action === '返品して仕入先へ連絡' ? ' selected' : '') + '>返品して仕入先へ連絡</option><option' + (f.action === '廃棄して仕入先へ連絡' ? ' selected' : '') + '>廃棄して仕入先へ連絡</option></select></label></div>' +
+      '<div class="hint" style="margin-top:8px">判断に迷ったら責任者へ。責任者が不在のときは企画推進室へ。</div><div class="bar"><button class="btn" id="ukeBack">品目を選び直す</button><button class="btn pri" id="ukeSend" disabled>登録する</button></div></div>';
+    $('#ukeExam').innerHTML = h;
+    var bind = function(sel, key){ var e = $(sel); if (e) e.oninput = function(){ f[key] = e.value; verdict(); }; };
+    bind('#ukeLot','lot'); bind('#ukeTemp','temp'); bind('#ukeExp','exp'); bind('#ukePlace','place'); bind('#ukeAct','action');
+    [].forEach.call(document.querySelectorAll('[data-seg]'), function(b){ b.onclick = function(){
+      var v = b.dataset.v === '1', k = b.dataset.seg;
+      if (k === 'slip') f.slip = v; else if (k.charAt(0) === 'd') f.docs[docs[Number(k.slice(1))]] = v; else f.checks[checks[Number(k.slice(1))]] = v;
+      [].forEach.call(b.parentNode.children, function(x){ x.setAttribute('aria-pressed', x === b); });
+      verdict();
+    }; });
+    $('#ukeBack').onclick = function(){ uke.pick = null; uke.f = null; ukeNew(); };
+    $('#ukeSend').onclick = send;
+    verdict();
+  };
+  var send = function(){
+    if (!staff){ toast('先に「数える人」を選んでください'); $('#staff').focus(); return; }
+    var v = verdict(), j = v.j, r = v.r, su = stockUnit(it), sm = smallest(it), btn = $('#ukeSend');
+    if (!heavyOk(r, btn)) return;
+    btn.disabled = true;
+    var checks = {}; ukeChecks(t, f).forEach(function(c){ if (f.checks[c] !== undefined) checks[c] = f.checks[c] ? 'OK' : '異常'; });
+    ukeDocs(t, f).forEach(function(d){ if (ukeDocState(d, it) === 'none' && f.docs[d] !== undefined) checks[d] = f.docs[d] ? 'ある' : 'ない'; });
+    var why = j.res === '合格' ? (t.skip ? '検査なしの品目' : '確認OK') : j.bad.concat(j.hold).join('／');
+    call({action:'tanaUkePut', staff:staff, route:'在庫入力アプリ', row:{id:it.id, name:it.name, supplier:$('#ukeSup').value.trim(), v:Math.round(r.small / su.per * 1000) / 1000, unit:su.u, small:r.small, smallUnit:sm.u, use:f.use, lot:f.lot, exp:f.exp, temp:f.temp, slip:t.skip ? null : f.slip, checks:checks, res:j.res, why:why, place:f.place, action:f.action, storage:f.storage, storageFixed:f.storageFixed}}).then(function(res){
+      if (!res || !res.ok) throw new Error((res && res.error) || '登録できませんでした');
+      uke.done = {name:it.name, res:j.res, msg:v.msg}; uke.pick = null; uke.f = null; ukeNew();
+    }).catch(function(e){ btn.disabled = false; toast('登録できませんでした：' + e.message); });
+  };
+  var onQty = function(){ showTotal(it, row); if ($('#ukeV')) verdict(); };
+  [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){ inp.oninput = onQty; });
+  [].forEach.call(row.querySelectorAll('[data-step]'), function(b){ b.onclick = function(){ var inp = row.querySelector('input[data-i="' + b.dataset.i + '"]'); inp.value = Math.max(0, (Number(inp.value) || 0) + Number(b.dataset.step)); onQty(); }; });
+  var use = $('#ukeUse'); if (use) use.onchange = function(){ f.use = use.value; f.checks = {}; exam(); };
+  var sto = $('#ukeSto'); if (sto) sto.onchange = function(){ f.storage = sto.value; f.checks = {}; exam(); };
+  showTotal(it, row); exam();
+}
+function ukeHold(){
+  var box = $('#ukeBody');
+  call({action:'tanaUkeList', kind:'保留', limit:100}).then(function(j){
+    var rows = (j && j.rows) || [];
+    box.innerHTML = '<h2>保留中 <span class="hint">' + rows.length + '件</span></h2><p class="hint" style="margin:0">隔離している間は理論在庫に入りません。判断は責任者が行います。責任者が不在のときは企画推進室へ。</p>' +
+      (rows.length ? '<div class="list">' + rows.map(function(r){
+        return '<div class="item" data-row="' + esc(r.rowId) + '"><div class="nm">' + esc(r.name) + '　' + num(kv(r.v, r.unit)) + esc(ku(r.unit)) + '</div><div class="sub">' + esc([hhmm(r.at), r.why, r.place, r.lot && 'ロット ' + r.lot, r.by].filter(Boolean).join('・')) + '</div>' +
+          '<div class="bar"><button class="btn small pri" data-pass>合格にして在庫へ入れる</button><select data-act aria-label="不合格の対応"><option>返品して仕入先へ連絡</option><option>廃棄して仕入先へ連絡</option></select><button class="btn small" data-fail>不合格にする</button></div></div>';
+      }).join('') + '</div>' : '<p class="hint">保留中の品目はありません。</p>');
+    [].forEach.call(box.querySelectorAll('[data-row]'), function(el){
+      var go = function(op, note, btn){
+        if (!staff){ toast('先に「数える人」で自分の名前を選んでください'); return; }
+        btn.disabled = true;
+        call({action:'tanaUkeDecide', id:el.dataset.row, op:op, name:note, staff:staff, route:'在庫入力アプリ'}).then(function(res){
+          if (!res || !res.ok) throw new Error((res && res.error) || '');
+          toast(op + 'にしました'); ukeHold();
+        }).catch(function(e){ btn.disabled = false; toast('記録できませんでした：' + e.message); });
+      };
+      el.querySelector('[data-pass]').onclick = function(){ go('合格', '', this); };
+      el.querySelector('[data-fail]').onclick = function(){ go('不合格', el.querySelector('[data-act]').value, this); };
+    });
+  }).catch(function(e){ box.innerHTML = '<div class="note">読み込めませんでした：' + esc(e.message) + '</div>'; });
+}
+function ukeRec(){
+  var box = $('#ukeBody');
+  call({action:'tanaUkeList', limit:100}).then(function(j){
+    var rows = (j && j.rows) || [];
+    box.innerHTML = '<h2>受入記録</h2><p class="hint" style="margin:0">理論在庫に足すのは合格の分だけです。新しい順に100件。</p>' + (rows.length ? '<div class="tbl"><table><thead><tr><th>日時</th><th>品目</th><th class="r">数</th><th>判定</th><th>内容</th><th>人</th><th></th></tr></thead><tbody>' + rows.map(function(r){
+      return '<tr' + (r.canceled ? ' style="opacity:.5;text-decoration:line-through"' : '') + '><td>' + esc(hhmm(r.at)) + '</td><td>' + esc(r.name) + '<div class="hint">' + esc([r.use, r.lot && 'ロット ' + r.lot, r.exp && '期限 ' + r.exp, r.temp !== '' && '品温 ' + r.temp + '℃'].filter(Boolean).join('／')) + '</div></td><td class="r">' + num(kv(r.v, r.unit)) + esc(ku(r.unit)) + '</td><td>' + ukePill(r.res) + '</td><td>' + esc([r.why, r.place, r.action].filter(Boolean).join('／')) + '</td><td>' + esc(r.by) + '</td><td>' + (r.canceled ? '' : '<button class="btn small" data-c="' + esc(r.rowId) + '">取り消す</button>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="hint">まだありません。</p>');
+    [].forEach.call(box.querySelectorAll('[data-c]'), function(b){ b.onclick = function(){
+      if (!staff){ toast('先に「数える人」を選んでください'); return; }
+      b.disabled = true;
+      call({action:'tanaUkeCancel', id:b.dataset.c, staff:staff}).then(ukeRec).catch(function(e){ b.disabled = false; toast(e.message); });
+    }; });
+  }).catch(function(e){ box.innerHTML = '<div class="note">読み込めませんでした：' + esc(e.message) + '</div>'; });
+}
+function ukeDoc(){
+  var box = $('#ukeBody'), docs = (uke.cfg && uke.cfg.docs) || [], today = uke.cfg ? uke.cfg.today : '';
+  box.innerHTML = '<h2>書類</h2><p class="hint" style="margin:0">責任者が登録します。未登録の書類は、受入のときに現場が「ある／ない」を答えます（「ない」なら保留）。切れている書類がある品目は自動で保留になります。「対象」は品名の一部、小分類（モルトなど）、メーカー名のどれかで、空ならすべての品目に効きます。</p>' +
+    '<div class="bar"><label>書類 <select id="docN">' + UKE_DOC_NAMES.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('') + '</select></label><label>対象 <input id="docT" type="text" class="uin" maxlength="200" placeholder="例：モルト"></label><label>有効期限 <input id="docU" type="date" class="uin"></label><button class="btn pri" id="docAdd">登録する</button></div>' +
+    (docs.length ? '<div class="tbl"><table><thead><tr><th>書類</th><th>対象</th><th>有効期限</th><th>状態</th><th>確認者</th><th></th></tr></thead><tbody>' + docs.map(function(d){
+      var ok = !d.until || d.until >= today;
+      return '<tr><td>' + esc(d.name) + '</td><td>' + esc(d.target || 'すべて') + '</td><td>' + esc(d.until || '期限なし') + '</td><td><span class="chip ' + (ok ? 'ok' : 'warn') + '">' + (ok ? '有効' : '期限切れ') + '</span></td><td>' + esc(d.by) + '</td><td><button class="btn small" data-d="' + esc(d.rowId) + '">取り消す</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="hint">まだ登録がありません。登録するまで、工場の原料は受入のときに保留になります。ブルワリーアプリも同じ書類を読みます。</p>');
+  $('#docAdd').onclick = function(){
+    if (!staff){ toast('先に「数える人」で自分の名前を選んでください'); return; }
+    this.disabled = true;
+    call({action:'tanaUkeDocPut', staff:staff, row:{name:$('#docN').value, target:$('#docT').value.trim(), until:$('#docU').value}}).then(function(j){ if (!j || !j.ok) throw new Error((j && j.error) || ''); toast('登録しました'); render(); }).catch(function(e){ toast('登録できませんでした：' + e.message); render(); });
+  };
+  [].forEach.call(box.querySelectorAll('[data-d]'), function(b){ b.onclick = function(){
+    if (!staff){ toast('先に「数える人」を選んでください'); return; }
+    b.disabled = true;
+    call({action:'tanaUkeDocCancel', id:b.dataset.d, staff:staff}).then(function(){ render(); }).catch(function(e){ b.disabled = false; toast(e.message); });
+  }; });
+}
+
+/* ---------------- 移した ---------------- */
+var move = {pick:null};
+function renderMove(){
+  var it = move.pick && byId[move.pick];
+  var html = '<h2>移した</h2><p class="hint" style="margin:0">チェストストッカーなど、置き場所を移したときに入れます。全体の在庫の数は変わりません。</p>' + (staff ? '' : '<div class="note">最初に「数える人」を選んでください。</div>');
+  if (!it) html += '<div class="bar"><input id="mvQ" type="search" placeholder="品名で探す（仕込み品も出ます）" style="flex:1" autocomplete="off"></div><div class="list" id="mvHits"></div>';
+  else html += '<div class="list"><div class="item" data-id="' + esc(it.id) + '"><div class="nm">' + esc(it.name) + '</div>' + (inUnits(it).length > 1 ? '<div class="conv">' + convText(it) + '</div>' : '') + '<div class="ins">' + inUnits(it).map(function(u, i){ return '<div class="in"><button type="button" aria-label="' + esc(un(u)) + 'を1減らす" data-step="-1" data-i="' + i + '">−</button><input inputmode="decimal" data-i="' + i + '" aria-label="' + esc(un(u)) + 'の数" placeholder="0"><button type="button" aria-label="' + esc(un(u)) + 'を1増やす" data-step="1" data-i="' + i + '">＋</button><span class="u">' + esc(un(u)) + '</span></div>'; }).join('') + '</div><div class="total" data-total></div>' +
+    '<div class="bar"><label>出した場所 <select id="mvFrom">' + LOCS.map(function(l){ return '<option' + (l === 'チェストストッカー' ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('') + '</select></label><label>入れた場所 <select id="mvTo">' + LOCS.map(function(l){ return '<option' + (l === '厨房' ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('') + '</select></label></div>' +
+    '<div class="bar"><button class="btn" id="mvBack">品目を選び直す</button><button class="btn pri" id="mvSend">登録する</button></div></div></div>';
+  html += '<h2>最近の移動</h2><div id="mvRecent" class="hint">読み込み中…</div>';
+  $('#app').innerHTML = html;
+  if (!it){
+    var draw = function(){
+      var q = $('#mvQ').value.trim().toLowerCase(), hits = q ? items.filter(function(i){ return (i.name + ' ' + i.maker + ' ' + i.sub + ' ' + i.bunrui).toLowerCase().indexOf(q) >= 0; }).slice(0, 40) : [];
+      $('#mvHits').innerHTML = hits.map(function(i){ return '<button class="pick" data-mv="' + esc(i.id) + '"><b>' + esc(i.name) + '</b><br><span class="hint">' + esc([i.dept, i.bunrui, i.sub].filter(Boolean).join('・')) + '</span></button>'; }).join('') || '<p class="hint" style="padding:10px 14px;margin:0">' + (q ? '見つかりません。' : '品名を入れると候補が出ます。') + '</p>';
+      [].forEach.call(document.querySelectorAll('[data-mv]'), function(b){ b.onclick = function(){ move.pick = b.dataset.mv; render(); }; });
+    };
+    $('#mvQ').oninput = draw; draw();
+  } else {
+    var row = document.querySelector('.item[data-id]');
+    showTotal(it, row);
+    [].forEach.call(row.querySelectorAll('input[data-i]'), function(inp){ inp.oninput = function(){ showTotal(it, row); }; });
+    [].forEach.call(row.querySelectorAll('[data-step]'), function(b){ b.onclick = function(){ var inp = row.querySelector('input[data-i="' + b.dataset.i + '"]'); inp.value = Math.max(0, (Number(inp.value) || 0) + Number(b.dataset.step)); showTotal(it, row); }; });
+    $('#mvBack').onclick = function(){ move.pick = null; render(); };
+    $('#mvSend').onclick = function(){
+      if (!staff){ toast('先に「数える人」を選んでください'); $('#staff').focus(); return; }
+      var r = readRow(it, row), su = stockUnit(it), sm = smallest(it), from = $('#mvFrom').value, to = $('#mvTo').value, btn = this;
+      if (!r.any || !(r.small > 0)){ toast('数を入れてください'); return; }
+      if (from === to){ toast('出した場所と入れた場所が同じです'); return; }
+      if (!heavyOk(r, btn)) return;
+      btn.disabled = true;
+      call({action:'tanaMovePut', staff:staff, route:'在庫入力アプリ', row:{id:it.id, name:it.name, v:Math.round(r.small / su.per * 1000) / 1000, unit:su.u, small:r.small, smallUnit:sm.u, detail:r.detail, from:from, to:to}}).then(function(j){
+        if (!j || !j.ok) throw new Error((j && j.error) || '');
+        toast(it.name + ' を登録しました'); move.pick = null; render();
+      }).catch(function(e){ btn.disabled = false; toast('登録できませんでした：' + e.message); });
+    };
+  }
+  moveRecent();
+}
+function moveRecent(){
+  call({action:'tanaMoveList', limit:20}).then(function(j){
+    var el = $('#mvRecent'); if (!el) return;
+    var rows = (j && j.rows) || [];
+    el.innerHTML = rows.length ? '<div class="tbl"><table style="min-width:0"><tbody>' + rows.map(function(r){
+      return '<tr' + (r.canceled ? ' style="opacity:.5;text-decoration:line-through"' : '') + '><td>' + esc(hhmm(r.at)) + '</td><td>' + esc(r.name) + '<div class="hint">' + esc(r.detail + '／' + r.from + ' → ' + r.to) + '</div></td><td>' + esc(r.by) + '</td><td>' + (r.canceled ? '' : '<button class="btn small" data-c="' + esc(r.rowId) + '">取り消す</button>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : 'まだありません。';
+    [].forEach.call(el.querySelectorAll('[data-c]'), function(b){ b.onclick = function(){
+      if (!staff){ toast('先に「数える人」を選んでください'); return; }
+      b.disabled = true;
+      call({action:'tanaMoveCancel', id:b.dataset.c, staff:staff}).then(moveRecent).catch(function(e){ b.disabled = false; toast(e.message); });
+    }; });
+  }).catch(function(){ var el = $('#mvRecent'); if (el) el.textContent = '読み込めませんでした。'; });
+}
+
+/* ---------------- 理論在庫（棚卸とは別の計算） ---------------- */
+var theory = {table:'原料', confirm:false, onlyWarn:false};
+var DIFF_TAB = '差分の記録';
+function renderTheory(){
+  $('#app').innerHTML = '<div class="loading">計算しています…</div>';
+  call({action:'tanaTheory'}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '計算できませんでした');
+    if (view.tab !== 'theory') return;
+    theory.data = j; drawTheory();
+  }).catch(function(e){ $('#app').innerHTML = '<div class="note">計算できませんでした：' + esc(e.message) + '</div>'; });
+}
+function drawTheory(){
+  if (theory.table === DIFF_TAB) return renderDiff();
+  var j = theory.data, tabs = ['原料','仕込み品','チェストストッカー'];
+  var rows = j.rows.filter(function(r){ return r.table === theory.table && (!theory.onlyWarn || r.warn); }).map(function(r){
+    if (!isG(r.unit)) return r;  // 2026-11-21 g の行は kg で出す（表示だけ）
+    var o = {}; Object.keys(r).forEach(function(k){ o[k] = r[k]; });
+    ['startQty','inn','prepUse','sold','used','out','val','counted','diff','valAt'].forEach(function(k){ if (typeof o[k] === 'number') o[k] = o[k] / 1000; });
+    o.unit = 'kg'; return o;
+  });
+  var nv = function(v){ return v === null ? '—' : num(v); };
+  $('#app').innerHTML = '<h2>理論在庫</h2><p class="hint" style="margin:0">開始数＋入った分−使った分で計算します。棚卸の数では上書きしません。売上は ' + esc(j.salesUntil || '—') + ' まで、計算 ' + esc(hhmm(j.at)) + '。</p>' +
+    (j.hasStart ? '' : '<div class="note">開始数がまだありません。下の「開始数を入れる」を行うまで、理論値は出ません（動きだけ表示します）。</div>') +
+    j.warnings.map(function(w){ return '<div class="note">' + esc(w) + '</div>'; }).join('') +
+    '<div class="chips">' + tabs.map(function(t){ return '<button data-tt="' + t + '" aria-pressed="' + (theory.table === t) + '">' + t + ' <span class="hint">' + j.rows.filter(function(r){ return r.table === t; }).length + '</span></button>'; }).join('') + '<button id="ttWarn" aria-pressed="' + theory.onlyWarn + '">警告だけ</button>' + diffChip(j.diffOpen) + '</div>' +
+    (rows.length ? '<div class="tbl"><table><thead><tr><th>品目</th><th class="r">開始数</th><th class="r">入った</th>' + (theory.table === 'チェストストッカー' ? '<th class="r">出した</th>' : '<th class="r">仕込みで使用</th><th class="r">売上で使用</th><th class="r">使った・捨てた</th>') + '<th class="r">理論値</th><th class="r">棚卸</th><th class="r">差</th><th>警告</th></tr></thead><tbody>' + rows.map(function(r){
+      return '<tr><td>' + esc(r.name) + (r.start ? '<div class="hint">' + esc(r.start) + ' から</div>' : '') + '</td><td class="r">' + nv(r.startQty) + '</td><td class="r">' + num(r.inn) + '</td>' + (theory.table === 'チェストストッカー' ? '<td class="r">' + num(r.out) + '</td>' : '<td class="r">' + num(r.prepUse) + '</td><td class="r">' + num(r.sold) + '</td><td class="r">' + num(r.used) + '</td>') +
+        '<td class="r"' + (r.val !== null && r.val < 0 ? ' style="color:var(--bad);font-weight:700"' : '') + '><b>' + nv(r.val) + '</b> ' + esc(r.unit) + '</td><td class="r">' + nv(r.counted) + '</td><td class="r">' + nv(r.diff) + (r.diff !== null && r.diff !== undefined && r.countDay ? '<div class="hint">' + esc(r.countDay.slice(5).replace('-', '/')) + 'の理論値 ' + nv(r.valAt) + '</div>' : '') + '</td><td>' + esc(r.warn) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="hint" style="margin-top:10px">表示する品目はまだありません。</p>') +
+    '<h2>開始数を入れる</h2><p class="hint" style="margin:0">上で選んでいる棚卸（' + esc($('#round').selectedOptions[0].textContent) + '）の数を、理論在庫の開始数に写します。最初の1回だけ、責任者が行います。開始日の当日の入力と売上は計算に含めないので、閉店後の数を使ってください。</p>' +
+    '<div class="bar"><label>開始日 <input id="ttDate" class="uin" type="date"></label>' + (theory.confirm ? '<button class="btn pri" id="ttGo">写す（取り消せません）</button><button class="btn" id="ttNo">やめる</button>' : '<button class="btn" id="ttAsk">棚卸の数を写す</button>') + '</div>';
+  if (theory.date) $('#ttDate').value = theory.date;
+  $('#ttDate').oninput = function(){ theory.date = this.value; };
+  [].forEach.call(document.querySelectorAll('[data-tt]'), function(b){ b.onclick = function(){ theory.table = b.dataset.tt; drawTheory(); }; });
+  $('#ttWarn').onclick = function(){ theory.onlyWarn = !theory.onlyWarn; drawTheory(); };
+  bindDiffChip();
+  var ask = $('#ttAsk'); if (ask) ask.onclick = function(){
+    if (!staff){ toast('先に「数える人」で自分の名前を選んでください'); return; }
+    if (!theory.date){ toast('開始日を選んでください'); return; }
+    theory.confirm = true; drawTheory();
+  };
+  var no = $('#ttNo'); if (no) no.onclick = function(){ theory.confirm = false; drawTheory(); };
+  var go = $('#ttGo'); if (go) go.onclick = function(){
+    go.disabled = true;
+    call({action:'tanaTheoryStart', round:round, date:theory.date, staff:staff}).then(function(r){
+      if (!r || !r.ok) throw new Error(r && r.error === 'no_counts' ? 'この棚卸にはまだ数がありません' : ((r && r.error) || ''));
+      theory.confirm = false; toast(r.saved + '行を開始数に写しました'); renderTheory();
+    }).catch(function(e){ go.disabled = false; toast('写せませんでした：' + e.message); });
+  };
+}
+/* ---------------- 差分の記録（棚卸の数と、数えた日の理論値の差に気づいて対応した記録。シート「棚卸差分」） ---------------- */
+function diffChip(n){ return '<button id="ttDiff" aria-pressed="' + (theory.table === DIFF_TAB) + '">' + DIFF_TAB + (n ? ' <span class="chip bad">未対応 ' + n + '</span>' : '') + '</button>'; }
+function bindDiffChip(){ $('#ttDiff').onclick = function(){ theory.table = DIFF_TAB; renderDiff(); }; }
+function renderDiff(){
+  $('#app').innerHTML = '<div class="loading">計算しています…</div>';
+  call({action:'tanaDiffList', round:round}).then(function(j){
+    if (!j || !j.ok) throw new Error((j && j.error) || '読み込めませんでした');
+    if (view.tab !== 'theory' || theory.table !== DIFF_TAB) return;
+    theory.diff = j; drawDiff();
+  }).catch(function(e){ $('#app').innerHTML = '<div class="note">読み込めませんでした：' + esc(e.message) + '</div>'; });
+}
+function diffOptions(list, v, blank){ return (blank ? '<option value="">' + blank + '</option>' : '') + list.map(function(o){ return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join(''); }
+function diffToday(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function drawDiff(){
+  var j = theory.diff, tabs = ['原料','仕込み品','チェストストッカー'], sign = function(v){ return (v > 0 ? '+' : '') + num(v); };
+  var behind = j.rows.some(function(r){ return j.salesUntil && r.day && r.day > j.salesUntil; });
+  $('#app').innerHTML = '<div class="chips">' + tabs.map(function(t){ return '<button data-tt="' + t + '" aria-pressed="false">' + t + '</button>'; }).join('') + diffChip(j.open) + '</div>' +
+    '<h2>差分の記録 <span class="hint">' + esc($('#round').selectedOptions[0].textContent) + '</span></h2>' +
+    '<p class="hint" style="margin:0">棚卸の数と、数えた日の閉店後の理論値の差です。差がある行は原因を選びます。差額1,000円以上、ずれ20%以上、要冷蔵の差がある行は、対応内容・対応者・対応日も入れて「対応済」にします。未対応が残る月は締めません。原因が分からないときは「原因不明」を選びます。判断に迷うときは責任者へ。責任者が不在のときは企画推進室へ。</p>' +
+    (behind ? '<div class="note">売上の取り込みが ' + esc(j.salesUntil) + ' までです。数えた日までの売上が入ると差が変わるので、取り込んでから見てください。</div>' : '') +
+    (j.rows.length ? '<div class="list">' + j.rows.map(function(r, i){
+      var d = r.draft || (r.draft = {cause:r.cause, action:r.action, who:r.who || staff, when:r.when || diffToday(), state:r.state === '未対応' ? '対応済' : r.state});
+      var moved = r.recDiff !== null && r.recDiff !== r.diff;
+      return '<div class="item" data-i="' + i + '"><div class="nm">' + esc(r.name) + ' ' +
+        (r.need === '対応まで' ? '<span class="chip bad">対応まで</span>' : r.need === '原因のみ' ? '<span class="chip warn">原因を選ぶ</span>' : '<span class="chip">差なし</span>') + ' ' +
+        (r.state === '対応済' ? '<span class="chip ok">対応済</span>' : r.state === '確認中' ? '<span class="chip warn">確認中</span>' : '') + '</div>' +
+        '<div class="sub">棚卸 ' + (r.counted === null ? '—' : num(kv(r.counted, r.unit))) + ' ／ ' + esc(String(r.day || '').slice(5).replace('-', '/')) + 'の理論値 ' + (r.valAt === null ? '—' : num(kv(r.valAt, r.unit))) + ' ／ 差 <b>' + (r.diff === null ? '—' : sign(kv(r.diff, r.unit))) + '</b> ' + esc(ku(r.unit)) + (r.yen ? ' ／ 差額 ' + yen(r.yen) : '') + (r.why.length ? '（' + esc(r.why.join('・')) + '）' : '') + '</div>' +
+        (moved ? '<div class="note">記録したときの差は ' + sign(kv(r.recDiff, r.unit)) + esc(ku(r.unit)) + ' でした。数え直しや売上の取り込みで変わっています。</div>' : '') +
+        (r.need === '不要' ? '<div class="sub">原因：' + esc(r.cause) + (r.action ? '／' + esc(r.action) : '') + '</div>' :
+        '<div class="bar"><label>差分原因 <select class="uin" data-f="cause">' + diffOptions(j.causes, d.cause, '選ぶ') + '</select></label>' +
+        (r.need === '対応まで' ? '<label>対応状況 <select class="uin" data-f="state">' + diffOptions(j.states, d.state) + '</select></label><label>対応者 <input class="uin" data-f="who" maxlength="40" value="' + esc(d.who) + '"></label><label>対応日 <input class="uin" data-f="when" type="date" value="' + esc(d.when) + '"></label></div><div class="bar"><input class="uin" style="flex:1" data-f="action" maxlength="500" placeholder="対応内容（是正したことを1行で）" aria-label="対応内容" value="' + esc(d.action) + '">' : '') +
+        '<button class="btn small pri" data-save="' + i + '">' + (r.at ? '直す' : '記録する') + '</button></div>') +
+        (r.at ? '<div class="sub">' + esc(hhmm(r.at)) + ' ' + esc(r.by) + ' が記録</div>' : '') + '</div>';
+    }).join('') + '</div>' : '<p class="hint" style="margin-top:10px">' + (j.hasStart ? 'この棚卸で差のある品目はありません（数のない品目、開始数のない品目は対象外です）。' : '開始数が入るまで、差は出ません。') + '</p>');
+  [].forEach.call(document.querySelectorAll('[data-tt]'), function(b){ b.onclick = function(){ theory.table = b.dataset.tt; renderTheory(); }; });
+  bindDiffChip();
+  [].forEach.call(document.querySelectorAll('.item [data-f]'), function(el){
+    el.oninput = el.onchange = function(){ j.rows[el.closest('.item').dataset.i].draft[el.dataset.f] = el.value; };
+  });
+  [].forEach.call(document.querySelectorAll('[data-save]'), function(b){ b.onclick = function(){
+    var r = j.rows[b.dataset.save], d = r.draft;
+    if (!staff){ toast('先に「数える人」で自分の名前を選んでください'); return; }
+    if (!d.cause){ toast('差分原因を選んでください'); return; }
+    if (r.need === '対応まで' && d.state === '対応済' && !(d.action.trim() && d.who.trim() && d.when)){ toast('対応内容・対応者・対応日を入れてください'); return; }
+    b.disabled = true;
+    call({action:'tanaDiffSave', round:round, staff:staff, route:'在庫入力アプリ', row:{id:r.id, cause:d.cause, action:d.action, who:d.who, when:d.when, state:d.state}}).then(function(res){
+      if (!res || !res.ok) throw new Error(res && res.error === 'no_diff' ? '差がなくなっています。読み直してください' : res && res.error === 'need_action' ? '対応内容・対応者・対応日を入れてください' : ((res && res.error) || ''));
+      j.rows[b.dataset.save] = res.row; j.open = res.open; if (theory.data) theory.data.diffOpen = res.open;
+      toast('記録しました'); drawDiff();
+    }).catch(function(e){ b.disabled = false; toast('記録できませんでした：' + e.message); });
+  }; });
+}
+$('#tabMove').onclick = function(){ view.tab = 'move'; move.pick = null; render(); };
+$('#tabTheory').onclick = function(){ view.tab = 'theory'; flush(); render(); };
+
+/* ---------------- 品目（商品管理システムのマスタを見るだけ） ---------------- */
+function renderMaster(){
+  $('#app').innerHTML = '<h2>品目マスタ <span class="hint">' + items.length + '品目</span></h2>' +
+    '<p class="hint" style="margin:0">商品管理システムのマスタです。品目の追加や修正は責任者へ。責任者が不在のときは企画推進室へ。<a href="https://docs.google.com/spreadsheets/d/1zB6-J1I5nqpSqcoKyM_jhCNjZxCi41dO7xff68Ttn84/edit" target="_blank" rel="noopener">スプレッドシート</a>は権限のある人だけ開けます。</p>' +
+    '<div class="bar"><input id="mQ" type="search" placeholder="品名・メーカー・分類で探す" style="flex:1" autocomplete="off"></div><div class="tbl"><table><thead><tr><th>品目</th><th>部門・分類</th><th>単位</th><th>保管場所</th></tr></thead><tbody id="mBody"></tbody></table></div><p class="hint" id="mNote"></p>';
+  var draw = function(){
+    var q = $('#mQ').value.trim().toLowerCase();
+    var hits = items.filter(function(i){ return !q || (i.name + ' ' + i.maker + ' ' + i.sub + ' ' + i.bunrui + ' ' + i.dept).toLowerCase().indexOf(q) >= 0; });
+    $('#mBody').innerHTML = hits.slice(0, 100).map(function(i){
+      return '<tr><td>' + esc(i.name) + '</td><td>' + esc([i.dept, i.bunrui, i.sub].filter(Boolean).join('・')) + '</td><td>' + (inUnits(i).length > 1 ? convText(i) : esc(un(i.units[0]))) + '</td><td>' + esc(locsOf(i).join('、') || '未設定') + '</td></tr>';
+    }).join('');
+    $('#mNote').textContent = hits.length > 100 ? '先頭の100品目を表示しています。絞り込んでください。' : '';
+  };
+  $('#mQ').oninput = draw; draw();
+}
+$('#tabSum').onclick = function(){ view.tab = 'sum'; flush(); loadState().then(render); };
+</script>
+</body>
+</html>
